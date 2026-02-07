@@ -2,6 +2,17 @@
 
 Changes of git-po-helper.
 
+## dev
+
+* update: new option --no-file-location and --no-location
+* update: use --add-location=file to remove location by default
+* pot-file: change default to 'auto' with smart detection
+* team: show members only with -m, and use -a to show all
+* test: fix team members test case and add --all option test
+* test-lib: sync with git-test-lib project
+* actions: upgrade github actions versions (checkout v3->v5, setup-go v4->v6)
+* docs: add AGENTS.md project guide and AI assistant config files
+
 ## 0.7.5 (2024-04-25)
 
 * dict: dirty hacks on bg for git v2.45.0
