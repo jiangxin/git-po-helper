@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/git-l10n/git-po-helper/config"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -187,4 +188,47 @@ func ExecuteAgentCommand(cmd []string, workDir string) ([]byte, []byte, error) {
 		len(stdout), len(stderr))
 
 	return stdout, stderr, nil
+}
+
+// SelectAgent selects an agent from the configuration based on the provided agent name.
+// If agentName is empty, it auto-selects an agent (only works if exactly one agent is configured).
+// Returns the selected agent, its key, and an error if selection fails.
+func SelectAgent(cfg *config.AgentConfig, agentName string) (config.Agent, string, error) {
+	if agentName != "" {
+		// Use specified agent
+		log.Debugf("using specified agent: %s", agentName)
+		agent, ok := cfg.Agents[agentName]
+		if !ok {
+			agentList := make([]string, 0, len(cfg.Agents))
+			for k := range cfg.Agents {
+				agentList = append(agentList, k)
+			}
+			log.Errorf("agent '%s' not found in configuration. Available agents: %v", agentName, agentList)
+			return config.Agent{}, "", fmt.Errorf("agent '%s' not found in configuration\nAvailable agents: %s\nHint: Check git-po-helper.yaml for configured agents", agentName, strings.Join(agentList, ", "))
+		}
+		return agent, agentName, nil
+	}
+
+	// Auto-select agent
+	log.Debugf("auto-selecting agent from configuration")
+	if len(cfg.Agents) == 0 {
+		log.Error("no agents configured")
+		return config.Agent{}, "", fmt.Errorf("no agents configured\nHint: Add at least one agent to git-po-helper.yaml in the 'agents' section")
+	}
+	if len(cfg.Agents) > 1 {
+		agentList := make([]string, 0, len(cfg.Agents))
+		for k := range cfg.Agents {
+			agentList = append(agentList, k)
+		}
+		log.Errorf("multiple agents configured (%s), --agent flag required", strings.Join(agentList, ", "))
+		return config.Agent{}, "", fmt.Errorf("multiple agents configured (%s), please specify --agent\nHint: Use --agent flag to select one of the available agents", strings.Join(agentList, ", "))
+	}
+
+	// Only one agent, use it
+	for k, v := range cfg.Agents {
+		return v, k, nil
+	}
+
+	// This should never happen, but handle it gracefully
+	return config.Agent{}, "", fmt.Errorf("unexpected error: no agent selected")
 }

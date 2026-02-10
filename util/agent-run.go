@@ -104,44 +104,9 @@ func CmdAgentRunUpdatePot(agentName string) error {
 	}
 
 	// Determine agent to use
-	var selectedAgent config.Agent
-	var agentKey string
-
-	if agentName != "" {
-		// Use specified agent
-		log.Debugf("using specified agent: %s", agentName)
-		agent, ok := cfg.Agents[agentName]
-		if !ok {
-			agentList := make([]string, 0, len(cfg.Agents))
-			for k := range cfg.Agents {
-				agentList = append(agentList, k)
-			}
-			log.Errorf("agent '%s' not found in configuration. Available agents: %v", agentName, agentList)
-			return fmt.Errorf("agent '%s' not found in configuration\nAvailable agents: %s\nHint: Check git-po-helper.yaml for configured agents", agentName, strings.Join(agentList, ", "))
-		}
-		selectedAgent = agent
-		agentKey = agentName
-	} else {
-		// Auto-select agent
-		log.Debugf("auto-selecting agent from configuration")
-		if len(cfg.Agents) == 0 {
-			log.Error("no agents configured")
-			return fmt.Errorf("no agents configured\nHint: Add at least one agent to git-po-helper.yaml in the 'agents' section")
-		}
-		if len(cfg.Agents) > 1 {
-			agentList := make([]string, 0, len(cfg.Agents))
-			for k := range cfg.Agents {
-				agentList = append(agentList, k)
-			}
-			log.Errorf("multiple agents configured (%s), --agent flag required", strings.Join(agentList, ", "))
-			return fmt.Errorf("multiple agents configured (%s), please specify --agent\nHint: Use --agent flag to select one of the available agents", strings.Join(agentList, ", "))
-		}
-		// Only one agent, use it
-		for k, v := range cfg.Agents {
-			selectedAgent = v
-			agentKey = k
-			break
-		}
+	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
+	if err != nil {
+		return err
 	}
 
 	log.Debugf("using agent: %s", agentKey)
@@ -175,8 +140,6 @@ func CmdAgentRunUpdatePot(agentName string) error {
 	for i, arg := range selectedAgent.Cmd {
 		agentCmd[i] = ReplacePlaceholders(arg, prompt, "", "")
 	}
-
-	log.Debugf("executing agent command: %s", strings.Join(agentCmd, " "))
 
 	// Execute agent command
 	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
