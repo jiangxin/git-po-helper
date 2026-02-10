@@ -980,9 +980,199 @@ func CmdAgentRunTranslate(agentName, poFile string) error {
 	return nil
 }
 
+// RunAgentReview executes a single agent-run review operation.
+// It determines the review mode, executes the agent command, parses JSON output,
+// saves the JSON result, and calculates the review score.
+// Returns a result structure with detailed information.
+func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since string) (*AgentRunResult, error) {
+	result := &AgentRunResult{
+		Score: 0,
+	}
+
+	// Determine agent to use
+	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
+	if err != nil {
+		result.AgentError = err.Error()
+		return result, err
+	}
+
+	log.Debugf("using agent: %s", agentKey)
+
+	// Determine PO file path
+	workDir := repository.WorkDir()
+	if poFile == "" {
+		lang := cfg.DefaultLangCode
+		if lang == "" {
+			log.Errorf("default_lang_code is not configured in agent configuration")
+			return result, fmt.Errorf("default_lang_code is not configured\nHint: Provide po/XX.po on the command line or set default_lang_code in git-po-helper.yaml")
+		}
+		poFile = filepath.Join(workDir, PoDir, fmt.Sprintf("%s.po", lang))
+	} else if !filepath.IsAbs(poFile) {
+		// Treat poFile as relative to repository root
+		poFile = filepath.Join(workDir, poFile)
+	}
+
+	log.Debugf("PO file path: %s", poFile)
+
+	// Check if PO file exists
+	if !Exist(poFile) {
+		log.Errorf("PO file does not exist: %s", poFile)
+		return result, fmt.Errorf("PO file does not exist: %s\nHint: Ensure the PO file exists before running review", poFile)
+	}
+
+	// Determine review mode and get prompt
+	var prompt string
+	var commitID string
+	var sourcePath string
+
+	// Get relative path for source placeholder (e.g., "po/XX.po")
+	if rel, err := filepath.Rel(workDir, poFile); err == nil && rel != "" && rel != "." {
+		sourcePath = filepath.ToSlash(rel)
+	} else {
+		sourcePath = poFile
+	}
+
+	if commit != "" {
+		// Commit mode: review changes in a specific commit
+		commitID = commit
+		prompt = cfg.Prompt.ReviewCommit
+		if prompt == "" {
+			log.Error("prompt.review_commit is not configured")
+			return result, fmt.Errorf("prompt.review_commit is not configured\nHint: Add 'prompt.review_commit' to git-po-helper.yaml")
+		}
+		log.Debugf("using review_commit prompt: %s", prompt)
+		log.Infof("reviewing changes in commit: %s", commit)
+	} else if since != "" {
+		// Since mode: review changes since a specific commit
+		commitID = since
+		prompt = cfg.Prompt.ReviewSince
+		if prompt == "" {
+			log.Error("prompt.review_since is not configured")
+			return result, fmt.Errorf("prompt.review_since is not configured\nHint: Add 'prompt.review_since' to git-po-helper.yaml")
+		}
+		log.Debugf("using review_since prompt: %s", prompt)
+		log.Infof("reviewing changes since commit: %s", since)
+	} else {
+		// Default mode: review local changes (since HEAD)
+		commitID = "HEAD"
+		prompt = cfg.Prompt.ReviewSince
+		if prompt == "" {
+			log.Error("prompt.review_since is not configured")
+			return result, fmt.Errorf("prompt.review_since is not configured\nHint: Add 'prompt.review_since' to git-po-helper.yaml")
+		}
+		log.Debugf("using review_since prompt (default mode): %s", prompt)
+		log.Infof("reviewing local changes (since HEAD)")
+	}
+
+	// Build agent command with placeholders replaced
+	agentCmd := BuildAgentCommand(selectedAgent, prompt, sourcePath, commitID)
+
+	// Execute agent command
+	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
+	stdout, stderr, err := ExecuteAgentCommand(agentCmd, workDir)
+	result.AgentExecuted = true
+
+	if err != nil {
+		// Log stderr if available
+		if len(stderr) > 0 {
+			log.Debugf("agent command stderr: %s", string(stderr))
+		}
+		// Log stdout if available
+		if len(stdout) > 0 {
+			log.Debugf("agent command stdout: %s", string(stdout))
+		}
+
+		result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", err)
+		log.Errorf("agent command execution failed: %v", err)
+		return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
+	}
+	result.AgentSuccess = true
+	log.Infof("agent command completed successfully")
+
+	// Log output if verbose
+	if len(stdout) > 0 {
+		log.Debugf("agent command stdout: %s", string(stdout))
+	}
+	if len(stderr) > 0 {
+		log.Debugf("agent command stderr: %s", string(stderr))
+	}
+
+	// Extract JSON from agent output
+	log.Infof("extracting JSON from agent output")
+	jsonBytes, err := ExtractJSONFromOutput(stdout)
+	if err != nil {
+		log.Errorf("failed to extract JSON from agent output: %v", err)
+		result.AgentError = fmt.Sprintf("failed to extract JSON: %v", err)
+		return result, fmt.Errorf("failed to extract JSON from agent output: %w\nHint: Ensure the agent outputs valid JSON", err)
+	}
+
+	// Parse JSON
+	log.Infof("parsing review JSON")
+	reviewJSON, err := ParseReviewJSON(jsonBytes)
+	if err != nil {
+		log.Errorf("failed to parse review JSON: %v", err)
+		result.AgentError = fmt.Sprintf("failed to parse JSON: %v", err)
+		return result, fmt.Errorf("failed to parse review JSON: %w\nHint: Check the JSON format matches ReviewJSONResult structure", err)
+	}
+
+	// Save JSON to file
+	log.Infof("saving review JSON to file")
+	jsonPath, err := SaveReviewJSON(poFile, reviewJSON)
+	if err != nil {
+		log.Errorf("failed to save review JSON: %v", err)
+		return result, fmt.Errorf("failed to save review JSON: %w", err)
+	}
+	result.ReviewJSON = reviewJSON
+	result.ReviewJSONPath = jsonPath
+
+	// Calculate review score
+	log.Infof("calculating review score")
+	reviewScore, err := CalculateReviewScore(reviewJSON)
+	if err != nil {
+		log.Errorf("failed to calculate review score: %v", err)
+		return result, fmt.Errorf("failed to calculate review score: %w", err)
+	}
+	result.ReviewScore = reviewScore
+	result.Score = reviewScore
+
+	log.Infof("review completed successfully (score: %d/100, total entries: %d, issues: %d)",
+		reviewScore, reviewJSON.TotalEntries, len(reviewJSON.Issues))
+
+	return result, nil
+}
+
 // CmdAgentRunReview implements the agent-run review command logic.
-// This is a stub implementation for Step 1. Full implementation will be
-// completed in Step 5 according to the design document.
+// It loads configuration and calls RunAgentReview, then handles errors appropriately.
 func CmdAgentRunReview(agentName, poFile, commit, since string) error {
-	return fmt.Errorf("agent-run review is not yet implemented (Step 1 of implementation in progress)")
+	// Load configuration
+	log.Debugf("loading agent configuration")
+	cfg, err := config.LoadAgentConfig()
+	if err != nil {
+		log.Errorf("failed to load agent configuration: %v", err)
+		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
+	}
+
+	result, err := RunAgentReview(cfg, agentName, poFile, commit, since)
+	if err != nil {
+		return err
+	}
+
+	// For agent-run, we require agent execution to succeed
+	if !result.AgentSuccess {
+		return fmt.Errorf("agent execution failed: %s", result.AgentError)
+	}
+
+	// Display review results
+	if result.ReviewJSON != nil {
+		fmt.Printf("\nReview Results:\n")
+		fmt.Printf("  Total entries: %d\n", result.ReviewJSON.TotalEntries)
+		fmt.Printf("  Issues found: %d\n", len(result.ReviewJSON.Issues))
+		fmt.Printf("  Review score: %d/100\n", result.ReviewScore)
+		if result.ReviewJSONPath != "" {
+			fmt.Printf("  JSON saved to: %s\n", result.ReviewJSONPath)
+		}
+	}
+
+	log.Infof("agent-run review completed successfully")
+	return nil
 }
