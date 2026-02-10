@@ -1,0 +1,62 @@
+#!/usr/bin/env sh
+
+# Pre-commit hook for git-po-helper
+# This hook runs:
+# 1. Go code formatting check (gofmt)
+# 2. Lint check (go vet + staticcheck)
+# 3. Unit tests
+
+set -e
+
+echo "🔍 Running pre-commit checks..."
+
+# Get list of staged Go files
+STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
+
+if [ -z "$STAGED_GO_FILES" ]; then
+  echo "✅ No Go files staged, skipping Go checks"
+  exit 0
+fi
+
+echo "📝 Checking Go code formatting..."
+
+# Check if gofmt is available
+if ! command -v gofmt >/dev/null 2>&1; then
+  echo "❌ Error: gofmt is not installed"
+  exit 1
+fi
+
+# Check formatting for staged Go files
+UNFORMATTED_FILES=$(echo "$STAGED_GO_FILES" | xargs gofmt -l 2>/dev/null || true)
+
+if [ -n "$UNFORMATTED_FILES" ]; then
+  echo "❌ The following files are not properly formatted:"
+  echo "$UNFORMATTED_FILES"
+  echo ""
+  echo "Please run 'gofmt -w' on these files or 'make fmt' if available"
+  exit 1
+fi
+
+echo "✅ All Go files are properly formatted"
+
+echo "🔍 Running lint checks..."
+
+# Run lint (go vet + staticcheck)
+if ! make lint; then
+  echo "❌ Lint checks failed. Please fix the issues and try again."
+  exit 1
+fi
+
+echo "✅ Lint checks passed"
+
+echo "🧪 Running unit tests..."
+
+# Run unit tests
+if ! make ut; then
+  echo "❌ Unit tests failed. Please fix the failing tests and try again."
+  exit 1
+fi
+
+echo "✅ All unit tests passed"
+
+echo "✅ All pre-commit checks passed!"

@@ -3,3 +3,7 @@ git-po-helper
 
 # Generated version file
 VERSION-FILE
+
+# Node.js dependencies (for husky)
+node_modules/
+package-lock.json
