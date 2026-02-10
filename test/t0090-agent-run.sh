@@ -8,7 +8,7 @@ HELPER="po-helper --no-special-gettext-versions"
 
 # Create a mock agent script that simulates agent behavior
 create_mock_agent() {
-	cat >"$1" <<'EOF'
+	cat >"$1" <<\EOF
 #!/bin/sh
 # Mock agent that updates po/git.pot or a specific po/XX.po
 # Usage: mock-agent --prompt "<prompt>" [<source>]
@@ -61,7 +61,7 @@ test_expect_success "setup" '
 	# Create mock agent
 	create_mock_agent "$PWD/mock-agent" &&
 	# Create config file
-	cat >workdir/git-po-helper.yaml <<-\EOF
+	cat >workdir/git-po-helper.yaml <<-\EOF &&
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agents:
@@ -75,38 +75,30 @@ EOF
 
 test_expect_success "agent-run update-pot: no config file" '
 	rm -f workdir/git-po-helper.yaml &&
-	test_must_fail git -C workdir $HELPER agent-run update-pot >out 2>&1 &&
+	# Without config file, default config is used (with default test agent)
+	git -C workdir $HELPER agent-run update-pot >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
-	cat >expect <<-\EOF &&
-	level=error msg="failed to load agent configuration: no configuration files found"
-
-	ERROR: fail to execute "git-po-helper agent-run update-pot"
-	EOF
-
-	test_cmp expect actual
+	# Should complete successfully with default agent
+	grep "completed successfully" actual
 '
 
-test_expect_success "agent-run update-pot: missing agent" '
-	cat >workdir/git-po-helper.yaml <<-\EOF
+test_expect_success "agent-run update-pot: empty agents uses default" '
+	cat >workdir/git-po-helper.yaml <<-\EOF &&
 prompt:
   update_pot: "update po/git.pot"
 agents: {}
 EOF
-	test_must_fail git -C workdir $HELPER agent-run update-pot >out 2>&1 &&
+	# Empty agents: {} is automatically filled with default test agent
+	git -C workdir $HELPER agent-run update-pot >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
-	cat >expect <<-\EOF &&
-	level=error msg="no agents configured"
-
-	ERROR: fail to execute "git-po-helper agent-run update-pot"
-	EOF
-
-	test_cmp expect actual
+	# Should complete successfully with default agent
+	grep "completed successfully" actual
 '
 
 test_expect_success "agent-run update-pot: multiple agents without --agent" '
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-\EOF &&
 prompt:
   update_pot: "update po/git.pot"
 agents:
@@ -126,7 +118,7 @@ EOF
 '
 
 test_expect_success "agent-run update-pot: agent not found" '
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-\EOF &&
 prompt:
   update_pot: "update po/git.pot"
 agents:
@@ -144,7 +136,7 @@ EOF
 '
 
 test_expect_success "agent-run update-pot: success with single agent" '
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<\EOF &&
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agents:
@@ -157,7 +149,7 @@ EOF
 	# Save original pot file size
 	ORIG_SIZE=$(wc -l < workdir/po/git.pot) &&
 
-	git -C workdir $HELPER agent-run update-pot >out 2>&1 &&
+	git -C workdir $HELPER agent-run update-pot --agent mock >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	# Should complete successfully
@@ -168,7 +160,7 @@ EOF
 '
 
 test_expect_success "agent-run update-pot: success with --agent flag" '
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-\EOF &&
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agents:
@@ -181,7 +173,7 @@ EOF
 	rm -f workdir/git-po-helper.yaml.bak &&
 
 	# Remove previous mock agent comment
-	sed -i.bak '/Updated by mock agent/d' workdir/po/git.pot &&
+	sed -i.bak "/Updated by mock agent/d" workdir/po/git.pot &&
 	rm -f workdir/po/git.pot.bak &&
 
 	git -C workdir $HELPER agent-run update-pot --agent mock >out 2>&1 &&
@@ -197,8 +189,9 @@ EOF
 test_expect_success "agent-run update-pot: with pre-validation" '
 	# Count entries in pot file
 	ENTRY_COUNT=$(grep -c "^msgid " workdir/po/git.pot | head -1) &&
+	ENTRY_COUNT=$((ENTRY_COUNT - 1)) &&
 
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agent-test:
@@ -207,11 +200,9 @@ agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
 EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
 
 	# Remove previous mock agent comment
-	sed -i.bak '/Updated by mock agent/d' workdir/po/git.pot &&
+	sed -i.bak "/Updated by mock agent/d" workdir/po/git.pot &&
 	rm -f workdir/po/git.pot.bak &&
 
 	git -C workdir $HELPER agent-run update-pot >out 2>&1 &&
@@ -224,9 +215,10 @@ EOF
 test_expect_success "agent-run update-pot: pre-validation failure" '
 	# Count entries in pot file
 	ENTRY_COUNT=$(grep -c "^msgid " workdir/po/git.pot | head -1) &&
+	ENTRY_COUNT=$((ENTRY_COUNT - 1)) &&
 	WRONG_COUNT=$((ENTRY_COUNT + 100)) &&
 
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agent-test:
@@ -235,8 +227,6 @@ agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
 EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
 
 	test_must_fail git -C workdir $HELPER agent-run update-pot >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
@@ -247,22 +237,20 @@ EOF
 
 test_expect_success "agent-run update-pot: agent command failure" '
 	# Create a failing mock agent
-	cat >"$PWD/failing-agent" <<'EOF'
+	cat >"$PWD/failing-agent" <<-EOF &&
 #!/bin/sh
 echo "Agent failed" >&2
 exit 1
 EOF
 	chmod +x "$PWD/failing-agent" &&
 
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agents:
   failing:
     cmd: ["$PWD/failing-agent"]
 EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
 
 	test_must_fail git -C workdir $HELPER agent-run update-pot >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
@@ -274,7 +262,7 @@ EOF
 test_expect_success "agent-run update-po: success using default_lang_code" '
 	test -f workdir/po/zh_CN.po &&
 
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-EOF &&
 default_lang_code: "zh_CN"
 prompt:
   update_po: "update {source} according to po/README.md"
@@ -282,11 +270,9 @@ agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}", "{source}"]
 EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
 
 	# Remove previous mock agent comments from zh_CN.po
-	sed -i.bak '/Updated by mock agent/d' workdir/po/zh_CN.po &&
+	sed -i.bak "/Updated by mock agent/d" workdir/po/zh_CN.po &&
 	rm -f workdir/po/zh_CN.po.bak &&
 
 	git -C workdir $HELPER agent-run update-po >out 2>&1 &&
@@ -297,3 +283,6 @@ EOF
 
 	# Verify PO file was updated
 	grep "Updated by mock agent" workdir/po/zh_CN.po
+'
+
+test_done

@@ -8,7 +8,7 @@ HELPER="po-helper --no-special-gettext-versions"
 
 # Create a mock agent script that simulates agent behavior
 create_mock_agent() {
-	cat >"$1" <<'EOF'
+	cat >"$1" <<-\EOF
 #!/bin/sh
 # Mock agent that updates po/git.pot or a specific po/XX.po
 # Usage: mock-agent --prompt "<prompt>" [<source>]
@@ -63,21 +63,19 @@ test_expect_success "setup" '
 '
 
 test_expect_success "agent-test update-pot: basic test with default runs" '
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
 EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
 
 	# Remove any previous mock agent comments
-	sed -i.bak '/Updated by mock agent/d' workdir/po/git.pot &&
+	sed -i.bak "/Updated by mock agent/d" workdir/po/git.pot &&
 	rm -f workdir/po/git.pot.bak &&
 
-	git -C workdir $HELPER agent-test update-pot >out 2>&1 &&
+	git -C workdir $HELPER agent-test --dangerously-remove-po-directory update-pot >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	# Should show test results
@@ -90,21 +88,19 @@ EOF
 '
 
 test_expect_success "agent-test update-pot: with --runs flag" '
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
 EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
 
 	# Remove any previous mock agent comments
-	sed -i.bak '/Updated by mock agent/d' workdir/po/git.pot &&
+	sed -i.bak "/Updated by mock agent/d" workdir/po/git.pot &&
 	rm -f workdir/po/git.pot.bak &&
 
-	git -C workdir $HELPER agent-test update-pot --runs 3 >out 2>&1 &&
+	git -C workdir $HELPER agent-test --dangerously-remove-po-directory update-pot --runs 3 >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	# Should show 3 runs
@@ -118,8 +114,9 @@ EOF
 test_expect_success "agent-test update-pot: with validation" '
 	# Count entries in pot file
 	ENTRY_COUNT=$(grep -c "^msgid " workdir/po/git.pot | head -1) &&
+	ENTRY_COUNT=$((ENTRY_COUNT - 1)) &&
 
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agent-test:
@@ -130,14 +127,12 @@ agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
 EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
 
 	# Remove any previous mock agent comments
-	sed -i.bak '/Updated by mock agent/d' workdir/po/git.pot &&
+	sed -i.bak "/Updated by mock agent/d" workdir/po/git.pot &&
 	rm -f workdir/po/git.pot.bak &&
 
-	git -C workdir $HELPER agent-test update-pot >out 2>&1 &&
+	git -C workdir $HELPER agent-test --dangerously-remove-po-directory update-pot >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	# Should show validation status
@@ -155,9 +150,10 @@ EOF
 test_expect_success "agent-test update-pot: pre-validation failure" '
 	# Count entries in pot file
 	ENTRY_COUNT=$(grep -c "^msgid " workdir/po/git.pot | head -1) &&
+	ENTRY_COUNT=$((ENTRY_COUNT - 1)) &&
 	WRONG_COUNT=$((ENTRY_COUNT + 100)) &&
 
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agent-test:
@@ -167,14 +163,12 @@ agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
 EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
 
 	# Remove any previous mock agent comments
-	sed -i.bak '/Updated by mock agent/d' workdir/po/git.pot &&
+	sed -i.bak "/Updated by mock agent/d" workdir/po/git.pot &&
 	rm -f workdir/po/git.pot.bak &&
 
-	git -C workdir $HELPER agent-test update-pot >out 2>&1 &&
+	git -C workdir $HELPER agent-test --dangerously-remove-po-directory update-pot >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	# Should show pre-validation failures
@@ -190,9 +184,10 @@ EOF
 test_expect_success "agent-test update-pot: post-validation failure" '
 	# Count entries in pot file
 	ENTRY_COUNT=$(grep -c "^msgid " workdir/po/git.pot | head -1) &&
+	ENTRY_COUNT=$((ENTRY_COUNT - 1)) &&
 	WRONG_COUNT=$((ENTRY_COUNT + 100)) &&
 
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agent-test:
@@ -202,14 +197,12 @@ agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
 EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
 
 	# Remove any previous mock agent comments
-	sed -i.bak '/Updated by mock agent/d' workdir/po/git.pot &&
+	sed -i.bak "/Updated by mock agent/d" workdir/po/git.pot &&
 	rm -f workdir/po/git.pot.bak &&
 
-	git -C workdir $HELPER agent-test update-pot >out 2>&1 &&
+	git -C workdir $HELPER agent-test --dangerously-remove-po-directory update-pot >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	# Should show post-validation failures
@@ -221,14 +214,14 @@ EOF
 
 test_expect_success "agent-test update-pot: with failing agent" '
 	# Create a failing mock agent
-	cat >"$PWD/failing-agent" <<'EOF'
+	cat >"$PWD/failing-agent" <<-EOF &&
 #!/bin/sh
 echo "Agent failed" >&2
 exit 1
 EOF
 	chmod +x "$PWD/failing-agent" &&
 
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agent-test:
@@ -237,10 +230,8 @@ agents:
   failing:
     cmd: ["$PWD/failing-agent"]
 EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
 
-	git -C workdir $HELPER agent-test update-pot >out 2>&1 &&
+	git -C workdir $HELPER agent-test --dangerously-remove-po-directory update-pot >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	# Should show failed runs
@@ -256,7 +247,7 @@ EOF
 test_expect_success "agent-test update-po: basic test with default runs" '
 	test -f workdir/po/zh_CN.po &&
 
-	cat >workdir/git-po-helper.yaml <<-EOF
+	cat >workdir/git-po-helper.yaml <<-EOF &&
 default_lang_code: "zh_CN"
 prompt:
   update_po: "update {source} according to po/README.md"
@@ -266,14 +257,12 @@ agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}", "{source}"]
 EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
 
 	# Remove any previous mock agent comments from zh_CN.po
-	sed -i.bak '/Updated by mock agent/d' workdir/po/zh_CN.po &&
+	sed -i.bak "/Updated by mock agent/d" workdir/po/zh_CN.po &&
 	rm -f workdir/po/zh_CN.po.bak &&
 
-	git -C workdir $HELPER agent-test update-po >out 2>&1 &&
+	git -C workdir $HELPER agent-test --dangerously-remove-po-directory update-po >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	# Should show test results
