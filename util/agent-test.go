@@ -208,7 +208,7 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 		// Validate POT file syntax (only if agent succeeded)
 		if result.AgentSuccess {
 			log.Debugf("run %d: validating POT file syntax", runNum)
-			if err := ValidatePotFile(potFile); err != nil {
+			if err := ValidatePoFile(potFile); err != nil {
 				log.Warnf("run %d: POT file syntax validation failed: %v", runNum, err)
 				// Don't fail the run for syntax errors, but log it
 			} else {

@@ -360,7 +360,7 @@ Executes the agent command:
 #### 2.4.3 Validate Pot File
 
 ```go
-func ValidatePotFile(potFile string) error
+func ValidatePoFile(potFile string) error
 ```
 
 Validates POT file syntax using `msgfmt --check-format` or similar.

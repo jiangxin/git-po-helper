@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/git-l10n/git-po-helper/config"
@@ -38,31 +39,49 @@ func ValidatePotEntryCount(potFile string, expectedCount *int, stage string) err
 	return nil
 }
 
-// ValidatePotFile validates POT file syntax using msgfmt.
+// ValidatePoFile validates POT/PO file syntax.
+// For .pot files, it uses msgcat --use-first to validate (since POT files have placeholders in headers).
+// For .po files, it uses msgfmt to validate.
 // Returns an error if the file is invalid, nil if valid.
-func ValidatePotFile(potFile string) error {
+func ValidatePoFile(potFile string) error {
 	if !Exist(potFile) {
 		return fmt.Errorf("POT file does not exist: %s\nHint: Ensure the file exists or run the agent to create it", potFile)
 	}
 
-	// Use msgfmt --check to validate POT file syntax
-	// For POT files, we use a simpler validation than PO files
-	log.Debugf("running msgfmt --check on %s", potFile)
-	cmd := exec.Command("msgfmt",
-		"-o",
-		os.DevNull,
-		"--check",
-		potFile)
+	// Determine file extension to choose the appropriate validation tool
+	ext := filepath.Ext(potFile)
+	var cmd *exec.Cmd
+	var toolName string
+
+	if ext == ".pot" {
+		// For POT files, use msgcat --use-first since POT files have placeholders in headers
+		toolName = "msgcat"
+		log.Debugf("running msgcat --use-first on %s", potFile)
+		cmd = exec.Command("msgcat",
+			"--use-first",
+			potFile,
+			"-o",
+			os.DevNull)
+	} else {
+		// For PO files, use msgfmt
+		toolName = "msgfmt"
+		log.Debugf("running msgfmt --check on %s", potFile)
+		cmd = exec.Command("msgfmt",
+			"-o",
+			os.DevNull,
+			"--check",
+			potFile)
+	}
 	cmd.Dir = repository.WorkDir()
 
 	// Capture stderr for error messages
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return fmt.Errorf("failed to create stderr pipe for msgfmt: %w", err)
+		return fmt.Errorf("failed to create stderr pipe for %s: %w", toolName, err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start msgfmt command: %w\nHint: Ensure gettext tools (msgfmt) are installed", err)
+		return fmt.Errorf("failed to start %s command: %w\nHint: Ensure gettext tools (%s) are installed", toolName, err, toolName)
 	}
 
 	// Read stderr output
@@ -83,10 +102,10 @@ func ValidatePotFile(potFile string) error {
 		if errorMsg == "" {
 			errorMsg = err.Error()
 		}
-		return fmt.Errorf("POT file syntax validation failed: %s\nHint: Check the POT file syntax and fix any errors reported by msgfmt", errorMsg)
+		return fmt.Errorf("file syntax validation failed: %s\nHint: Check the file syntax and fix any errors reported by %s", errorMsg, toolName)
 	}
 
-	log.Debugf("POT file validation passed: %s", potFile)
+	log.Debugf("file validation passed: %s", potFile)
 	return nil
 }
 
@@ -170,12 +189,16 @@ func CmdAgentRunUpdatePot(agentName string) error {
 	}
 
 	// Validate POT file syntax
-	log.Infof("validating POT file syntax: %s", potFile)
-	if err := ValidatePotFile(potFile); err != nil {
-		log.Errorf("POT file syntax validation failed: %v", err)
-		return fmt.Errorf("POT file validation failed: %w\nHint: Check the POT file syntax using 'msgfmt --check-format'", err)
+	log.Infof("validating file syntax: %s", potFile)
+	if err := ValidatePoFile(potFile); err != nil {
+		log.Errorf("file syntax validation failed: %v", err)
+		ext := filepath.Ext(potFile)
+		if ext == ".pot" {
+			return fmt.Errorf("file validation failed: %w\nHint: Check the POT file syntax using 'msgcat --use-first <file> -o /dev/null'", err)
+		}
+		return fmt.Errorf("file validation failed: %w\nHint: Check the PO file syntax using 'msgfmt --check-format'", err)
 	}
-	log.Infof("POT file syntax validation passed")
+	log.Infof("file syntax validation passed")
 
 	log.Infof("agent-run update-pot completed successfully")
 	return nil
