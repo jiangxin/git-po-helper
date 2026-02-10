@@ -2,6 +2,7 @@
 package config
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,21 @@ import (
 	"github.com/git-l10n/git-po-helper/repository"
 	log "github.com/sirupsen/logrus"
 )
+
+//go:embed prompts/update_pot.txt
+var promptUpdatePot string
+
+//go:embed prompts/update_po.txt
+var promptUpdatePo string
+
+//go:embed prompts/translate.txt
+var promptTranslate string
+
+//go:embed prompts/review_since.txt
+var promptReviewSince string
+
+//go:embed prompts/review_commit.txt
+var promptReviewCommit string
 
 // AgentConfig holds the complete agent configuration.
 type AgentConfig struct {
@@ -93,7 +109,13 @@ func getSystemLocale() string {
 	return "en_US"
 }
 
+// loadEmbeddedPrompt loads a prompt from an embedded string and trims whitespace.
+func loadEmbeddedPrompt(prompt string) string {
+	return strings.TrimSpace(prompt)
+}
+
 // getDefaultConfig returns a default AgentConfig with sensible defaults.
+// Prompt templates are loaded from embedded files in config/prompts/.
 func getDefaultConfig() *AgentConfig {
 	defaultRuns := 1
 	systemLocale := getSystemLocale()
@@ -101,11 +123,11 @@ func getDefaultConfig() *AgentConfig {
 	return &AgentConfig{
 		DefaultLangCode: systemLocale,
 		Prompt: PromptConfig{
-			UpdatePot:    "update po/git.pot according to po/README.md",
-			UpdatePo:     "update {source} according to po/README.md",
-			Translate:    "translate {source} according to po/README.md",
-			ReviewSince:  "review changes of {source} since commit {commit} according to po/README.md",
-			ReviewCommit: "review changes of commit {commit} according to po/README.md",
+			UpdatePot:    loadEmbeddedPrompt(promptUpdatePot),
+			UpdatePo:     loadEmbeddedPrompt(promptUpdatePo),
+			Translate:    loadEmbeddedPrompt(promptTranslate),
+			ReviewSince:  loadEmbeddedPrompt(promptReviewSince),
+			ReviewCommit: loadEmbeddedPrompt(promptReviewCommit),
 		},
 		AgentTest: AgentTestConfig{
 			Runs: &defaultRuns,

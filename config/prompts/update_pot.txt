@@ -1,0 +1,1 @@
+Update `po/git.pot` according to `po/README.md`.

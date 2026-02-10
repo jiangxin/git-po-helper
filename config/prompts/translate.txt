@@ -1,0 +1,1 @@
+Translate `{source}` according to `po/README.md`.
