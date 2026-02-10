@@ -67,20 +67,28 @@ type ReviewJSONResult struct {
 // The final score is normalized to 0-100.
 func CalculateReviewScore(review *ReviewJSONResult) (int, error) {
 	if review.TotalEntries <= 0 {
+		log.Debugf("calculate score failed: total_entries=%d (must be > 0)", review.TotalEntries)
 		return 0, fmt.Errorf("invalid review result: total_entries must be greater than 0")
 	}
 
 	totalPossible := review.TotalEntries * 3
 	totalScore := totalPossible
 
-	for _, issue := range review.Issues {
+	log.Debugf("calculating review score: total_entries=%d, total_possible=%d, issues_count=%d",
+		review.TotalEntries, totalPossible, len(review.Issues))
+
+	for i, issue := range review.Issues {
 		if issue.Score < 0 || issue.Score > 3 {
+			log.Debugf("calculate score failed: issue[%d].score=%d (must be 0-3)", i, issue.Score)
 			return 0, fmt.Errorf("invalid issue score %d: must be between 0 and 3", issue.Score)
 		}
-		totalScore -= 3 - issue.Score
+		deduction := 3 - issue.Score
+		totalScore -= deduction
+		log.Debugf("issue[%d]: score=%d, deduction=%d, remaining=%d", i, issue.Score, deduction, totalScore)
 	}
 
 	if totalScore < 0 {
+		log.Debugf("total score is negative (%d), clamping to 0", totalScore)
 		totalScore = 0
 	}
 
@@ -91,6 +99,9 @@ func CalculateReviewScore(review *ReviewJSONResult) (int, error) {
 		scorePercent = 100
 	}
 
+	log.Debugf("review score calculated: %d/100 (total_score=%d, total_possible=%d)",
+		scorePercent, totalScore, totalPossible)
+
 	return scorePercent, nil
 }
 
@@ -100,8 +111,11 @@ func CalculateReviewScore(review *ReviewJSONResult) (int, error) {
 // Returns the JSON bytes or an error if not found.
 func ExtractJSONFromOutput(output []byte) ([]byte, error) {
 	if len(output) == 0 {
+		log.Debugf("agent output is empty, cannot extract JSON")
 		return nil, fmt.Errorf("empty output, no JSON found")
 	}
+
+	log.Debugf("extracting JSON from agent output (length: %d bytes)", len(output))
 
 	// Find the first '{' character
 	startIdx := -1
@@ -113,8 +127,11 @@ func ExtractJSONFromOutput(output []byte) ([]byte, error) {
 	}
 
 	if startIdx == -1 {
+		log.Debugf("no opening brace found in agent output")
 		return nil, fmt.Errorf("no JSON object found in output (missing opening brace)")
 	}
+
+	log.Debugf("found JSON start at position %d", startIdx)
 
 	// Find the matching closing '}' by counting braces
 	braceCount := 0
@@ -132,8 +149,11 @@ func ExtractJSONFromOutput(output []byte) ([]byte, error) {
 	}
 
 	if endIdx == -1 {
+		log.Debugf("no matching closing brace found (unclosed JSON object)")
 		return nil, fmt.Errorf("no complete JSON object found in output (missing closing brace)")
 	}
+
+	log.Debugf("found JSON end at position %d (extracted %d bytes)", endIdx, endIdx-startIdx+1)
 
 	// Extract JSON bytes
 	jsonBytes := output[startIdx : endIdx+1]
@@ -146,22 +166,30 @@ func ExtractJSONFromOutput(output []byte) ([]byte, error) {
 // Returns parsed result or error.
 func ParseReviewJSON(jsonData []byte) (*ReviewJSONResult, error) {
 	if len(jsonData) == 0 {
+		log.Debugf("JSON data is empty")
 		return nil, fmt.Errorf("empty JSON data")
 	}
 
+	log.Debugf("parsing JSON data (length: %d bytes)", len(jsonData))
+
 	var review ReviewJSONResult
 	if err := json.Unmarshal(jsonData, &review); err != nil {
+		log.Debugf("JSON unmarshal failed: %v", err)
 		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
+	log.Debugf("JSON parsed successfully: total_entries=%d, issues_count=%d", review.TotalEntries, len(review.Issues))
+
 	// Validate total_entries
 	if review.TotalEntries <= 0 {
+		log.Debugf("validation failed: total_entries=%d (must be > 0)", review.TotalEntries)
 		return nil, fmt.Errorf("invalid review result: total_entries must be greater than 0, got %d", review.TotalEntries)
 	}
 
 	// Validate issues array
 	if review.Issues == nil {
 		// Issues can be an empty array, but not nil
+		log.Debugf("issues array is nil, initializing as empty array")
 		review.Issues = []ReviewIssue{}
 	}
 
@@ -169,16 +197,21 @@ func ParseReviewJSON(jsonData []byte) (*ReviewJSONResult, error) {
 	for i, issue := range review.Issues {
 		// Validate score range
 		if issue.Score < 0 || issue.Score > 3 {
+			log.Debugf("validation failed: issue[%d].score=%d (must be 0-3)", i, issue.Score)
 			return nil, fmt.Errorf("invalid issue score %d at index %d: must be between 0 and 3", issue.Score, i)
 		}
 
 		// Validate required fields are not empty (msgid and msgstr can be empty, but should be present)
 		// Description and suggestion should not be empty for issues
 		if issue.Description == "" {
+			log.Debugf("validation failed: issue[%d].description is empty", i)
 			return nil, fmt.Errorf("invalid issue at index %d: description is required", i)
 		}
+
+		log.Debugf("issue[%d]: msgid=%q, score=%d, description=%q", i, issue.MsgID, issue.Score, issue.Description)
 	}
 
+	log.Debugf("JSON validation passed: %d total entries, %d issues", review.TotalEntries, len(review.Issues))
 	return &review, nil
 }
 
@@ -1105,37 +1138,57 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 
 	// Extract JSON from agent output
 	log.Infof("extracting JSON from agent output")
+	log.Debugf("agent stdout length: %d bytes", len(stdout))
 	jsonBytes, err := ExtractJSONFromOutput(stdout)
 	if err != nil {
 		log.Errorf("failed to extract JSON from agent output: %v", err)
+		previewLen := 500
+		if len(stdout) < previewLen {
+			previewLen = len(stdout)
+		}
+		if previewLen > 0 {
+			log.Debugf("agent stdout (first %d chars): %s", previewLen, string(stdout[:previewLen]))
+		}
 		result.AgentError = fmt.Sprintf("failed to extract JSON: %v", err)
 		return result, fmt.Errorf("failed to extract JSON from agent output: %w\nHint: Ensure the agent outputs valid JSON", err)
 	}
+	log.Debugf("extracted JSON length: %d bytes", len(jsonBytes))
 
 	// Parse JSON
 	log.Infof("parsing review JSON")
 	reviewJSON, err := ParseReviewJSON(jsonBytes)
 	if err != nil {
 		log.Errorf("failed to parse review JSON: %v", err)
+		previewLen := 500
+		if len(jsonBytes) < previewLen {
+			previewLen = len(jsonBytes)
+		}
+		if previewLen > 0 {
+			log.Debugf("JSON data (first %d chars): %s", previewLen, string(jsonBytes[:previewLen]))
+		}
 		result.AgentError = fmt.Sprintf("failed to parse JSON: %v", err)
 		return result, fmt.Errorf("failed to parse review JSON: %w\nHint: Check the JSON format matches ReviewJSONResult structure", err)
 	}
+	log.Debugf("parsed review JSON: total_entries=%d, issues=%d", reviewJSON.TotalEntries, len(reviewJSON.Issues))
 
 	// Save JSON to file
 	log.Infof("saving review JSON to file")
 	jsonPath, err := SaveReviewJSON(poFile, reviewJSON)
 	if err != nil {
 		log.Errorf("failed to save review JSON: %v", err)
+		log.Debugf("PO file path: %s", poFile)
 		return result, fmt.Errorf("failed to save review JSON: %w", err)
 	}
 	result.ReviewJSON = reviewJSON
 	result.ReviewJSONPath = jsonPath
+	log.Debugf("review JSON saved to: %s", jsonPath)
 
 	// Calculate review score
 	log.Infof("calculating review score")
 	reviewScore, err := CalculateReviewScore(reviewJSON)
 	if err != nil {
 		log.Errorf("failed to calculate review score: %v", err)
+		log.Debugf("review JSON: total_entries=%d, issues=%d", reviewJSON.TotalEntries, len(reviewJSON.Issues))
 		return result, fmt.Errorf("failed to calculate review score: %w", err)
 	}
 	result.ReviewScore = reviewScore

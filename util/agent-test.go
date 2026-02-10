@@ -781,17 +781,24 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 		if agentResult.ReviewJSON != nil {
 			// Score is already calculated in RunAgentReview and stored in ReviewScore
 			result.Score = agentResult.ReviewScore
+			log.Debugf("run %d: review score from JSON: %d (total_entries=%d, issues=%d)",
+				runNum, agentResult.ReviewScore, agentResult.ReviewJSON.TotalEntries, len(agentResult.ReviewJSON.Issues))
 		} else if agentResult.AgentSuccess {
 			// If agent succeeded but no JSON, score is 0 (invalid output)
+			log.Debugf("run %d: agent succeeded but no review JSON found, score=0", runNum)
 			result.Score = 0
 		} else {
 			// If agent failed, score is 0
+			log.Debugf("run %d: agent execution failed, score=0", runNum)
 			result.Score = 0
 		}
 
 		// If there was an error, log it but continue (for agent-test, we want to collect all results)
 		if err != nil {
 			log.Debugf("run %d: agent-run returned error: %v", runNum, err)
+			if agentResult.AgentError != "" {
+				log.Debugf("run %d: agent error details: %s", runNum, agentResult.AgentError)
+			}
 			// Error details are already in the result structure
 		}
 
