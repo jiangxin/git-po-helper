@@ -27,12 +27,12 @@ func ValidatePotEntryCount(potFile string, expectedCount *int, stage string) err
 	// Count entries in POT file
 	actualCount, err := CountPotEntries(potFile)
 	if err != nil {
-		return fmt.Errorf("failed to count entries %s: %w", stage, err)
+		return fmt.Errorf("failed to count entries %s in %s: %w", stage, potFile, err)
 	}
 
 	// Compare with expected count
 	if actualCount != *expectedCount {
-		return fmt.Errorf("entry count %s: expected %d, got %d", stage, *expectedCount, actualCount)
+		return fmt.Errorf("entry count %s: expected %d, got %d (file: %s)", stage, *expectedCount, actualCount, potFile)
 	}
 
 	log.Debugf("entry count %s validation passed: %d entries", stage, actualCount)
@@ -43,11 +43,12 @@ func ValidatePotEntryCount(potFile string, expectedCount *int, stage string) err
 // Returns an error if the file is invalid, nil if valid.
 func ValidatePotFile(potFile string) error {
 	if !Exist(potFile) {
-		return fmt.Errorf("POT file does not exist: %s", potFile)
+		return fmt.Errorf("POT file does not exist: %s\nHint: Ensure the file exists or run the agent to create it", potFile)
 	}
 
 	// Use msgfmt --check to validate POT file syntax
 	// For POT files, we use a simpler validation than PO files
+	log.Debugf("running msgfmt --check on %s", potFile)
 	cmd := exec.Command("msgfmt",
 		"-o",
 		os.DevNull,
@@ -58,11 +59,11 @@ func ValidatePotFile(potFile string) error {
 	// Capture stderr for error messages
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return fmt.Errorf("failed to create stderr pipe: %w", err)
+		return fmt.Errorf("failed to create stderr pipe for msgfmt: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start msgfmt: %w", err)
+		return fmt.Errorf("failed to start msgfmt command: %w\nHint: Ensure gettext tools (msgfmt) are installed", err)
 	}
 
 	// Read stderr output
@@ -83,7 +84,7 @@ func ValidatePotFile(potFile string) error {
 		if errorMsg == "" {
 			errorMsg = err.Error()
 		}
-		return fmt.Errorf("POT file validation failed: %s", errorMsg)
+		return fmt.Errorf("POT file syntax validation failed: %s\nHint: Check the POT file syntax and fix any errors reported by msgfmt", errorMsg)
 	}
 
 	log.Debugf("POT file validation passed: %s", potFile)
@@ -95,9 +96,11 @@ func ValidatePotFile(potFile string) error {
 // executes the agent command, performs post-validation, and validates POT file syntax.
 func CmdAgentRunUpdatePot(agentName string) error {
 	// Load configuration
+	log.Debugf("loading agent configuration")
 	cfg, err := config.LoadAgentConfig()
 	if err != nil {
-		return fmt.Errorf("failed to load agent configuration: %w", err)
+		log.Errorf("failed to load agent configuration: %v", err)
+		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
 
 	// Determine agent to use
@@ -106,23 +109,32 @@ func CmdAgentRunUpdatePot(agentName string) error {
 
 	if agentName != "" {
 		// Use specified agent
+		log.Debugf("using specified agent: %s", agentName)
 		agent, ok := cfg.Agents[agentName]
 		if !ok {
-			return fmt.Errorf("agent '%s' not found in configuration", agentName)
+			agentList := make([]string, 0, len(cfg.Agents))
+			for k := range cfg.Agents {
+				agentList = append(agentList, k)
+			}
+			log.Errorf("agent '%s' not found in configuration. Available agents: %v", agentName, agentList)
+			return fmt.Errorf("agent '%s' not found in configuration\nAvailable agents: %s\nHint: Check git-po-helper.yaml for configured agents", agentName, strings.Join(agentList, ", "))
 		}
 		selectedAgent = agent
 		agentKey = agentName
 	} else {
 		// Auto-select agent
+		log.Debugf("auto-selecting agent from configuration")
 		if len(cfg.Agents) == 0 {
-			return fmt.Errorf("no agents configured")
+			log.Error("no agents configured")
+			return fmt.Errorf("no agents configured\nHint: Add at least one agent to git-po-helper.yaml in the 'agents' section")
 		}
 		if len(cfg.Agents) > 1 {
 			agentList := make([]string, 0, len(cfg.Agents))
 			for k := range cfg.Agents {
 				agentList = append(agentList, k)
 			}
-			return fmt.Errorf("multiple agents configured (%s), please specify --agent", strings.Join(agentList, ", "))
+			log.Errorf("multiple agents configured (%s), --agent flag required", strings.Join(agentList, ", "))
+			return fmt.Errorf("multiple agents configured (%s), please specify --agent\nHint: Use --agent flag to select one of the available agents", strings.Join(agentList, ", "))
 		}
 		// Only one agent, use it
 		for k, v := range cfg.Agents {
@@ -137,20 +149,25 @@ func CmdAgentRunUpdatePot(agentName string) error {
 	// Get repository root and POT file path
 	workDir := repository.WorkDir()
 	potFile := filepath.Join(workDir, PoDir, GitPot)
+	log.Debugf("POT file path: %s", potFile)
 
 	// Pre-validation: Check entry count before update
 	if cfg.AgentTest.PotEntriesBeforeUpdate != nil && *cfg.AgentTest.PotEntriesBeforeUpdate != 0 {
-		log.Debugf("performing pre-validation: checking entry count before update")
+		log.Infof("performing pre-validation: checking entry count before update (expected: %d)", *cfg.AgentTest.PotEntriesBeforeUpdate)
 		if err := ValidatePotEntryCount(potFile, cfg.AgentTest.PotEntriesBeforeUpdate, "before update"); err != nil {
-			return fmt.Errorf("pre-validation failed: %w", err)
+			log.Errorf("pre-validation failed: %v", err)
+			return fmt.Errorf("pre-validation failed: %w\nHint: Ensure po/git.pot exists and has the expected number of entries", err)
 		}
+		log.Infof("pre-validation passed")
 	}
 
 	// Get prompt from configuration
 	prompt := cfg.Prompt.UpdatePot
 	if prompt == "" {
-		return fmt.Errorf("prompt.update_pot is not configured")
+		log.Error("prompt.update_pot is not configured")
+		return fmt.Errorf("prompt.update_pot is not configured\nHint: Add 'prompt.update_pot' to git-po-helper.yaml")
 	}
+	log.Debugf("using prompt: %s", prompt)
 
 	// Replace placeholders in agent command
 	// For update-pot, we only need to replace {prompt}
@@ -162,6 +179,7 @@ func CmdAgentRunUpdatePot(agentName string) error {
 	log.Debugf("executing agent command: %s", strings.Join(agentCmd, " "))
 
 	// Execute agent command
+	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
 	stdout, stderr, err := ExecuteAgentCommand(agentCmd, workDir)
 	if err != nil {
 		// Log stderr if available
@@ -172,8 +190,10 @@ func CmdAgentRunUpdatePot(agentName string) error {
 		if len(stdout) > 0 {
 			log.Debugf("agent command stdout: %s", string(stdout))
 		}
-		return fmt.Errorf("agent command failed: %w", err)
+		log.Errorf("agent command execution failed: %v", err)
+		return fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 	}
+	log.Infof("agent command completed successfully")
 
 	// Log output if verbose
 	if len(stdout) > 0 {
@@ -185,17 +205,21 @@ func CmdAgentRunUpdatePot(agentName string) error {
 
 	// Post-validation: Check entry count after update
 	if cfg.AgentTest.PotEntriesAfterUpdate != nil && *cfg.AgentTest.PotEntriesAfterUpdate != 0 {
-		log.Debugf("performing post-validation: checking entry count after update")
+		log.Infof("performing post-validation: checking entry count after update (expected: %d)", *cfg.AgentTest.PotEntriesAfterUpdate)
 		if err := ValidatePotEntryCount(potFile, cfg.AgentTest.PotEntriesAfterUpdate, "after update"); err != nil {
-			return fmt.Errorf("post-validation failed: %w", err)
+			log.Errorf("post-validation failed: %v", err)
+			return fmt.Errorf("post-validation failed: %w\nHint: The agent may not have updated the POT file correctly", err)
 		}
+		log.Infof("post-validation passed")
 	}
 
 	// Validate POT file syntax
-	log.Debugf("validating POT file syntax: %s", potFile)
+	log.Infof("validating POT file syntax: %s", potFile)
 	if err := ValidatePotFile(potFile); err != nil {
-		return fmt.Errorf("POT file validation failed: %w", err)
+		log.Errorf("POT file syntax validation failed: %v", err)
+		return fmt.Errorf("POT file validation failed: %w\nHint: Check the POT file syntax using 'msgfmt --check-format'", err)
 	}
+	log.Infof("POT file syntax validation passed")
 
 	log.Infof("agent-run update-pot completed successfully")
 	return nil

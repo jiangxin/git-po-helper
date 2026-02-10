@@ -32,18 +32,24 @@ type RunResult struct {
 // It runs the agent-run update-pot operation multiple times and calculates an average score.
 func CmdAgentTestUpdatePot(agentName string, runs int) error {
 	// Load configuration
+	log.Debugf("loading agent configuration")
 	cfg, err := config.LoadAgentConfig()
 	if err != nil {
-		return fmt.Errorf("failed to load agent configuration: %w", err)
+		log.Errorf("failed to load agent configuration: %v", err)
+		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
 
 	// Determine number of runs
 	if runs == 0 {
 		if cfg.AgentTest.Runs != nil && *cfg.AgentTest.Runs > 0 {
 			runs = *cfg.AgentTest.Runs
+			log.Debugf("using runs from configuration: %d", runs)
 		} else {
 			runs = 5 // Default
+			log.Debugf("using default number of runs: %d", runs)
 		}
+	} else {
+		log.Debugf("using runs from command line: %d", runs)
 	}
 
 	log.Infof("starting agent-test update-pot with %d runs", runs)
@@ -51,12 +57,15 @@ func CmdAgentTestUpdatePot(agentName string, runs int) error {
 	// Run the test
 	results, averageScore, err := RunAgentTestUpdatePot(agentName, runs, cfg)
 	if err != nil {
+		log.Errorf("agent-test execution failed: %v", err)
 		return fmt.Errorf("agent-test failed: %w", err)
 	}
 
 	// Display results
+	log.Debugf("displaying test results (average score: %.2f)", averageScore)
 	displayTestResults(results, averageScore, runs)
 
+	log.Infof("agent-test update-pot completed successfully (average score: %.2f/100)", averageScore)
 	return nil
 }
 
@@ -69,23 +78,32 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 
 	if agentName != "" {
 		// Use specified agent
+		log.Debugf("using specified agent: %s", agentName)
 		agent, ok := cfg.Agents[agentName]
 		if !ok {
-			return nil, 0, fmt.Errorf("agent '%s' not found in configuration", agentName)
+			agentList := make([]string, 0, len(cfg.Agents))
+			for k := range cfg.Agents {
+				agentList = append(agentList, k)
+			}
+			log.Errorf("agent '%s' not found in configuration. Available agents: %v", agentName, agentList)
+			return nil, 0, fmt.Errorf("agent '%s' not found in configuration\nAvailable agents: %s\nHint: Check git-po-helper.yaml for configured agents", agentName, strings.Join(agentList, ", "))
 		}
 		selectedAgent = agent
 		agentKey = agentName
 	} else {
 		// Auto-select agent
+		log.Debugf("auto-selecting agent from configuration")
 		if len(cfg.Agents) == 0 {
-			return nil, 0, fmt.Errorf("no agents configured")
+			log.Error("no agents configured")
+			return nil, 0, fmt.Errorf("no agents configured\nHint: Add at least one agent to git-po-helper.yaml in the 'agents' section")
 		}
 		if len(cfg.Agents) > 1 {
 			agentList := make([]string, 0, len(cfg.Agents))
 			for k := range cfg.Agents {
 				agentList = append(agentList, k)
 			}
-			return nil, 0, fmt.Errorf("multiple agents configured (%s), please specify --agent", strings.Join(agentList, ", "))
+			log.Errorf("multiple agents configured (%s), --agent flag required", strings.Join(agentList, ", "))
+			return nil, 0, fmt.Errorf("multiple agents configured (%s), please specify --agent\nHint: Use --agent flag to select one of the available agents", strings.Join(agentList, ", "))
 		}
 		// Only one agent, use it
 		for k, v := range cfg.Agents {
@@ -104,8 +122,10 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 	// Get prompt from configuration
 	prompt := cfg.Prompt.UpdatePot
 	if prompt == "" {
-		return nil, 0, fmt.Errorf("prompt.update_pot is not configured")
+		log.Error("prompt.update_pot is not configured")
+		return nil, 0, fmt.Errorf("prompt.update_pot is not configured\nHint: Add 'prompt.update_pot' to git-po-helper.yaml")
 	}
+	log.Debugf("using prompt: %s", prompt)
 
 	// Replace placeholders in agent command
 	agentCmd := make([]string, len(selectedAgent.Cmd))
@@ -134,11 +154,11 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 
 		// Pre-validation: Check entry count before update
 		if cfg.AgentTest.PotEntriesBeforeUpdate != nil && *cfg.AgentTest.PotEntriesBeforeUpdate != 0 {
-			log.Debugf("run %d: performing pre-validation", runNum)
+			log.Debugf("run %d: performing pre-validation (expected: %d entries)", runNum, *cfg.AgentTest.PotEntriesBeforeUpdate)
 			beforeCount, err := CountPotEntries(potFile)
 			if err != nil {
 				result.PreValidationError = fmt.Sprintf("failed to count entries: %v", err)
-				log.Errorf("run %d: pre-validation failed: %s", runNum, result.PreValidationError)
+				log.Errorf("run %d: pre-validation failed - %s", runNum, result.PreValidationError)
 				results[i] = result
 				totalScore += 0 // Score = 0 for failure
 				continue
@@ -148,7 +168,7 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 			if beforeCount != *cfg.AgentTest.PotEntriesBeforeUpdate {
 				result.PreValidationError = fmt.Sprintf("entry count before update: expected %d, got %d",
 					*cfg.AgentTest.PotEntriesBeforeUpdate, beforeCount)
-				log.Errorf("run %d: pre-validation failed: %s", runNum, result.PreValidationError)
+				log.Errorf("run %d: pre-validation failed - %s", runNum, result.PreValidationError)
 				results[i] = result
 				totalScore += 0 // Score = 0 for failure
 				continue        // Skip agent execution if pre-validation fails
@@ -187,11 +207,11 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 
 		// Post-validation: Check entry count after update
 		if cfg.AgentTest.PotEntriesAfterUpdate != nil && *cfg.AgentTest.PotEntriesAfterUpdate != 0 {
-			log.Debugf("run %d: performing post-validation", runNum)
+			log.Debugf("run %d: performing post-validation (expected: %d entries)", runNum, *cfg.AgentTest.PotEntriesAfterUpdate)
 			afterCount, err := CountPotEntries(potFile)
 			if err != nil {
 				result.PostValidationError = fmt.Sprintf("failed to count entries: %v", err)
-				log.Errorf("run %d: post-validation failed: %s", runNum, result.PostValidationError)
+				log.Errorf("run %d: post-validation failed - %s", runNum, result.PostValidationError)
 				result.Score = 0
 				results[i] = result
 				totalScore += 0
@@ -202,7 +222,7 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 			if afterCount != *cfg.AgentTest.PotEntriesAfterUpdate {
 				result.PostValidationError = fmt.Sprintf("entry count after update: expected %d, got %d",
 					*cfg.AgentTest.PotEntriesAfterUpdate, afterCount)
-				log.Errorf("run %d: post-validation failed: %s", runNum, result.PostValidationError)
+				log.Errorf("run %d: post-validation failed - %s", runNum, result.PostValidationError)
 				result.Score = 0
 			} else {
 				result.PostValidationPass = true
@@ -225,18 +245,23 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 
 		// Validate POT file syntax (only if agent succeeded)
 		if result.AgentSuccess {
+			log.Debugf("run %d: validating POT file syntax", runNum)
 			if err := ValidatePotFile(potFile); err != nil {
-				log.Warnf("run %d: POT file validation failed: %v", runNum, err)
+				log.Warnf("run %d: POT file syntax validation failed: %v", runNum, err)
 				// Don't fail the run for syntax errors, but log it
+			} else {
+				log.Debugf("run %d: POT file syntax validation passed", runNum)
 			}
 		}
 
 		results[i] = result
 		totalScore += result.Score
+		log.Debugf("run %d: completed with score %d/100", runNum, result.Score)
 	}
 
 	// Calculate average score
 	averageScore := float64(totalScore) / float64(runs)
+	log.Infof("all runs completed. Total score: %d/%d, Average: %.2f/100", totalScore, runs*100, averageScore)
 
 	return results, averageScore, nil
 }
