@@ -158,6 +158,99 @@ git-po-helper agent-run update-po --agent claude po/zh_CN.po
 - Pre-validation passes (if configured)
 - Post-validation passes (if configured)
 
+### agent-run review
+
+Review translations in a PO file using a configured agent. The agent reviews translations and generates a JSON report with issues and scores.
+
+**Usage:**
+```bash
+git-po-helper agent-run review [--agent <agent-name>] [--commit <commit>] [--since <commit>] [po/XX.po]
+```
+
+**Options:**
+- `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
+- `--commit <commit>`: Review changes in the specified commit (uses `prompt.review_commit`)
+- `--since <commit>`: Review changes since the specified commit (uses `prompt.review_since`)
+- `po/XX.po`: Optional PO file path; if omitted, `default_lang_code` is used (e.g., `zh_CN` → `po/zh_CN.po`)
+
+**Note:** Exactly one of `--commit` or `--since` may be specified. If neither is provided, the command defaults to reviewing local changes (since HEAD).
+
+**Examples:**
+```bash
+# Review local changes using default_lang_code
+git-po-helper agent-run review
+
+# Review local changes for a specific PO file
+git-po-helper agent-run review po/zh_CN.po
+
+# Review changes in a specific commit
+git-po-helper agent-run review --commit abc123 po/zh_CN.po
+
+# Review changes since a specific commit
+git-po-helper agent-run review --since def456 po/zh_CN.po
+
+# Use a specific agent
+git-po-helper agent-run review --agent claude po/zh_CN.po
+```
+
+**What it does:**
+1. Loads configuration from `git-po-helper.yaml`
+2. Determines target PO file from CLI argument or `default_lang_code`
+3. Selects an agent (auto-selects if only one, or uses `--agent` flag)
+4. Determines review mode:
+   - If `--commit` is provided: Uses `prompt.review_commit` with `{commit}` placeholder
+   - If `--since` is provided: Uses `prompt.review_since` with `{source}` and `{commit}` placeholders
+   - Otherwise: Defaults to `--since HEAD` mode (local changes)
+5. Executes the agent command with the appropriate prompt template
+6. Extracts JSON from agent output
+7. Parses and validates the review JSON structure
+8. Saves review JSON to `po/XX-reviewed.json`
+9. Calculates review score (0-100) based on issues found
+
+**Review JSON Format:**
+The agent must output a JSON object with the following structure:
+```json
+{
+  "total_entries": 2592,
+  "issues": [
+    {
+      "msgid": "commit",
+      "msgstr": "承诺",
+      "score": 0,
+      "description": "术语错误：'commit'应译为'提交'",
+      "suggestion": "提交"
+    },
+    {
+      "msgid": "repository",
+      "msgstr": "仓库",
+      "score": 2,
+      "description": "一致性问题：其他地方使用'版本库'",
+      "suggestion": "版本库"
+    }
+  ]
+}
+```
+
+**Scoring Model:**
+- Each entry has a maximum of 3 points
+- Critical issues (must fix) = 0 points
+- Minor issues (needs adjustment) = 2 points
+- Perfect entries = 3 points
+- Final score = (total_score / (total_entries * 3)) * 100
+
+**Success Criteria:**
+- Agent command exits with code 0
+- Agent output contains valid JSON matching `ReviewJSONResult` structure
+- JSON file is successfully saved to `po/XX-reviewed.json`
+- PO file exists and is valid
+
+**Output:**
+The command displays:
+- Review score (0-100)
+- Total entries reviewed
+- Number of issues found (broken down by score: critical, minor, perfect)
+- Path to saved JSON file
+
 ### agent-test update-pot
 
 Test the `update-pot` operation multiple times and calculate an average score.
@@ -254,6 +347,70 @@ The command displays:
 - Success/failure counts
 - Average score
 - Entry count validation results (if configured)
+
+### agent-test review
+
+Test the `review` operation multiple times and calculate an average score.
+
+**Usage:**
+```bash
+git-po-helper agent-test review [--agent <agent-name>] [--runs <n>] [--commit <commit>] [--since <commit>] [po/XX.po]
+```
+
+**Options:**
+- `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
+- `--runs <n>`: Number of test runs (default: 5, or from config file)
+- `--commit <commit>`: Review changes in the specified commit (uses `prompt.review_commit`)
+- `--since <commit>`: Review changes since the specified commit (uses `prompt.review_since`)
+- `po/XX.po`: Optional PO file path; if omitted, `default_lang_code` is used (e.g., `zh_CN` → `po/zh_CN.po`)
+
+**Note:** Exactly one of `--commit` or `--since` may be specified. If neither is provided, the command defaults to reviewing local changes (since HEAD).
+
+**Examples:**
+```bash
+# Run 5 tests using default_lang_code to locate PO file
+git-po-helper agent-test review
+
+# Run 5 tests for a specific PO file
+git-po-helper agent-test review po/zh_CN.po
+
+# Run 10 tests with a specific agent
+git-po-helper agent-test review --agent claude --runs 10 po/zh_CN.po
+
+# Run tests reviewing changes since a specific commit
+git-po-helper agent-test review --since abc123 po/zh_CN.po
+```
+
+**What it does:**
+1. Loads configuration from `git-po-helper.yaml`
+2. Determines number of runs (from `--runs` flag, config file, or default to 5)
+3. For each run:
+   - Calls `agent-run review` logic
+   - Saves results to `output/<agent-name>/<iteration-number>/`:
+     - `XX-reviewed.po`: The reviewed PO file
+     - `review.log`: Execution log (stdout + stderr)
+     - `XX-reviewed.json`: Review JSON result
+   - Parses JSON and calculates score using `CalculateReviewScore()`
+   - Records score for this run
+4. Calculates average score: `(sum of scores) / number of runs`
+5. Displays results:
+   - Individual run results (including scores and issue counts)
+   - Average score
+   - Summary statistics (success count, failure count)
+
+**Scoring:**
+- Each run produces a JSON file with review results
+- Score is calculated from JSON using `CalculateReviewScore()`
+- Success = score > 0 (agent executed and produced valid JSON)
+- Failure = score = 0 (agent failed or produced invalid JSON)
+- Average = sum of scores / number of runs
+
+**Output:**
+The command displays:
+- Individual run results with status (PASS/FAIL) and score
+- Agent execution status and review status
+- Summary statistics (total runs, successful runs, failed runs, average score)
+- Results are saved to `output/<agent-name>/<iteration-number>/` for later review
 
 ## Entry Count Validation
 
