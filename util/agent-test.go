@@ -508,6 +508,85 @@ func SaveTranslateResults(agentName string, runNumber int, poFile string, stdout
 	return nil
 }
 
+// SaveReviewResults saves review results to output directory for agent-test review.
+// It creates the output directory structure, copies the PO file and JSON file,
+// and saves the execution log. Files are overwritten if the directory exists.
+// Returns error if any operation fails.
+func SaveReviewResults(agentName string, runNumber int, poFile string, jsonFile string, stdout, stderr []byte) error {
+	// Determine output directory path
+	workDir := repository.WorkDir()
+	outputDir := filepath.Join(workDir, "output", agentName, fmt.Sprintf("%d", runNumber))
+
+	log.Debugf("saving review results to %s", outputDir)
+
+	// Create output directory if it doesn't exist
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory %s: %w", outputDir, err)
+	}
+
+	// Copy PO file to output directory as XX-reviewed.po
+	poFileName := filepath.Base(poFile)
+	langCode := strings.TrimSuffix(poFileName, ".po")
+	if langCode == "" || langCode == poFileName {
+		return fmt.Errorf("invalid PO file path: %s (expected format: po/XX.po)", poFile)
+	}
+	destPoFile := filepath.Join(outputDir, fmt.Sprintf("%s-reviewed.po", langCode))
+
+	log.Debugf("copying %s to %s", poFile, destPoFile)
+
+	// Read source PO file
+	poData, err := os.ReadFile(poFile)
+	if err != nil {
+		return fmt.Errorf("failed to read PO file %s: %w", poFile, err)
+	}
+
+	// Write to destination
+	if err := os.WriteFile(destPoFile, poData, 0644); err != nil {
+		return fmt.Errorf("failed to write PO file to %s: %w", destPoFile, err)
+	}
+
+	// Copy JSON file to output directory as XX-reviewed.json
+	if jsonFile != "" {
+		destJSONFile := filepath.Join(outputDir, fmt.Sprintf("%s-reviewed.json", langCode))
+
+		log.Debugf("copying %s to %s", jsonFile, destJSONFile)
+
+		// Read source JSON file
+		jsonData, err := os.ReadFile(jsonFile)
+		if err != nil {
+			return fmt.Errorf("failed to read JSON file %s: %w", jsonFile, err)
+		}
+
+		// Write to destination
+		if err := os.WriteFile(destJSONFile, jsonData, 0644); err != nil {
+			return fmt.Errorf("failed to write JSON file to %s: %w", destJSONFile, err)
+		}
+	}
+
+	// Save execution log (stdout + stderr) to review.log
+	logFile := filepath.Join(outputDir, "review.log")
+	log.Debugf("saving execution log to %s", logFile)
+
+	var logContent strings.Builder
+	if len(stdout) > 0 {
+		logContent.WriteString("=== STDOUT ===\n")
+		logContent.Write(stdout)
+		logContent.WriteString("\n")
+	}
+	if len(stderr) > 0 {
+		logContent.WriteString("=== STDERR ===\n")
+		logContent.Write(stderr)
+		logContent.WriteString("\n")
+	}
+
+	if err := os.WriteFile(logFile, []byte(logContent.String()), 0644); err != nil {
+		return fmt.Errorf("failed to write log file to %s: %w", logFile, err)
+	}
+
+	log.Infof("review results saved to %s", outputDir)
+	return nil
+}
+
 // CmdAgentTestTranslate implements the agent-test translate command logic.
 // It runs the agent-run translate operation multiple times and calculates an average score.
 func CmdAgentTestTranslate(agentName, poFile string, runs int, skipConfirmation bool) error {
