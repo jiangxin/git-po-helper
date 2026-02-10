@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -14,10 +15,10 @@ import (
 
 // AgentConfig holds the complete agent configuration.
 type AgentConfig struct {
-	DefaultLangCode string            `yaml:"default_lang_code"`
-	Prompt          PromptConfig      `yaml:"prompt"`
-	AgentTest       AgentTestConfig   `yaml:"agent-test"`
-	Agents          map[string]Agent  `yaml:"agents"`
+	DefaultLangCode string           `yaml:"default_lang_code"`
+	Prompt          PromptConfig     `yaml:"prompt"`
+	AgentTest       AgentTestConfig  `yaml:"agent-test"`
+	Agents          map[string]Agent `yaml:"agents"`
 }
 
 // PromptConfig holds prompt templates for different operations.
@@ -31,18 +32,90 @@ type PromptConfig struct {
 
 // AgentTestConfig holds configuration for agent-test command.
 type AgentTestConfig struct {
-	Runs                       *int `yaml:"runs"`
-	PotEntriesBeforeUpdate     *int `yaml:"pot_entries_before_update"`
-	PotEntriesAfterUpdate      *int `yaml:"pot_entries_after_update"`
-	PoEntriesBeforeUpdate      *int `yaml:"po_entries_before_update"`
-	PoEntriesAfterUpdate       *int `yaml:"po_entries_after_update"`
-	PoNewEntriesAfterUpdate    *int `yaml:"po_new_entries_after_update"`
-	PoFuzzyEntriesAfterUpdate  *int `yaml:"po_fuzzy_entries_after_update"`
+	Runs                      *int `yaml:"runs"`
+	PotEntriesBeforeUpdate    *int `yaml:"pot_entries_before_update"`
+	PotEntriesAfterUpdate     *int `yaml:"pot_entries_after_update"`
+	PoEntriesBeforeUpdate     *int `yaml:"po_entries_before_update"`
+	PoEntriesAfterUpdate      *int `yaml:"po_entries_after_update"`
+	PoNewEntriesAfterUpdate   *int `yaml:"po_new_entries_after_update"`
+	PoFuzzyEntriesAfterUpdate *int `yaml:"po_fuzzy_entries_after_update"`
 }
 
 // Agent holds configuration for a single agent.
 type Agent struct {
 	Cmd []string `yaml:"cmd"`
+}
+
+// getSystemLocale gets the system locale from environment variables.
+// It checks LC_ALL, LC_MESSAGES, LANG in order of priority.
+// Returns a locale string like "en_US" or "zh_CN", or "en_US" as fallback.
+func getSystemLocale() string {
+	// Check locale environment variables in order of priority
+	locale := os.Getenv("LC_ALL")
+	if locale == "" {
+		locale = os.Getenv("LC_MESSAGES")
+	}
+	if locale == "" {
+		locale = os.Getenv("LANG")
+	}
+
+	// Parse locale string (format: language_territory.encoding or language_territory@variant)
+	// Examples: "en_US.UTF-8", "zh_CN.UTF-8", "C", "POSIX"
+	if locale != "" {
+		// Remove encoding suffix (.UTF-8, .utf8, etc.)
+		parts := strings.Split(locale, ".")
+		locale = parts[0]
+
+		// Remove variant suffix (@variant)
+		parts = strings.Split(locale, "@")
+		locale = parts[0]
+
+		// Handle special cases: "C" and "POSIX" default to "en_US"
+		if locale == "C" || locale == "POSIX" {
+			locale = "en_US"
+		}
+
+		// Validate format (should be like "en_US" or "zh_CN")
+		if strings.Contains(locale, "_") {
+			return locale
+		}
+
+		// If only language code (e.g., "en"), try to get full locale
+		// For now, we'll use it as-is or default to en_US
+		if len(locale) >= 2 {
+			// Try to construct a valid locale (e.g., "en" -> "en_US")
+			// This is a simple heuristic
+			return locale + "_US"
+		}
+	}
+
+	// Default fallback
+	return "en_US"
+}
+
+// getDefaultConfig returns a default AgentConfig with sensible defaults.
+func getDefaultConfig() *AgentConfig {
+	defaultRuns := 1
+	systemLocale := getSystemLocale()
+
+	return &AgentConfig{
+		DefaultLangCode: systemLocale,
+		Prompt: PromptConfig{
+			UpdatePot:    "update po/git.pot according to po/README.md",
+			UpdatePo:     "update {source} according to po/README.md",
+			Translate:    "translate {source} according to po/README.md",
+			ReviewSince:  "review changes of {source} since commit {commit} according to po/README.md",
+			ReviewCommit: "review changes of commit {commit} according to po/README.md",
+		},
+		AgentTest: AgentTestConfig{
+			Runs: &defaultRuns,
+		},
+		Agents: map[string]Agent{
+			"test": {
+				Cmd: []string{"echo", "{prompt}"},
+			},
+		},
+	}
 }
 
 // LoadAgentConfig loads agent configuration from multiple locations with priority:
@@ -90,11 +163,9 @@ func LoadAgentConfig() (*AgentConfig, error) {
 		} else {
 			userConfigPath = "~/.git-po-helper.yaml"
 		}
-		log.Warnf("no configuration files found (checked %s and %s), using defaults", 
+		log.Warnf("no configuration files found (checked %s and %s), using defaults",
 			userConfigPath, repoConfigPath)
-		return &AgentConfig{
-			Agents: make(map[string]Agent),
-		}, nil
+		return getDefaultConfig(), nil
 	}
 
 	// Merge configurations: repo config overrides user config
@@ -105,12 +176,57 @@ func LoadAgentConfig() (*AgentConfig, error) {
 		mergedConfig.Agents = make(map[string]Agent)
 	}
 
+	// Apply defaults for missing values
+	applyDefaults(mergedConfig)
+
 	// Validate configuration
 	if err := mergedConfig.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	return mergedConfig, nil
+}
+
+// applyDefaults applies default values to a configuration for missing fields.
+func applyDefaults(cfg *AgentConfig) {
+	defaultConfig := getDefaultConfig()
+
+	// Apply default_lang_code if not set
+	if cfg.DefaultLangCode == "" {
+		cfg.DefaultLangCode = defaultConfig.DefaultLangCode
+	}
+
+	// Apply prompt defaults if not set
+	if cfg.Prompt.UpdatePot == "" {
+		cfg.Prompt.UpdatePot = defaultConfig.Prompt.UpdatePot
+	}
+	if cfg.Prompt.UpdatePo == "" {
+		cfg.Prompt.UpdatePo = defaultConfig.Prompt.UpdatePo
+	}
+	if cfg.Prompt.Translate == "" {
+		cfg.Prompt.Translate = defaultConfig.Prompt.Translate
+	}
+	if cfg.Prompt.ReviewSince == "" {
+		cfg.Prompt.ReviewSince = defaultConfig.Prompt.ReviewSince
+	}
+	if cfg.Prompt.ReviewCommit == "" {
+		cfg.Prompt.ReviewCommit = defaultConfig.Prompt.ReviewCommit
+	}
+
+	// Apply agent-test defaults if not set
+	if cfg.AgentTest.Runs == nil {
+		cfg.AgentTest.Runs = defaultConfig.AgentTest.Runs
+	}
+
+	// Apply default agent only if no agents configured
+	// If config file has agents, use them and don't add default test agent
+	if len(cfg.Agents) == 0 {
+		cfg.Agents = map[string]Agent{
+			"test": {
+				Cmd: []string{"echo", "{prompt}"},
+			},
+		}
+	}
 }
 
 // loadConfigFromFile loads and parses a YAML config file without validation.
