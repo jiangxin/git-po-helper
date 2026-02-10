@@ -873,8 +873,101 @@ func displayTranslateTestResults(results []RunResult, averageScore float64, tota
 }
 
 // CmdAgentTestReview implements the agent-test review command logic.
-// This is a stub implementation for Step 1. Full implementation will be
-// completed in Step 9 according to the design document.
+// It runs the agent-run review operation multiple times and calculates an average score.
 func CmdAgentTestReview(agentName, poFile string, runs int, skipConfirmation bool, commit, since string) error {
-	return fmt.Errorf("agent-test review is not yet implemented (Step 1 of implementation in progress)")
+	// Require user confirmation before proceeding
+	if err := ConfirmAgentTestExecution(skipConfirmation); err != nil {
+		return err
+	}
+
+	// Load configuration
+	log.Debugf("loading agent configuration")
+	cfg, err := config.LoadAgentConfig()
+	if err != nil {
+		log.Errorf("failed to load agent configuration: %v", err)
+		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
+	}
+
+	// Determine number of runs
+	if runs == 0 {
+		if cfg.AgentTest.Runs != nil && *cfg.AgentTest.Runs > 0 {
+			runs = *cfg.AgentTest.Runs
+			log.Debugf("using runs from configuration: %d", runs)
+		} else {
+			runs = 5 // Default
+			log.Debugf("using default number of runs: %d", runs)
+		}
+	} else {
+		log.Debugf("using runs from command line: %d", runs)
+	}
+
+	log.Infof("starting agent-test review with %d runs", runs)
+
+	// Run the test
+	results, averageScore, err := RunAgentTestReview(cfg, agentName, poFile, runs, commit, since)
+	if err != nil {
+		log.Errorf("agent-test execution failed: %v", err)
+		return fmt.Errorf("agent-test failed: %w", err)
+	}
+
+	// Display results
+	log.Debugf("displaying test results (average score: %.2f)", averageScore)
+	displayReviewTestResults(results, averageScore, runs)
+
+	log.Infof("agent-test review completed successfully (average score: %.2f/100)", averageScore)
+	return nil
+}
+
+// displayReviewTestResults displays the review test results in a readable format.
+func displayReviewTestResults(results []RunResult, averageScore float64, totalRuns int) {
+	fmt.Println()
+	fmt.Println("=" + strings.Repeat("=", 70))
+	fmt.Println("Agent Test Results (Review)")
+	fmt.Println("=" + strings.Repeat("=", 70))
+	fmt.Println()
+
+	successCount := 0
+	failureCount := 0
+
+	// Display individual run results
+	for _, result := range results {
+		status := "FAIL"
+		if result.Score > 0 {
+			status = "PASS"
+			successCount++
+		} else {
+			failureCount++
+		}
+
+		fmt.Printf("Run %d: %s (Score: %d/100)\n", result.RunNumber, status, result.Score)
+
+		// Show review details
+		if result.AgentExecuted {
+			if result.AgentSuccess {
+				fmt.Printf("  Agent execution: PASS\n")
+			} else {
+				fmt.Printf("  Agent execution: FAIL - %s\n", result.AgentError)
+			}
+
+			if result.Score > 0 {
+				fmt.Printf("  Review status:   PASS (valid JSON with score %d/100)\n", result.Score)
+			} else {
+				fmt.Printf("  Review status:   FAIL (no valid JSON or agent failed)\n")
+			}
+		} else {
+			fmt.Printf("  Agent execution: SKIPPED\n")
+		}
+
+		fmt.Println()
+	}
+
+	// Display summary statistics
+	fmt.Println("=" + strings.Repeat("=", 70))
+	fmt.Println("Summary")
+	fmt.Println("=" + strings.Repeat("=", 70))
+	fmt.Printf("Total runs:        %d\n", totalRuns)
+	fmt.Printf("Successful runs:   %d\n", successCount)
+	fmt.Printf("Failed runs:       %d\n", failureCount)
+	fmt.Printf("Average score:     %.2f/100\n", averageScore)
+	fmt.Println("=" + strings.Repeat("=", 70))
 }
