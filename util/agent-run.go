@@ -252,17 +252,18 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string) (*AgentRunResu
 	result.AgentExecuted = true
 
 	if err != nil {
-		// Log stderr if available
+		// Log stderr if available (debug level to avoid leaking sensitive details at normal verbosity)
 		if len(stderr) > 0 {
-			log.Errorf("agent command stderr: %s", string(stderr))
-			result.AgentError = err.Error() + "\nstderr: " + string(stderr)
-		} else {
-			result.AgentError = err.Error()
+			log.Debugf("agent command stderr: %s", string(stderr))
 		}
 		// Log stdout if available (might contain useful info even on error)
 		if len(stdout) > 0 {
 			log.Debugf("agent command stdout: %s", string(stdout))
 		}
+
+		// Store a summarized error message without embedding full stderr
+		result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", err)
+
 		log.Errorf("agent command execution failed: %v", err)
 		return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 	}
@@ -347,6 +348,7 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string) (*Agent
 	if poFile == "" {
 		lang := cfg.DefaultLangCode
 		if lang == "" {
+			log.Errorf("default_lang_code is not configured in agent configuration")
 			return result, fmt.Errorf("default_lang_code is not configured\nHint: Provide po/XX.po on the command line or set default_lang_code in git-po-helper.yaml")
 		}
 		poFile = filepath.Join(workDir, PoDir, fmt.Sprintf("%s.po", lang))
@@ -406,17 +408,18 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string) (*Agent
 	result.AgentExecuted = true
 
 	if err != nil {
-		// Log stderr if available
+		// Log stderr if available (debug level to avoid leaking sensitive details at normal verbosity)
 		if len(stderr) > 0 {
-			log.Errorf("agent command stderr: %s", string(stderr))
-			result.AgentError = err.Error() + "\nstderr: " + string(stderr)
-		} else {
-			result.AgentError = err.Error()
+			log.Debugf("agent command stderr: %s", string(stderr))
 		}
 		// Log stdout if available (might contain useful info even on error)
 		if len(stdout) > 0 {
 			log.Debugf("agent command stdout: %s", string(stdout))
 		}
+
+		// Store a summarized error message without embedding full stderr
+		result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", err)
+
 		log.Errorf("agent command execution failed: %v", err)
 		return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 	}
