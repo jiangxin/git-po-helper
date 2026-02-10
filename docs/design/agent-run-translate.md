@@ -1,5 +1,30 @@
 # Design Document: agent-run translate/review and agent-test translate/review
 
+## Implementation Status
+
+**Status**: ✅ **COMPLETED** (translate functionality)
+
+**Implementation Date**: February 2026
+
+**Completed Steps**:
+- ✅ Step 1: Add utility functions (`CountNewEntries`, `CountFuzzyEntries`)
+- ✅ Step 2: Implement `agent-run translate` core logic
+- ✅ Step 3: Add CLI command for `agent-run translate`
+- ✅ Step 4: Implement `agent-test translate` core logic
+- ✅ Step 5: Add CLI command for `agent-test translate`
+- ✅ Step 6: Error handling and logging
+- ✅ Step 7: Documentation and configuration
+
+**Summary**:
+All core functionality for `translate` has been implemented, tested, and integrated.
+The commands `agent-run translate` and `agent-test translate` are fully functional
+and ready for use. Integration tests are included in `test/t0092-agent-run-translate.sh`.
+
+**Note**: The `review` functionality described in this document remains to be
+implemented in a future iteration.
+
+---
+
 ## 1. Original Requirements
 
 ### 1.1 Command Structure
