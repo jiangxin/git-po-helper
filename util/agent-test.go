@@ -2,7 +2,9 @@
 package util
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -26,6 +28,27 @@ type RunResult struct {
 	AfterCount          int
 	ExpectedBefore      *int
 	ExpectedAfter       *int
+}
+
+// ConfirmAgentTestExecution displays a warning and requires user confirmation before proceeding.
+// The user must explicitly type "yes" to continue, otherwise the function returns an error.
+// This is used to prevent accidental data loss when agent-test commands modify po/ directory.
+func ConfirmAgentTestExecution() error {
+	fmt.Fprintln(os.Stderr, "WARNING: This command will modify files under po/ and may cause data loss.")
+	fmt.Fprint(os.Stderr, "Are you sure you want to continue? Type 'yes' to proceed: ")
+
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read user input: %w", err)
+	}
+
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if answer != "yes" {
+		return fmt.Errorf("operation cancelled by user")
+	}
+
+	return nil
 }
 
 // CleanPoDirectory restores the po/ directory to its state in HEAD using git restore.
@@ -82,6 +105,11 @@ func CleanPoDirectory() error {
 // CmdAgentTestUpdatePot implements the agent-test update-pot command logic.
 // It runs the agent-run update-pot operation multiple times and calculates an average score.
 func CmdAgentTestUpdatePot(agentName string, runs int) error {
+	// Require user confirmation before proceeding
+	if err := ConfirmAgentTestExecution(); err != nil {
+		return err
+	}
+
 	// Load configuration
 	log.Debugf("loading agent configuration")
 	cfg, err := config.LoadAgentConfig()

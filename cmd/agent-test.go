@@ -119,6 +119,11 @@ will be displayed.`,
 				return newUserError("show-config command needs no arguments")
 			}
 
+			// Require user confirmation before proceeding
+			if err := util.ConfirmAgentTestExecution(); err != nil {
+				return err
+			}
+
 			return util.CmdAgentRunShowConfig()
 		},
 	}
