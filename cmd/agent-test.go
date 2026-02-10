@@ -13,6 +13,8 @@ type agentTestCommand struct {
 		Agent                  string
 		Runs                   int
 		DangerouslyRemovePoDir bool
+		Commit                 string
+		Since                  string
 	}
 }
 
@@ -232,6 +234,66 @@ Examples:
 	_ = viper.BindPFlag("agent-test--agent", translateCmd.Flags().Lookup("agent"))
 	_ = viper.BindPFlag("agent-test--runs", translateCmd.Flags().Lookup("runs"))
 
+	// Add review subcommand
+	reviewCmd := &cobra.Command{
+		Use:   "review [--commit commit] [--since commit] [po/XX.po]",
+		Short: "Test review operation multiple times and calculate average score",
+		Long: `Test the review operation multiple times and calculate an average score.
+
+This command runs agent-run review multiple times (default: 5, configurable
+via --runs or config file) and provides detailed results including:
+- Individual run results with validation status
+- Success/failure counts
+- Average score across all runs
+
+Review modes:
+- --commit <commit>: review the changes in the specified commit
+- --since <commit>: review changes since the specified commit
+- no --commit/--since: review changes since HEAD (local changes)
+
+Exactly one of --commit and --since may be specified.`,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Execute in root of worktree.
+			repository.ChdirProjectRoot()
+
+			if len(args) > 1 {
+				return newUserError("review command expects at most one argument: po/XX.po")
+			}
+
+			if v.O.Commit != "" && v.O.Since != "" {
+				return newUserError("review command expects only one of --commit or --since")
+			}
+
+			poFile := ""
+			if len(args) == 1 {
+				poFile = args[0]
+			}
+
+			return util.CmdAgentTestReview(v.O.Agent, poFile, v.O.Runs, v.O.DangerouslyRemovePoDir, v.O.Commit, v.O.Since)
+		},
+	}
+
+	reviewCmd.Flags().StringVar(&v.O.Agent,
+		"agent",
+		"",
+		"agent name to use (required if multiple agents are configured)")
+	reviewCmd.Flags().IntVar(&v.O.Runs,
+		"runs",
+		0,
+		"number of test runs (0 means use config file value or default to 5)")
+	reviewCmd.Flags().StringVar(&v.O.Commit,
+		"commit",
+		"",
+		"review changes in the specified commit")
+	reviewCmd.Flags().StringVar(&v.O.Since,
+		"since",
+		"",
+		"review changes since the specified commit")
+
+	_ = viper.BindPFlag("agent-test--agent", reviewCmd.Flags().Lookup("agent"))
+	_ = viper.BindPFlag("agent-test--runs", reviewCmd.Flags().Lookup("runs"))
+
 	// Add show-config subcommand
 	showConfigCmd := &cobra.Command{
 		Use:   "show-config",
@@ -269,6 +331,7 @@ will be displayed.`,
 	v.cmd.AddCommand(updatePotCmd)
 	v.cmd.AddCommand(updatePoCmd)
 	v.cmd.AddCommand(translateCmd)
+	v.cmd.AddCommand(reviewCmd)
 	v.cmd.AddCommand(showConfigCmd)
 
 	return v.cmd

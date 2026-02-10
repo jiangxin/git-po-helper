@@ -10,7 +10,9 @@ import (
 type agentRunCommand struct {
 	cmd *cobra.Command
 	O   struct {
-		Agent string
+		Agent  string
+		Commit string
+		Since  string
 	}
 }
 
@@ -187,6 +189,65 @@ Examples:
 
 	_ = viper.BindPFlag("agent-run--agent", translateCmd.Flags().Lookup("agent"))
 
+	// Add review subcommand
+	reviewCmd := &cobra.Command{
+		Use:   "review [--commit commit] [--since commit] [po/XX.po]",
+		Short: "Review translations in a po/XX.po file using an agent",
+		Long: `Review translations in a PO file using a configured agent.
+
+This command uses an agent with a configured review prompt to analyze
+translations in a PO file. You can review local changes, a single commit,
+or all changes since a given commit.
+
+If only one agent is configured, the --agent flag is optional. If multiple
+agents are configured, you must specify which agent to use with --agent.
+
+If no po/XX.po argument is given, the PO file is derived from
+default_lang_code in configuration (e.g., po/zh_CN.po).
+
+Review modes:
+- --commit <commit>: review the changes in the specified commit
+- --since <commit>: review changes since the specified commit
+- no --commit/--since: review changes since HEAD (local changes)
+
+Exactly one of --commit and --since may be specified.`,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Execute in root of worktree.
+			repository.ChdirProjectRoot()
+
+			if len(args) > 1 {
+				return newUserError("review command expects at most one argument: po/XX.po")
+			}
+
+			if v.O.Commit != "" && v.O.Since != "" {
+				return newUserError("review command expects only one of --commit or --since")
+			}
+
+			poFile := ""
+			if len(args) == 1 {
+				poFile = args[0]
+			}
+
+			return util.CmdAgentRunReview(v.O.Agent, poFile, v.O.Commit, v.O.Since)
+		},
+	}
+
+	reviewCmd.Flags().StringVar(&v.O.Agent,
+		"agent",
+		"",
+		"agent name to use (required if multiple agents are configured)")
+	reviewCmd.Flags().StringVar(&v.O.Commit,
+		"commit",
+		"",
+		"review changes in the specified commit")
+	reviewCmd.Flags().StringVar(&v.O.Since,
+		"since",
+		"",
+		"review changes since the specified commit")
+
+	_ = viper.BindPFlag("agent-run--agent", reviewCmd.Flags().Lookup("agent"))
+
 	// Add show-config subcommand
 	showConfigCmd := &cobra.Command{
 		Use:   "show-config",
@@ -219,6 +280,7 @@ will be displayed.`,
 	v.cmd.AddCommand(updatePotCmd)
 	v.cmd.AddCommand(updatePoCmd)
 	v.cmd.AddCommand(translateCmd)
+	v.cmd.AddCommand(reviewCmd)
 	v.cmd.AddCommand(showConfigCmd)
 
 	return v.cmd
