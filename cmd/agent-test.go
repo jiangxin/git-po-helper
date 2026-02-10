@@ -236,7 +236,7 @@ Examples:
 
 	// Add review subcommand
 	reviewCmd := &cobra.Command{
-		Use:   "review [--commit commit] [--since commit] [po/XX.po]",
+		Use:   "review [po/XX.po]",
 		Short: "Test review operation multiple times and calculate average score",
 		Long: `Test the review operation multiple times and calculate an average score.
 
