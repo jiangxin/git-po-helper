@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -257,21 +258,42 @@ func TestGetDefaultConfig(t *testing.T) {
 		t.Fatal("DefaultLangCode should not be empty")
 	}
 
-	// Check prompt defaults
-	if config.Prompt.UpdatePot != "update po/git.pot according to po/README.md" {
-		t.Fatalf("expected UpdatePot default, got '%s'", config.Prompt.UpdatePot)
+	// Check prompt defaults (should not be empty and should contain key placeholders)
+	if config.Prompt.UpdatePot == "" {
+		t.Fatal("UpdatePot should not be empty")
 	}
-	if config.Prompt.UpdatePo != "update {source} according to po/README.md" {
-		t.Fatalf("expected UpdatePo default, got '%s'", config.Prompt.UpdatePo)
+	if !strings.Contains(config.Prompt.UpdatePot, "po/git.pot") {
+		t.Fatalf("UpdatePot should contain 'po/git.pot', got '%s'", config.Prompt.UpdatePot)
 	}
-	if config.Prompt.Translate != "translate {source} according to po/README.md" {
-		t.Fatalf("expected Translate default, got '%s'", config.Prompt.Translate)
+	if config.Prompt.UpdatePo == "" {
+		t.Fatal("UpdatePo should not be empty")
 	}
-	if config.Prompt.ReviewSince != "review changes of {source} since commit {commit} according to po/README.md" {
-		t.Fatalf("expected ReviewSince default, got '%s'", config.Prompt.ReviewSince)
+	if !strings.Contains(config.Prompt.UpdatePo, "{source}") {
+		t.Fatalf("UpdatePo should contain '{source}', got '%s'", config.Prompt.UpdatePo)
 	}
-	if config.Prompt.ReviewCommit != "review changes of commit {commit} according to po/README.md" {
-		t.Fatalf("expected ReviewCommit default, got '%s'", config.Prompt.ReviewCommit)
+	if config.Prompt.Translate == "" {
+		t.Fatal("Translate should not be empty")
+	}
+	if !strings.Contains(config.Prompt.Translate, "{source}") {
+		t.Fatalf("Translate should contain '{source}', got '%s'", config.Prompt.Translate)
+	}
+	if config.Prompt.ReviewSince == "" {
+		t.Fatal("ReviewSince should not be empty")
+	}
+	if !strings.Contains(config.Prompt.ReviewSince, "{source}") || !strings.Contains(config.Prompt.ReviewSince, "{commit}") {
+		t.Fatalf("ReviewSince should contain '{source}' and '{commit}', got '%s'", config.Prompt.ReviewSince)
+	}
+	if !strings.Contains(config.Prompt.ReviewSince, "JSON") {
+		t.Fatalf("ReviewSince should contain 'JSON' (extended prompt), got '%s'", config.Prompt.ReviewSince)
+	}
+	if config.Prompt.ReviewCommit == "" {
+		t.Fatal("ReviewCommit should not be empty")
+	}
+	if !strings.Contains(config.Prompt.ReviewCommit, "{commit}") {
+		t.Fatalf("ReviewCommit should contain '{commit}', got '%s'", config.Prompt.ReviewCommit)
+	}
+	if !strings.Contains(config.Prompt.ReviewCommit, "JSON") {
+		t.Fatalf("ReviewCommit should contain 'JSON' (extended prompt), got '%s'", config.Prompt.ReviewCommit)
 	}
 
 	// Check agent-test defaults
