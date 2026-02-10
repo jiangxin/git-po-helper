@@ -37,9 +37,10 @@ type AgentRunResult struct {
 	Score                 int // 0-100, calculated based on validations
 
 	// Review-specific fields
-	ReviewJSON     *ReviewJSONResult `json:"review_json,omitempty"`
-	ReviewScore    int               `json:"review_score,omitempty"`
-	ReviewJSONPath string            `json:"review_json_path,omitempty"`
+	ReviewJSON       *ReviewJSONResult `json:"review_json,omitempty"`
+	ReviewScore      int               `json:"review_score,omitempty"`
+	ReviewJSONPath   string            `json:"review_json_path,omitempty"`
+	ReviewedFilePath string            `json:"reviewed_file_path,omitempty"` // Final reviewed PO file path
 
 	// Agent output (for saving logs in agent-test)
 	AgentStdout []byte `json:"-"`
@@ -1017,9 +1018,455 @@ func CmdAgentRunTranslate(agentName, poFile string) error {
 	return nil
 }
 
-// RunAgentReview executes a single agent-run review operation.
-// It determines the review mode, executes the agent command, parses JSON output,
-// saves the JSON result, and calculates the review score.
+// PrepareReviewData prepares data for review by creating orig.po, new.po, and review-input.po files.
+// It gets the original file from git, sorts both files by msgid, and extracts differences.
+// Returns paths to orig.po, new.po, and review-input.po files.
+func PrepareReviewData(poFile, commit, since string) (origPath, newPath, reviewInputPath string, err error) {
+	workDir := repository.WorkDir()
+	poFileName := filepath.Base(poFile)
+	langCode := strings.TrimSuffix(poFileName, ".po")
+	if langCode == "" || langCode == poFileName {
+		return "", "", "", fmt.Errorf("invalid PO file path: %s (expected format: po/XX.po)", poFile)
+	}
+
+	poDir := filepath.Join(workDir, PoDir)
+	origPath = filepath.Join(poDir, fmt.Sprintf("%s-orig.po", langCode))
+	newPath = filepath.Join(poDir, fmt.Sprintf("%s-new.po", langCode))
+	reviewInputPath = filepath.Join(poDir, fmt.Sprintf("%s-review-input.po", langCode))
+
+	log.Debugf("preparing review data: orig=%s, new=%s, review-input=%s", origPath, newPath, reviewInputPath)
+
+	// Determine the base commit for comparison and the new file source
+	var baseCommit string
+	var newFileSource string
+	if commit != "" {
+		// For commit mode: orig is parent commit, new is the specified commit
+		cmd := exec.Command("git", "rev-parse", commit+"^")
+		cmd.Dir = workDir
+		output, err := cmd.Output()
+		if err != nil {
+			// If commit has no parent (root commit), use empty tree
+			baseCommit = "4b825dc642cb6eb9a060e54bf8d69288fbee4904" // Empty tree
+		} else {
+			baseCommit = strings.TrimSpace(string(output))
+		}
+		newFileSource = commit
+		log.Infof("commit mode: orig from %s, new from %s", baseCommit, commit)
+	} else if since != "" {
+		// Since mode: orig is since commit, new is current file
+		baseCommit = since
+		newFileSource = "" // Use current file
+		log.Infof("since mode: orig from %s, new from current file", since)
+	} else {
+		// Default mode: orig is HEAD, new is current file
+		baseCommit = "HEAD"
+		newFileSource = "" // Use current file
+		log.Infof("default mode: orig from HEAD, new from current file")
+	}
+
+	// Get original file from git
+	log.Infof("getting original file from commit: %s", baseCommit)
+	origFileRevision := FileRevision{
+		Revision: baseCommit,
+		File:     poFile,
+	}
+	if err := checkoutTmpfile(&origFileRevision); err != nil {
+		// If file doesn't exist in that commit, create empty file
+		log.Debugf("file not found in commit %s, creating empty orig file", baseCommit)
+		if err := os.WriteFile(origPath, []byte{}, 0644); err != nil {
+			return "", "", "", fmt.Errorf("failed to create empty orig file: %w", err)
+		}
+	} else {
+		// Copy tmpfile to orig.po
+		origData, err := os.ReadFile(origFileRevision.Tmpfile)
+		if err != nil {
+			os.Remove(origFileRevision.Tmpfile)
+			return "", "", "", fmt.Errorf("failed to read orig tmpfile: %w", err)
+		}
+		if err := os.WriteFile(origPath, origData, 0644); err != nil {
+			os.Remove(origFileRevision.Tmpfile)
+			return "", "", "", fmt.Errorf("failed to write orig file: %w", err)
+		}
+		os.Remove(origFileRevision.Tmpfile)
+	}
+
+	// Get new file (either from git commit or current file)
+	if newFileSource != "" {
+		// Get file from specified commit
+		log.Debugf("getting new file from commit: %s", newFileSource)
+		newFileRevision := FileRevision{
+			Revision: newFileSource,
+			File:     poFile,
+		}
+		if err := checkoutTmpfile(&newFileRevision); err != nil {
+			return "", "", "", fmt.Errorf("failed to get new file from commit %s: %w", newFileSource, err)
+		}
+		newData, err := os.ReadFile(newFileRevision.Tmpfile)
+		if err != nil {
+			os.Remove(newFileRevision.Tmpfile)
+			return "", "", "", fmt.Errorf("failed to read new tmpfile: %w", err)
+		}
+		if err := os.WriteFile(newPath, newData, 0644); err != nil {
+			os.Remove(newFileRevision.Tmpfile)
+			return "", "", "", fmt.Errorf("failed to write new file: %w", err)
+		}
+		os.Remove(newFileRevision.Tmpfile)
+	} else {
+		// Copy current file to new.po
+		log.Debugf("copying current file to new.po")
+		newData, err := os.ReadFile(poFile)
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to read current PO file: %w", err)
+		}
+		if err := os.WriteFile(newPath, newData, 0644); err != nil {
+			return "", "", "", fmt.Errorf("failed to write new file: %w", err)
+		}
+	}
+
+	// Sort both files by msgid using msgcat
+	log.Debugf("sorting files by msgid")
+	origSortedPath := filepath.Join(poDir, fmt.Sprintf("%s-orig-sorted.po", langCode))
+	newSortedPath := filepath.Join(poDir, fmt.Sprintf("%s-new-sorted.po", langCode))
+	defer func() {
+		os.Remove(origSortedPath)
+		os.Remove(newSortedPath)
+	}()
+
+	// Sort orig file
+	cmd := exec.Command("msgcat", "--sort-by-file", origPath, "-o", origSortedPath)
+	cmd.Dir = workDir
+	if err := cmd.Run(); err != nil {
+		// If msgcat fails (e.g., empty file), just copy the file
+		log.Debugf("msgcat sort failed for orig, copying as-is: %v", err)
+		if err := copyFile(origPath, origSortedPath); err != nil {
+			return "", "", "", fmt.Errorf("failed to copy orig file: %w", err)
+		}
+	}
+
+	// Sort new file
+	cmd = exec.Command("msgcat", "--sort-by-file", newPath, "-o", newSortedPath)
+	cmd.Dir = workDir
+	if err := cmd.Run(); err != nil {
+		return "", "", "", fmt.Errorf("failed to sort new file: %w", err)
+	}
+
+	// Extract differences: use msgcmp to find entries that are different or new
+	// We'll use a simpler approach: extract entries from new that don't match orig
+	log.Debugf("extracting differences to review-input.po")
+	if err := extractReviewInput(origSortedPath, newSortedPath, reviewInputPath); err != nil {
+		return "", "", "", fmt.Errorf("failed to extract review input: %w", err)
+	}
+
+	log.Infof("review data prepared: review-input=%s", reviewInputPath)
+	return origPath, newPath, reviewInputPath, nil
+}
+
+// copyFile copies a file from src to dst.
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0644)
+}
+
+// extractReviewInput extracts entries from new.po that are different or new compared to orig.po.
+// It copies the header and first empty msgid entry from new.po, then adds all entries
+// that are new or different in new.po.
+func extractReviewInput(origPath, newPath, outputPath string) error {
+	// Read both files
+	origData, err := os.ReadFile(origPath)
+	if err != nil {
+		return fmt.Errorf("failed to read orig file: %w", err)
+	}
+	newData, err := os.ReadFile(newPath)
+	if err != nil {
+		return fmt.Errorf("failed to read new file: %w", err)
+	}
+
+	// Parse entries from both files
+	origEntries, _, err := parsePoEntries(origData)
+	if err != nil {
+		return fmt.Errorf("failed to parse orig file: %w", err)
+	}
+	newEntries, newHeader, err := parsePoEntries(newData)
+	if err != nil {
+		return fmt.Errorf("failed to parse new file: %w", err)
+	}
+
+	// Create a map of orig entries by msgid for quick lookup
+	origMap := make(map[string]*PoEntry)
+	for _, entry := range origEntries {
+		origMap[entry.MsgID] = entry
+	}
+
+	// Extract entries that are new or different
+	var reviewEntries []*PoEntry
+	for _, newEntry := range newEntries {
+		origEntry, exists := origMap[newEntry.MsgID]
+		if !exists {
+			// New entry
+			reviewEntries = append(reviewEntries, newEntry)
+		} else if !entriesEqual(origEntry, newEntry) {
+			// Different entry (msgid or msgstr changed)
+			reviewEntries = append(reviewEntries, newEntry)
+		}
+		// If entry exists and is equal, skip it
+	}
+
+	// Write review-input.po with header and review entries
+	return writeReviewInputPo(outputPath, newHeader, reviewEntries)
+}
+
+// PoEntry represents a single PO file entry.
+type PoEntry struct {
+	Comments     []string
+	MsgID        string
+	MsgStr       string
+	MsgIDPlural  string
+	MsgStrPlural []string
+	RawLines     []string // Original lines for the entry
+}
+
+// parsePoEntries parses PO file entries and returns entries and header.
+func parsePoEntries(data []byte) (entries []*PoEntry, header []string, err error) {
+	lines := strings.Split(string(data), "\n")
+	var currentEntry *PoEntry
+	var inHeader = true
+	var headerLines []string
+	var entryLines []string
+	var msgidValue strings.Builder
+	var msgstrValue strings.Builder
+	var msgidPluralValue strings.Builder
+	var msgstrPluralValues []strings.Builder
+	var inMsgid, inMsgstr, inMsgidPlural bool
+	var currentPluralIndex int = -1
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Check for header (empty msgid entry)
+		if inHeader && strings.HasPrefix(trimmed, "msgid ") {
+			value := strings.TrimPrefix(trimmed, "msgid ")
+			value = strings.Trim(value, `"`)
+			if value == "" {
+				// This is the header entry
+				inHeader = true
+				headerLines = append(headerLines, line)
+				entryLines = append(entryLines, line)
+				// Continue to collect header
+				continue
+			}
+		}
+
+		// Check for end of header (empty msgstr after empty msgid)
+		if inHeader && strings.HasPrefix(trimmed, "msgstr ") {
+			value := strings.TrimPrefix(trimmed, "msgstr ")
+			value = strings.Trim(value, `"`)
+			if msgidValue.Len() == 0 && value == "" {
+				// End of header
+				headerLines = append(headerLines, line)
+				inHeader = false
+				msgidValue.Reset()
+				msgstrValue.Reset()
+				continue
+			}
+		}
+
+		// Collect header lines
+		if inHeader {
+			headerLines = append(headerLines, line)
+			continue
+		}
+
+		// Parse entry
+		if strings.HasPrefix(trimmed, "#") {
+			// Comment line
+			if currentEntry == nil {
+				currentEntry = &PoEntry{}
+				entryLines = []string{}
+			}
+			currentEntry.Comments = append(currentEntry.Comments, line)
+			entryLines = append(entryLines, line)
+		} else if strings.HasPrefix(trimmed, "msgid ") {
+			// Start of new entry
+			if currentEntry != nil && msgidValue.Len() > 0 {
+				// Save previous entry
+				currentEntry.MsgID = msgidValue.String()
+				currentEntry.MsgStr = msgstrValue.String()
+				currentEntry.RawLines = entryLines
+				entries = append(entries, currentEntry)
+			}
+			// Start new entry
+			currentEntry = &PoEntry{}
+			entryLines = []string{}
+			msgidValue.Reset()
+			msgstrValue.Reset()
+			msgidPluralValue.Reset()
+			msgstrPluralValues = []strings.Builder{}
+			inMsgid = true
+			inMsgstr = false
+			inMsgidPlural = false
+			currentPluralIndex = -1
+
+			value := strings.TrimPrefix(trimmed, "msgid ")
+			value = strings.Trim(value, `"`)
+			msgidValue.WriteString(value)
+			entryLines = append(entryLines, line)
+		} else if strings.HasPrefix(trimmed, "msgid_plural ") {
+			inMsgid = false
+			inMsgidPlural = true
+			value := strings.TrimPrefix(trimmed, "msgid_plural ")
+			value = strings.Trim(value, `"`)
+			msgidPluralValue.WriteString(value)
+			entryLines = append(entryLines, line)
+		} else if strings.HasPrefix(trimmed, "msgstr[") {
+			// Plural form
+			inMsgid = false
+			inMsgidPlural = false
+			inMsgstr = true
+			// Extract index
+			idxStr := strings.TrimPrefix(trimmed, "msgstr[")
+			idxStr = strings.Split(idxStr, "]")[0]
+			var idx int
+			fmt.Sscanf(idxStr, "%d", &idx)
+			// Extend slice if needed
+			for len(msgstrPluralValues) <= idx {
+				msgstrPluralValues = append(msgstrPluralValues, strings.Builder{})
+			}
+			currentPluralIndex = idx
+			value := strings.TrimPrefix(trimmed, fmt.Sprintf("msgstr[%d] ", idx))
+			value = strings.Trim(value, `"`)
+			msgstrPluralValues[idx].WriteString(value)
+			entryLines = append(entryLines, line)
+		} else if strings.HasPrefix(trimmed, "msgstr ") {
+			inMsgid = false
+			inMsgidPlural = false
+			inMsgstr = true
+			value := strings.TrimPrefix(trimmed, "msgstr ")
+			value = strings.Trim(value, `"`)
+			msgstrValue.WriteString(value)
+			entryLines = append(entryLines, line)
+		} else if strings.HasPrefix(trimmed, `"`) && (inMsgid || inMsgstr || inMsgidPlural) {
+			// Continuation line
+			value := strings.Trim(trimmed, `"`)
+			if inMsgid {
+				msgidValue.WriteString(value)
+			} else if inMsgidPlural {
+				msgidPluralValue.WriteString(value)
+			} else if inMsgstr {
+				if currentPluralIndex >= 0 {
+					msgstrPluralValues[currentPluralIndex].WriteString(value)
+				} else {
+					msgstrValue.WriteString(value)
+				}
+			}
+			entryLines = append(entryLines, line)
+		} else if trimmed == "" {
+			// Empty line - end of entry (only if we have a current entry)
+			if currentEntry != nil && msgidValue.Len() > 0 {
+				currentEntry.MsgID = msgidValue.String()
+				currentEntry.MsgStr = msgstrValue.String()
+				if msgidPluralValue.Len() > 0 {
+					currentEntry.MsgIDPlural = msgidPluralValue.String()
+					currentEntry.MsgStrPlural = make([]string, len(msgstrPluralValues))
+					for i, b := range msgstrPluralValues {
+						currentEntry.MsgStrPlural[i] = b.String()
+					}
+				}
+				currentEntry.RawLines = entryLines
+				entries = append(entries, currentEntry)
+			}
+			currentEntry = nil
+			entryLines = []string{}
+			msgidValue.Reset()
+			msgstrValue.Reset()
+			msgidPluralValue.Reset()
+			msgstrPluralValues = []strings.Builder{}
+			inMsgid = false
+			inMsgstr = false
+			inMsgidPlural = false
+			currentPluralIndex = -1
+		} else {
+			// Other lines (continuation, etc.)
+			if currentEntry != nil {
+				entryLines = append(entryLines, line)
+			} else if !inHeader {
+				// If we're not in header and not in an entry, this might be a continuation
+				// of a previous entry or a new entry starting
+				entryLines = append(entryLines, line)
+			}
+		}
+	}
+
+	// Handle last entry
+	if currentEntry != nil && msgidValue.Len() > 0 {
+		currentEntry.MsgID = msgidValue.String()
+		currentEntry.MsgStr = msgstrValue.String()
+		if msgidPluralValue.Len() > 0 {
+			currentEntry.MsgIDPlural = msgidPluralValue.String()
+			currentEntry.MsgStrPlural = make([]string, len(msgstrPluralValues))
+			for i, b := range msgstrPluralValues {
+				currentEntry.MsgStrPlural[i] = b.String()
+			}
+		}
+		currentEntry.RawLines = entryLines
+		entries = append(entries, currentEntry)
+	}
+
+	return entries, headerLines, nil
+}
+
+// entriesEqual checks if two PO entries are equal (same msgid and msgstr).
+func entriesEqual(e1, e2 *PoEntry) bool {
+	if e1.MsgID != e2.MsgID {
+		return false
+	}
+	if e1.MsgStr != e2.MsgStr {
+		return false
+	}
+	if e1.MsgIDPlural != e2.MsgIDPlural {
+		return false
+	}
+	if len(e1.MsgStrPlural) != len(e2.MsgStrPlural) {
+		return false
+	}
+	for i := range e1.MsgStrPlural {
+		if e1.MsgStrPlural[i] != e2.MsgStrPlural[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// writeReviewInputPo writes the review input PO file with header and review entries.
+func writeReviewInputPo(outputPath string, header []string, entries []*PoEntry) error {
+	var content strings.Builder
+
+	// Write header
+	for _, line := range header {
+		content.WriteString(line)
+		content.WriteString("\n")
+	}
+
+	// Write entries
+	for _, entry := range entries {
+		for _, line := range entry.RawLines {
+			content.WriteString(line)
+			content.WriteString("\n")
+		}
+		content.WriteString("\n")
+	}
+
+	return os.WriteFile(outputPath, []byte(content.String()), 0644)
+}
+
+// RunAgentReview executes a single agent-run review operation with the new workflow:
+// 1. Prepare review data (orig.po, new.po, review-input.po)
+// 2. Copy review-input.po to review-output.po
+// 3. Execute agent to review and modify review-output.po
+// 4. Merge review-output.po with new.po using msgcat
+// 5. Parse JSON from agent output and calculate score
 // Returns a result structure with detailed information.
 func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since string) (*AgentRunResult, error) {
 	result := &AgentRunResult{
@@ -1057,52 +1504,46 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 		return result, fmt.Errorf("PO file does not exist: %s\nHint: Ensure the PO file exists before running review", poFile)
 	}
 
-	// Determine review mode and get prompt
-	var prompt string
-	var commitID string
-	var sourcePath string
+	// Step 1: Prepare review data
+	log.Infof("preparing review data")
+	origPath, newPath, reviewInputPath, err := PrepareReviewData(poFile, commit, since)
+	if err != nil {
+		return result, fmt.Errorf("failed to prepare review data: %w", err)
+	}
+	defer func() {
+		// Clean up temporary files
+		os.Remove(origPath)
+		os.Remove(newPath)
+	}()
 
-	// Get relative path for source placeholder (e.g., "po/XX.po")
-	if rel, err := filepath.Rel(workDir, poFile); err == nil && rel != "" && rel != "." {
-		sourcePath = filepath.ToSlash(rel)
-	} else {
-		sourcePath = poFile
+	// Step 2: Copy review-input.po to review-output.po
+	poFileName := filepath.Base(poFile)
+	langCode := strings.TrimSuffix(poFileName, ".po")
+	poDir := filepath.Join(workDir, PoDir)
+	reviewOutputPath := filepath.Join(poDir, fmt.Sprintf("%s-review-output.po", langCode))
+	reviewedPath := filepath.Join(poDir, fmt.Sprintf("%s-reviewed.po", langCode))
+
+	log.Debugf("copying review-input.po to review-output.po")
+	if err := copyFile(reviewInputPath, reviewOutputPath); err != nil {
+		return result, fmt.Errorf("failed to copy review-input to review-output: %w", err)
 	}
 
-	if commit != "" {
-		// Commit mode: review changes in a specific commit
-		commitID = commit
-		prompt = cfg.Prompt.ReviewCommit
-		if prompt == "" {
-			log.Error("prompt.review_commit is not configured")
-			return result, fmt.Errorf("prompt.review_commit is not configured\nHint: Add 'prompt.review_commit' to git-po-helper.yaml")
-		}
-		log.Debugf("using review_commit prompt: %s", prompt)
-		log.Infof("reviewing changes in commit: %s", commit)
-	} else if since != "" {
-		// Since mode: review changes since a specific commit
-		commitID = since
-		prompt = cfg.Prompt.ReviewSince
-		if prompt == "" {
-			log.Error("prompt.review_since is not configured")
-			return result, fmt.Errorf("prompt.review_since is not configured\nHint: Add 'prompt.review_since' to git-po-helper.yaml")
-		}
-		log.Debugf("using review_since prompt: %s", prompt)
-		log.Infof("reviewing changes since commit: %s", since)
-	} else {
-		// Default mode: review local changes (since HEAD)
-		commitID = "HEAD"
-		prompt = cfg.Prompt.ReviewSince
-		if prompt == "" {
-			log.Error("prompt.review_since is not configured")
-			return result, fmt.Errorf("prompt.review_since is not configured\nHint: Add 'prompt.review_since' to git-po-helper.yaml")
-		}
-		log.Debugf("using review_since prompt (default mode): %s", prompt)
-		log.Infof("reviewing local changes (since HEAD)")
+	// Step 3: Get prompt.review and execute agent
+	prompt := cfg.Prompt.Review
+	if prompt == "" {
+		log.Error("prompt.review is not configured")
+		return result, fmt.Errorf("prompt.review is not configured\nHint: Add 'prompt.review' to git-po-helper.yaml")
 	}
+
+	// Get relative path for source placeholder
+	reviewOutputRelPath := filepath.Join(PoDir, fmt.Sprintf("%s-review-output.po", langCode))
+	sourcePath := filepath.ToSlash(reviewOutputRelPath)
+
+	log.Debugf("using review prompt: %s", prompt)
+	log.Infof("reviewing file: %s", reviewOutputPath)
 
 	// Build agent command with placeholders replaced
-	agentCmd := BuildAgentCommand(selectedAgent, prompt, sourcePath, commitID)
+	agentCmd := BuildAgentCommand(selectedAgent, prompt, sourcePath, "")
 
 	// Execute agent command
 	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
@@ -1135,6 +1576,16 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	if len(stderr) > 0 {
 		log.Debugf("agent command stderr: %s", string(stderr))
 	}
+
+	// Step 4: Merge review-output.po with new.po using msgcat --use-first
+	log.Infof("merging review-output.po with new.po using msgcat")
+	cmd := exec.Command("msgcat", "--use-first", reviewOutputPath, newPath, "-o", reviewedPath)
+	cmd.Dir = workDir
+	if err := cmd.Run(); err != nil {
+		log.Errorf("failed to merge files with msgcat: %v", err)
+		return result, fmt.Errorf("failed to merge review-output.po with new.po: %w\nHint: Check that msgcat is available and files are valid", err)
+	}
+	log.Debugf("merged file saved to: %s", reviewedPath)
 
 	// Extract JSON from agent output
 	log.Infof("extracting JSON from agent output")
@@ -1193,9 +1644,10 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	}
 	result.ReviewScore = reviewScore
 	result.Score = reviewScore
+	result.ReviewedFilePath = reviewedPath
 
-	log.Infof("review completed successfully (score: %d/100, total entries: %d, issues: %d)",
-		reviewScore, reviewJSON.TotalEntries, len(reviewJSON.Issues))
+	log.Infof("review completed successfully (score: %d/100, total entries: %d, issues: %d, reviewed file: %s)",
+		reviewScore, reviewJSON.TotalEntries, len(reviewJSON.Issues), reviewedPath)
 
 	return result, nil
 }
@@ -1257,6 +1709,9 @@ func CmdAgentRunReview(agentName, poFile, commit, since string) error {
 
 		if result.ReviewJSONPath != "" {
 			fmt.Printf("\n  JSON saved to: %s\n", result.ReviewJSONPath)
+		}
+		if result.ReviewedFilePath != "" {
+			fmt.Printf("  Reviewed file: %s\n", result.ReviewedFilePath)
 		}
 	}
 

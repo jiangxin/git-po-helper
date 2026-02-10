@@ -802,7 +802,12 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 		}
 
 		// Save review results to output directory (ignore errors)
-		if err := SaveReviewResults(agentKey, runNum, poFile, agentResult.ReviewJSONPath, agentResult.AgentStdout, agentResult.AgentStderr); err != nil {
+		// Use reviewed.po file if available, otherwise use original poFile
+		reviewedFile := agentResult.ReviewedFilePath
+		if reviewedFile == "" {
+			reviewedFile = poFile
+		}
+		if err := SaveReviewResults(agentKey, runNum, reviewedFile, agentResult.ReviewJSONPath, agentResult.AgentStdout, agentResult.AgentStderr); err != nil {
 			log.Warnf("run %d: failed to save review results: %v", runNum, err)
 			// Continue even if saving results fails
 		}

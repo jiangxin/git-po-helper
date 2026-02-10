@@ -29,6 +29,9 @@ var promptReviewSince string
 //go:embed prompts/review_commit.txt
 var promptReviewCommit string
 
+//go:embed prompts/review.txt
+var promptReview string
+
 // AgentConfig holds the complete agent configuration.
 type AgentConfig struct {
 	DefaultLangCode string           `yaml:"default_lang_code"`
@@ -44,6 +47,7 @@ type PromptConfig struct {
 	Translate    string `yaml:"translate"`
 	ReviewSince  string `yaml:"review_since"`
 	ReviewCommit string `yaml:"review_commit"`
+	Review       string `yaml:"review"`
 }
 
 // AgentTestConfig holds configuration for agent-test command.
@@ -128,6 +132,7 @@ func getDefaultConfig() *AgentConfig {
 			Translate:    loadEmbeddedPrompt(promptTranslate),
 			ReviewSince:  loadEmbeddedPrompt(promptReviewSince),
 			ReviewCommit: loadEmbeddedPrompt(promptReviewCommit),
+			Review:       loadEmbeddedPrompt(promptReview),
 		},
 		AgentTest: AgentTestConfig{
 			Runs: &defaultRuns,
@@ -234,6 +239,9 @@ func applyDefaults(cfg *AgentConfig) {
 	if cfg.Prompt.ReviewCommit == "" {
 		cfg.Prompt.ReviewCommit = defaultConfig.Prompt.ReviewCommit
 	}
+	if cfg.Prompt.Review == "" {
+		cfg.Prompt.Review = defaultConfig.Prompt.Review
+	}
 
 	// Apply agent-test defaults if not set
 	if cfg.AgentTest.Runs == nil {
@@ -305,6 +313,9 @@ func mergeConfigs(baseConfig, repoConfig *AgentConfig) *AgentConfig {
 		}
 		if repoConfig.Prompt.ReviewCommit != "" {
 			result.Prompt.ReviewCommit = repoConfig.Prompt.ReviewCommit
+		}
+		if repoConfig.Prompt.Review != "" {
+			result.Prompt.Review = repoConfig.Prompt.Review
 		}
 		// Merge AgentTest config (pointer fields need special handling)
 		if repoConfig.AgentTest.Runs != nil {

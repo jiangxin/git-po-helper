@@ -1,0 +1,95 @@
+Review and improve the translation quality in `{source}` according to `po/README.md`.
+
+You need to review all translation entries in the file, identify issues, and directly modify the PO file to fix them. After reviewing, output a JSON summary of the issues found.
+
+## Review Process
+
+1. Read the PO file `{source}` carefully
+2. Review each translation entry for:
+   - Terminology accuracy
+   - Consistency with other translations
+   - Style and readability
+   - Correctness of meaning
+3. **Directly modify the PO file** to fix issues you find:
+   - Update msgstr values for better translations
+   - Fix terminology errors
+   - Improve consistency
+   - Refine style
+4. After modifying the file, output a JSON summary of all issues you found and fixed
+
+## Output Format
+
+After modifying the PO file, output a JSON object with the following structure:
+- "total_entries": Total number of translation entries reviewed
+- "issues": Array of review issues, each containing:
+  - "msgid": Original message ID
+  - "msgstr": Translated message string (original, before your fix)
+  - "score": Issue score (0 = critical/must fix, 1 = major/shoud fix, 2 = minor/needs adjustment, 3 = perfect)
+  - "description": Description of the issue
+  - "suggestion": Suggested improvement (or the fixed translation)
+
+## Scoring Guidelines
+
+### Score 0 - Critical (Must Fix Immediately)
+**Broken translations that cause serious problems, and must fix before any release:**
+- Incorrect meaning or contradicts the original
+- Missing translations or unresolved fuzzy markers
+- Completely unrelated content
+
+### Score 1 - Major (Should Fix)
+**Significant issues affecting usability, and should fix before release:**
+- **Placeholders:** Variables (`%s`, `{name}`, `$1`) not preserved
+- **Technical content:** Code, paths, commands, or brand names incorrectly translated
+- **Terminology:** Wrong technical or domain-specific terms
+- **Clarity:** Vague or confusing translations
+
+### Score 2 - Minor (Recommended to Improve)
+**Quality issues that don't break functionality, and can be improved in future updates:**
+- **Consistency:** Inconsistent terminology or phrasing
+- **Style:** Awkward or non-idiomatic expressions
+- **Grammar:** Minor grammatical or fluency issues
+- **Localization:** Plural forms, gender, or cultural adaptations
+
+### Score 3 - Perfect (No Action Needed)
+**High-quality translation with no issues, and ready for production:**
+- Accurate and faithful to the original
+- Natural and idiomatic
+- Technically correct
+- Consistent and well-formatted
+
+## Example Output
+
+{
+  "total_entries": 2592,
+  "issues": [
+    {
+      "msgid": "commit",
+      "msgstr": "承诺",
+      "score": 0,
+      "description": "严重错误：偏离业务背景",
+      "suggestion": "提交"
+    },
+    {
+      "msgid": "repository",
+      "msgstr": "版本库",
+      "score": 2,
+      "description": "一致性问题：其他地方使用'仓库'",
+      "suggestion": "仓库"
+    },
+    {
+      "msgid": "The file has been modified",
+      "msgstr": "文件已被修改了",
+      "score": 2,
+      "description": "风格问题：表达冗余",
+      "suggestion": "文件已修改"
+    }
+  ]
+}
+
+## Instructions
+
+1. **First, read and modify the PO file {source} directly** - fix all issues you find
+2. **Then, output only the JSON object** - no additional text before or after
+3. Include all entries reviewed in total_entries count
+4. Only include entries with issues in the issues array (perfect entries with score 3 should not be included)
+5. The "suggestion" field should contain the improved translation (which you've already applied to the file)
