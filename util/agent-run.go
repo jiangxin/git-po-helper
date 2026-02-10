@@ -517,6 +517,40 @@ func CmdAgentRunUpdatePot(agentName string) error {
 	return nil
 }
 
+// CmdAgentRunUpdatePo implements the agent-run update-po command logic.
+// It loads configuration and calls RunAgentUpdatePo, then handles errors appropriately.
+func CmdAgentRunUpdatePo(agentName, poFile string) error {
+	// Load configuration
+	log.Debugf("loading agent configuration")
+	cfg, err := config.LoadAgentConfig()
+	if err != nil {
+		log.Errorf("failed to load agent configuration: %v", err)
+		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
+	}
+
+	result, err := RunAgentUpdatePo(cfg, agentName, poFile)
+	if err != nil {
+		return err
+	}
+
+	// For agent-run, we require all validations to pass
+	if !result.PreValidationPass {
+		return fmt.Errorf("pre-validation failed: %s", result.PreValidationError)
+	}
+	if !result.AgentSuccess {
+		return fmt.Errorf("agent execution failed: %s", result.AgentError)
+	}
+	if cfg.AgentTest.PoEntriesAfterUpdate != nil && *cfg.AgentTest.PoEntriesAfterUpdate != 0 && !result.PostValidationPass {
+		return fmt.Errorf("post-validation failed: %s", result.PostValidationError)
+	}
+	if result.SyntaxValidationError != "" {
+		return fmt.Errorf("file validation failed: %s\nHint: Check the PO file syntax using 'msgfmt --check-format'", result.SyntaxValidationError)
+	}
+
+	log.Infof("agent-run update-po completed successfully")
+	return nil
+}
+
 // CmdAgentRunShowConfig displays the current agent configuration in YAML format.
 func CmdAgentRunShowConfig() error {
 	// Load configuration

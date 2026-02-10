@@ -74,6 +74,61 @@ Examples:
 
 	_ = viper.BindPFlag("agent-run--agent", updatePotCmd.Flags().Lookup("agent"))
 
+	// Add update-po subcommand
+	updatePoCmd := &cobra.Command{
+		Use:   "update-po [po/XX.po]",
+		Short: "Update a po/XX.po file using an agent",
+		Long: `Update a specific po/XX.po file using a configured agent.
+
+This command uses an agent with a configured prompt to update the target
+PO file according to po/README.md. The agent command and prompt are
+specified in the git-po-helper.yaml configuration file.
+
+If only one agent is configured, the --agent flag is optional. If multiple
+agents are configured, you must specify which agent to use with --agent.
+
+If no po/XX.po argument is given, the PO file is derived from
+default_lang_code in configuration (e.g., po/zh_CN.po).
+
+The command performs validation checks if configured:
+- Pre-validation: checks entry count before update (if po_entries_before_update is set)
+- Post-validation: checks entry count after update (if po_entries_after_update is set)
+- Syntax validation: validates the PO file using msgfmt
+
+Examples:
+  # Use default_lang_code to locate PO file
+  git-po-helper agent-run update-po
+
+  # Explicitly specify the PO file
+  git-po-helper agent-run update-po po/zh_CN.po
+
+  # Use a specific agent
+  git-po-helper agent-run update-po --agent claude po/zh_CN.po`,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Execute in root of worktree.
+			repository.ChdirProjectRoot()
+
+			if len(args) > 1 {
+				return newUserError("update-po command expects at most one argument: po/XX.po")
+			}
+
+			poFile := ""
+			if len(args) == 1 {
+				poFile = args[0]
+			}
+
+			return util.CmdAgentRunUpdatePo(v.O.Agent, poFile)
+		},
+	}
+
+	updatePoCmd.Flags().StringVar(&v.O.Agent,
+		"agent",
+		"",
+		"agent name to use (required if multiple agents are configured)")
+
+	_ = viper.BindPFlag("agent-run--agent", updatePoCmd.Flags().Lookup("agent"))
+
 	// Add show-config subcommand
 	showConfigCmd := &cobra.Command{
 		Use:   "show-config",
@@ -104,6 +159,7 @@ will be displayed.`,
 	}
 
 	v.cmd.AddCommand(updatePotCmd)
+	v.cmd.AddCommand(updatePoCmd)
 	v.cmd.AddCommand(showConfigCmd)
 
 	return v.cmd
