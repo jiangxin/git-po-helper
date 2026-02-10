@@ -13,6 +13,22 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// AgentRunResult holds the result of a single agent-run execution.
+type AgentRunResult struct {
+	PreValidationPass     bool
+	PostValidationPass    bool
+	AgentExecuted         bool
+	AgentSuccess          bool
+	PreValidationError    string
+	PostValidationError   string
+	AgentError            string
+	BeforeCount           int
+	AfterCount            int
+	SyntaxValidationPass  bool
+	SyntaxValidationError string
+	Score                 int // 0-100, calculated based on validations
+}
+
 // ValidatePotEntryCount validates the entry count in a POT file.
 // If expectedCount is nil or 0, validation is disabled and the function returns nil.
 // Otherwise, it counts entries using CountPotEntries() and compares with expectedCount.
@@ -126,22 +142,19 @@ func ValidatePoFile(potFile string) error {
 	return nil
 }
 
-// CmdAgentRunUpdatePot implements the agent-run update-pot command logic.
-// It loads configuration, selects an agent, performs pre-validation,
-// executes the agent command, performs post-validation, and validates POT file syntax.
-func CmdAgentRunUpdatePot(agentName string) error {
-	// Load configuration
-	log.Debugf("loading agent configuration")
-	cfg, err := config.LoadAgentConfig()
-	if err != nil {
-		log.Errorf("failed to load agent configuration: %v", err)
-		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
+// RunAgentUpdatePot executes a single agent-run update-pot operation.
+// It performs pre-validation, executes the agent command, performs post-validation,
+// and validates POT file syntax. Returns a result structure with detailed information.
+func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string) (*AgentRunResult, error) {
+	result := &AgentRunResult{
+		Score: 0,
 	}
 
 	// Determine agent to use
 	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
 	if err != nil {
-		return err
+		result.AgentError = err.Error()
+		return result, err
 	}
 
 	log.Debugf("using agent: %s", agentKey)
@@ -153,17 +166,35 @@ func CmdAgentRunUpdatePot(agentName string) error {
 	// Pre-validation: Check entry count before update
 	if cfg.AgentTest.PotEntriesBeforeUpdate != nil && *cfg.AgentTest.PotEntriesBeforeUpdate != 0 {
 		log.Infof("performing pre-validation: checking entry count before update (expected: %d)", *cfg.AgentTest.PotEntriesBeforeUpdate)
+
+		// Get before count for result
+		if !Exist(potFile) {
+			result.BeforeCount = 0
+		} else {
+			result.BeforeCount, _ = CountPotEntries(potFile)
+		}
+
 		if err := ValidatePotEntryCount(potFile, cfg.AgentTest.PotEntriesBeforeUpdate, "before update"); err != nil {
 			log.Errorf("pre-validation failed: %v", err)
-			return fmt.Errorf("pre-validation failed: %w\nHint: Ensure po/git.pot exists and has the expected number of entries", err)
+			result.PreValidationError = err.Error()
+			return result, fmt.Errorf("pre-validation failed: %w\nHint: Ensure po/git.pot exists and has the expected number of entries", err)
 		}
+		result.PreValidationPass = true
 		log.Infof("pre-validation passed")
+	} else {
+		// No pre-validation configured, count entries for display purposes
+		if !Exist(potFile) {
+			result.BeforeCount = 0
+		} else {
+			result.BeforeCount, _ = CountPotEntries(potFile)
+		}
+		result.PreValidationPass = true // Consider it passed if not configured
 	}
 
 	// Get prompt from configuration
 	prompt, err := GetPrompt(cfg)
 	if err != nil {
-		return err
+		return result, err
 	}
 
 	// Build agent command with placeholders replaced
@@ -173,18 +204,24 @@ func CmdAgentRunUpdatePot(agentName string) error {
 	workDir := repository.WorkDir()
 	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
 	stdout, stderr, err := ExecuteAgentCommand(agentCmd, workDir)
+	result.AgentExecuted = true
+
 	if err != nil {
 		// Log stderr if available
 		if len(stderr) > 0 {
 			log.Errorf("agent command stderr: %s", string(stderr))
+			result.AgentError = err.Error() + "\nstderr: " + string(stderr)
+		} else {
+			result.AgentError = err.Error()
 		}
 		// Log stdout if available (might contain useful info even on error)
 		if len(stdout) > 0 {
 			log.Debugf("agent command stdout: %s", string(stdout))
 		}
 		log.Errorf("agent command execution failed: %v", err)
-		return fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
+		return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 	}
+	result.AgentSuccess = true
 	log.Infof("agent command completed successfully")
 
 	// Log output if verbose
@@ -198,24 +235,84 @@ func CmdAgentRunUpdatePot(agentName string) error {
 	// Post-validation: Check entry count after update
 	if cfg.AgentTest.PotEntriesAfterUpdate != nil && *cfg.AgentTest.PotEntriesAfterUpdate != 0 {
 		log.Infof("performing post-validation: checking entry count after update (expected: %d)", *cfg.AgentTest.PotEntriesAfterUpdate)
+
+		// Get after count for result
+		if Exist(potFile) {
+			result.AfterCount, _ = CountPotEntries(potFile)
+		}
+
 		if err := ValidatePotEntryCount(potFile, cfg.AgentTest.PotEntriesAfterUpdate, "after update"); err != nil {
 			log.Errorf("post-validation failed: %v", err)
-			return fmt.Errorf("post-validation failed: %w\nHint: The agent may not have updated the POT file correctly", err)
+			result.PostValidationError = err.Error()
+			result.Score = 0
+			return result, fmt.Errorf("post-validation failed: %w\nHint: The agent may not have updated the POT file correctly", err)
 		}
+		result.PostValidationPass = true
+		result.Score = 100
 		log.Infof("post-validation passed")
+	} else {
+		// No post-validation configured, score based on agent exit code
+		if Exist(potFile) {
+			result.AfterCount, _ = CountPotEntries(potFile)
+		}
+		if result.AgentSuccess {
+			result.Score = 100
+			result.PostValidationPass = true // Consider it passed if agent succeeded
+		} else {
+			result.Score = 0
+		}
 	}
 
-	// Validate POT file syntax
-	log.Infof("validating file syntax: %s", potFile)
-	if err := ValidatePoFile(potFile); err != nil {
-		log.Errorf("file syntax validation failed: %v", err)
-		ext := filepath.Ext(potFile)
-		if ext == ".pot" {
-			return fmt.Errorf("file validation failed: %w\nHint: Check the POT file syntax using 'msgcat --use-first <file> -o /dev/null'", err)
+	// Validate POT file syntax (only if agent succeeded)
+	if result.AgentSuccess {
+		log.Infof("validating file syntax: %s", potFile)
+		if err := ValidatePoFile(potFile); err != nil {
+			log.Errorf("file syntax validation failed: %v", err)
+			result.SyntaxValidationError = err.Error()
+			// Don't fail the run for syntax errors in agent-run, but log it
+			// In agent-test, this might affect the score
+		} else {
+			result.SyntaxValidationPass = true
+			log.Infof("file syntax validation passed")
 		}
-		return fmt.Errorf("file validation failed: %w\nHint: Check the PO file syntax using 'msgfmt --check-format'", err)
 	}
-	log.Infof("file syntax validation passed")
+
+	return result, nil
+}
+
+// CmdAgentRunUpdatePot implements the agent-run update-pot command logic.
+// It loads configuration and calls RunAgentUpdatePot, then handles errors appropriately.
+func CmdAgentRunUpdatePot(agentName string) error {
+	// Load configuration
+	log.Debugf("loading agent configuration")
+	cfg, err := config.LoadAgentConfig()
+	if err != nil {
+		log.Errorf("failed to load agent configuration: %v", err)
+		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
+	}
+
+	result, err := RunAgentUpdatePot(cfg, agentName)
+	if err != nil {
+		return err
+	}
+
+	// For agent-run, we require all validations to pass
+	if !result.PreValidationPass {
+		return fmt.Errorf("pre-validation failed: %s", result.PreValidationError)
+	}
+	if !result.AgentSuccess {
+		return fmt.Errorf("agent execution failed: %s", result.AgentError)
+	}
+	if cfg.AgentTest.PotEntriesAfterUpdate != nil && *cfg.AgentTest.PotEntriesAfterUpdate != 0 && !result.PostValidationPass {
+		return fmt.Errorf("post-validation failed: %s", result.PostValidationError)
+	}
+	if result.SyntaxValidationError != "" {
+		ext := filepath.Ext(GetPotFilePath())
+		if ext == ".pot" {
+			return fmt.Errorf("file validation failed: %s\nHint: Check the POT file syntax using 'msgcat --use-first <file> -o /dev/null'", result.SyntaxValidationError)
+		}
+		return fmt.Errorf("file validation failed: %s\nHint: Check the PO file syntax using 'msgfmt --check-format'", result.SyntaxValidationError)
+	}
 
 	log.Infof("agent-run update-pot completed successfully")
 	return nil
