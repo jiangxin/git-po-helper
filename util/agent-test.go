@@ -3,10 +3,7 @@ package util
 
 import (
 	"fmt"
-	"os"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/git-l10n/git-po-helper/config"
 	log "github.com/sirupsen/logrus"
@@ -202,29 +199,7 @@ func displayTestResults(results []RunResult, averageScore float64, totalRuns int
 }
 
 // CmdAgentTestShowConfig displays the current agent configuration in YAML format.
+// It reuses CmdAgentRunShowConfig from agent-run.
 func CmdAgentTestShowConfig() error {
-	// Load configuration
-	log.Debugf("loading agent configuration")
-	cfg, err := config.LoadAgentConfig()
-	if err != nil {
-		log.Errorf("failed to load agent configuration: %v", err)
-		return fmt.Errorf("failed to load agent configuration: %w", err)
-	}
-
-	// Marshal configuration to YAML
-	yamlData, err := yaml.Marshal(cfg)
-	if err != nil {
-		log.Errorf("failed to marshal configuration to YAML: %v", err)
-		return fmt.Errorf("failed to marshal configuration to YAML: %w", err)
-	}
-
-	// Display the configuration
-	fmt.Println("# Agent Configuration")
-	fmt.Println("# This is the merged configuration from:")
-	fmt.Println("# - User home directory: ~/.git-po-helper.yaml (lower priority)")
-	fmt.Println("# - Repository root: <repo-root>/git-po-helper.yaml (higher priority)")
-	fmt.Println()
-	os.Stdout.Write(yamlData)
-
-	return nil
+	return CmdAgentRunShowConfig()
 }

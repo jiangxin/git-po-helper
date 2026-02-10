@@ -119,7 +119,7 @@ will be displayed.`,
 				return newUserError("show-config command needs no arguments")
 			}
 
-			return util.CmdAgentTestShowConfig()
+			return util.CmdAgentRunShowConfig()
 		},
 	}
 

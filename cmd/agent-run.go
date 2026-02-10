@@ -74,7 +74,37 @@ Examples:
 
 	_ = viper.BindPFlag("agent-run--agent", updatePotCmd.Flags().Lookup("agent"))
 
+	// Add show-config subcommand
+	showConfigCmd := &cobra.Command{
+		Use:   "show-config",
+		Short: "Show the current agent configuration in YAML format",
+		Long: `Display the complete agent configuration in YAML format.
+
+This command loads the configuration from git-po-helper.yaml files
+(user home directory and repository root) and displays the merged
+configuration in YAML format.
+
+The configuration is read from:
+- User home directory: ~/.git-po-helper.yaml (lower priority)
+- Repository root: <repo-root>/git-po-helper.yaml (higher priority, overrides user config)
+
+If no configuration files are found, an empty configuration structure
+will be displayed.`,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Execute in root of worktree.
+			repository.ChdirProjectRoot()
+
+			if len(args) != 0 {
+				return newUserError("show-config command needs no arguments")
+			}
+
+			return util.CmdAgentRunShowConfig()
+		},
+	}
+
 	v.cmd.AddCommand(updatePotCmd)
+	v.cmd.AddCommand(showConfigCmd)
 
 	return v.cmd
 }
