@@ -26,6 +26,10 @@ type AgentRunResult struct {
 	AgentError            string
 	BeforeCount           int
 	AfterCount            int
+	BeforeNewCount        int // For translate: new (untranslated) entries before
+	AfterNewCount         int // For translate: new (untranslated) entries after
+	BeforeFuzzyCount      int // For translate: fuzzy entries before
+	AfterFuzzyCount       int // For translate: fuzzy entries after
 	SyntaxValidationPass  bool
 	SyntaxValidationError string
 	Score                 int // 0-100, calculated based on validations
@@ -579,5 +583,208 @@ func CmdAgentRunShowConfig() error {
 	fmt.Println()
 	os.Stdout.Write(yamlData)
 
+	return nil
+}
+
+// RunAgentTranslate executes a single agent-run translate operation.
+// It performs pre-validation (count new/fuzzy entries), executes the agent command,
+// performs post-validation (verify new=0 and fuzzy=0), and validates PO file syntax.
+// Returns a result structure with detailed information.
+func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string) (*AgentRunResult, error) {
+	result := &AgentRunResult{
+		Score: 0,
+	}
+
+	// Determine agent to use
+	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
+	if err != nil {
+		result.AgentError = err.Error()
+		return result, err
+	}
+
+	log.Debugf("using agent: %s", agentKey)
+
+	// Determine PO file path
+	workDir := repository.WorkDir()
+	if poFile == "" {
+		lang := cfg.DefaultLangCode
+		if lang == "" {
+			log.Errorf("default_lang_code is not configured in agent configuration")
+			return result, fmt.Errorf("default_lang_code is not configured\nHint: Provide po/XX.po on the command line or set default_lang_code in git-po-helper.yaml")
+		}
+		poFile = filepath.Join(workDir, PoDir, fmt.Sprintf("%s.po", lang))
+	} else if !filepath.IsAbs(poFile) {
+		// Treat poFile as relative to repository root
+		poFile = filepath.Join(workDir, poFile)
+	}
+
+	log.Debugf("PO file path: %s", poFile)
+
+	// Check if PO file exists
+	if !Exist(poFile) {
+		log.Errorf("PO file does not exist: %s", poFile)
+		return result, fmt.Errorf("PO file does not exist: %s\nHint: Ensure the PO file exists before running translate", poFile)
+	}
+
+	// Pre-validation: Count new and fuzzy entries before translation
+	log.Infof("performing pre-validation: counting new and fuzzy entries")
+
+	// Count new entries
+	newCountBefore, err := CountNewEntries(poFile)
+	if err != nil {
+		log.Errorf("failed to count new entries: %v", err)
+		return result, fmt.Errorf("failed to count new entries: %w", err)
+	}
+	result.BeforeNewCount = newCountBefore
+	log.Infof("new (untranslated) entries before translation: %d", newCountBefore)
+
+	// Count fuzzy entries
+	fuzzyCountBefore, err := CountFuzzyEntries(poFile)
+	if err != nil {
+		log.Errorf("failed to count fuzzy entries: %v", err)
+		return result, fmt.Errorf("failed to count fuzzy entries: %w", err)
+	}
+	result.BeforeFuzzyCount = fuzzyCountBefore
+	log.Infof("fuzzy entries before translation: %d", fuzzyCountBefore)
+
+	// Check if there's anything to translate
+	if newCountBefore == 0 && fuzzyCountBefore == 0 {
+		log.Infof("no new or fuzzy entries to translate, PO file is already complete")
+		result.PreValidationPass = true
+		result.PostValidationPass = true
+		result.Score = 100
+		return result, nil
+	}
+
+	result.PreValidationPass = true
+
+	// Get prompt for translate from configuration
+	prompt := cfg.Prompt.Translate
+	if prompt == "" {
+		log.Error("prompt.translate is not configured")
+		return result, fmt.Errorf("prompt.translate is not configured\nHint: Add 'prompt.translate' to git-po-helper.yaml")
+	}
+	log.Debugf("using translate prompt: %s", prompt)
+
+	// Build agent command with placeholders replaced
+	sourcePath := poFile
+	if rel, err := filepath.Rel(workDir, poFile); err == nil && rel != "" && rel != "." {
+		sourcePath = filepath.ToSlash(rel)
+	}
+	agentCmd := BuildAgentCommand(selectedAgent, prompt, sourcePath, "")
+
+	// Execute agent command
+	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
+	stdout, stderr, err := ExecuteAgentCommand(agentCmd, workDir)
+	result.AgentExecuted = true
+
+	if err != nil {
+		// Log stderr if available (debug level to avoid leaking sensitive details at normal verbosity)
+		if len(stderr) > 0 {
+			log.Debugf("agent command stderr: %s", string(stderr))
+		}
+		// Log stdout if available (might contain useful info even on error)
+		if len(stdout) > 0 {
+			log.Debugf("agent command stdout: %s", string(stdout))
+		}
+
+		// Store a summarized error message without embedding full stderr
+		result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", err)
+
+		log.Errorf("agent command execution failed: %v", err)
+		return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
+	}
+	result.AgentSuccess = true
+	log.Infof("agent command completed successfully")
+
+	// Log output if verbose
+	if len(stdout) > 0 {
+		log.Debugf("agent command stdout: %s", string(stdout))
+	}
+	if len(stderr) > 0 {
+		log.Debugf("agent command stderr: %s", string(stderr))
+	}
+
+	// Post-validation: Count new and fuzzy entries after translation
+	log.Infof("performing post-validation: counting new and fuzzy entries")
+
+	// Count new entries
+	newCountAfter, err := CountNewEntries(poFile)
+	if err != nil {
+		log.Errorf("failed to count new entries after translation: %v", err)
+		return result, fmt.Errorf("failed to count new entries after translation: %w", err)
+	}
+	result.AfterNewCount = newCountAfter
+	log.Infof("new (untranslated) entries after translation: %d", newCountAfter)
+
+	// Count fuzzy entries
+	fuzzyCountAfter, err := CountFuzzyEntries(poFile)
+	if err != nil {
+		log.Errorf("failed to count fuzzy entries after translation: %v", err)
+		return result, fmt.Errorf("failed to count fuzzy entries after translation: %w", err)
+	}
+	result.AfterFuzzyCount = fuzzyCountAfter
+	log.Infof("fuzzy entries after translation: %d", fuzzyCountAfter)
+
+	// Validate translation success: both new and fuzzy entries must be 0
+	if newCountAfter != 0 || fuzzyCountAfter != 0 {
+		log.Errorf("post-validation failed: translation incomplete (new: %d, fuzzy: %d)", newCountAfter, fuzzyCountAfter)
+		result.PostValidationError = fmt.Sprintf("translation incomplete: %d new entries and %d fuzzy entries remaining", newCountAfter, fuzzyCountAfter)
+		result.Score = 0
+		return result, fmt.Errorf("post-validation failed: %s\nHint: The agent should translate all new entries and resolve all fuzzy entries", result.PostValidationError)
+	}
+
+	result.PostValidationPass = true
+	result.Score = 100
+	log.Infof("post-validation passed: all entries translated")
+
+	// Validate PO file syntax (only if agent succeeded)
+	if result.AgentSuccess {
+		log.Infof("validating file syntax: %s", poFile)
+		if err := ValidatePoFile(poFile); err != nil {
+			log.Errorf("file syntax validation failed: %v", err)
+			result.SyntaxValidationError = err.Error()
+			// Don't fail the run for syntax errors in agent-run, but log it
+			// In agent-test, this might affect the score
+		} else {
+			result.SyntaxValidationPass = true
+			log.Infof("file syntax validation passed")
+		}
+	}
+
+	return result, nil
+}
+
+// CmdAgentRunTranslate implements the agent-run translate command logic.
+// It loads configuration and calls RunAgentTranslate, then handles errors appropriately.
+func CmdAgentRunTranslate(agentName, poFile string) error {
+	// Load configuration
+	log.Debugf("loading agent configuration")
+	cfg, err := config.LoadAgentConfig()
+	if err != nil {
+		log.Errorf("failed to load agent configuration: %v", err)
+		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
+	}
+
+	result, err := RunAgentTranslate(cfg, agentName, poFile)
+	if err != nil {
+		return err
+	}
+
+	// For agent-run, we require all validations to pass
+	if !result.PreValidationPass {
+		return fmt.Errorf("pre-validation failed: %s", result.PreValidationError)
+	}
+	if !result.AgentSuccess {
+		return fmt.Errorf("agent execution failed: %s", result.AgentError)
+	}
+	if !result.PostValidationPass {
+		return fmt.Errorf("post-validation failed: %s", result.PostValidationError)
+	}
+	if result.SyntaxValidationError != "" {
+		return fmt.Errorf("file validation failed: %s\nHint: Check the PO file syntax using 'msgfmt --check-format'", result.SyntaxValidationError)
+	}
+
+	log.Infof("agent-run translate completed successfully")
 	return nil
 }
