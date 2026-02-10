@@ -699,3 +699,10 @@ func displayTranslateTestResults(results []RunResult, averageScore float64, tota
 	fmt.Printf("Average score:     %.2f/100\n", averageScore)
 	fmt.Println("=" + strings.Repeat("=", 70))
 }
+
+// CmdAgentTestReview implements the agent-test review command logic.
+// This is a stub implementation for Step 1. Full implementation will be
+// completed in Step 9 according to the design document.
+func CmdAgentTestReview(agentName, poFile string, runs int, skipConfirmation bool, commit, since string) error {
+	return fmt.Errorf("agent-test review is not yet implemented (Step 1 of implementation in progress)")
+}

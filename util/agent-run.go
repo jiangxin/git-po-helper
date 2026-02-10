@@ -3,6 +3,7 @@ package util
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,59 @@ type AgentRunResult struct {
 	SyntaxValidationPass  bool
 	SyntaxValidationError string
 	Score                 int // 0-100, calculated based on validations
+
+	// Review-specific fields
+	ReviewJSON     *ReviewJSONResult `json:"review_json,omitempty"`
+	ReviewScore    int               `json:"review_score,omitempty"`
+	ReviewJSONPath string            `json:"review_json_path,omitempty"`
+}
+
+// ReviewIssue represents a single issue in a review JSON result.
+type ReviewIssue struct {
+	MsgID       string `json:"msgid"`
+	MsgStr      string `json:"msgstr"`
+	Score       int    `json:"score"`
+	Description string `json:"description"`
+	Suggestion  string `json:"suggestion"`
+}
+
+// ReviewJSONResult represents the overall review JSON format produced by an agent.
+type ReviewJSONResult struct {
+	TotalEntries int           `json:"total_entries"`
+	Issues       []ReviewIssue `json:"issues"`
+}
+
+// CalculateReviewScore calculates a 0-100 score from a ReviewJSONResult.
+// The scoring model treats each entry as having a maximum of 3 points.
+// For each reported issue, the score is reduced by (3 - issue.Score).
+// The final score is normalized to 0-100.
+func CalculateReviewScore(review *ReviewJSONResult) (int, error) {
+	if review.TotalEntries <= 0 {
+		return 0, fmt.Errorf("invalid review result: total_entries must be greater than 0")
+	}
+
+	totalPossible := review.TotalEntries * 3
+	totalScore := totalPossible
+
+	for _, issue := range review.Issues {
+		if issue.Score < 0 || issue.Score > 3 {
+			return 0, fmt.Errorf("invalid issue score %d: must be between 0 and 3", issue.Score)
+		}
+		totalScore -= 3 - issue.Score
+	}
+
+	if totalScore < 0 {
+		totalScore = 0
+	}
+
+	scorePercent := int(math.Round(float64(totalScore) * 100.0 / float64(totalPossible)))
+	if scorePercent < 0 {
+		scorePercent = 0
+	} else if scorePercent > 100 {
+		scorePercent = 100
+	}
+
+	return scorePercent, nil
 }
 
 // ValidatePotEntryCount validates the entry count in a POT file.
@@ -787,4 +841,11 @@ func CmdAgentRunTranslate(agentName, poFile string) error {
 
 	log.Infof("agent-run translate completed successfully")
 	return nil
+}
+
+// CmdAgentRunReview implements the agent-run review command logic.
+// This is a stub implementation for Step 1. Full implementation will be
+// completed in Step 5 according to the design document.
+func CmdAgentRunReview(agentName, poFile, commit, since string) error {
+	return fmt.Errorf("agent-run review is not yet implemented (Step 1 of implementation in progress)")
 }
