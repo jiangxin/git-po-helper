@@ -386,3 +386,197 @@ func TestExecuteAgentCommand_RealCommand(t *testing.T) {
 		t.Logf("stderr (non-fatal): %s", string(stderr))
 	}
 }
+
+func TestCountPoEntries(t *testing.T) {
+	tests := []struct {
+		name        string
+		poContent   string
+		expected    int
+		expectError bool
+	}{
+		{
+			name: "normal PO file with multiple entries",
+			poContent: `# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "First string"
+msgstr ""
+
+msgid "Second string"
+msgstr ""
+
+msgid "Third string"
+msgstr ""
+`,
+			expected:    3,
+			expectError: false,
+		},
+		{
+			name: "PO file with only header",
+			poContent: `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+`,
+			expected:    0,
+			expectError: false,
+		},
+		{
+			name: "PO file with multi-line msgid",
+			poContent: `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "First line"
+"Second line"
+msgstr ""
+
+msgid "Another string"
+msgstr ""
+`,
+			expected:    2,
+			expectError: false,
+		},
+		{
+			name:        "empty file",
+			poContent:   "",
+			expected:    0,
+			expectError: false,
+		},
+		{
+			name: "PO file with commented entries",
+			poContent: `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#~ msgid "Obsolete entry"
+#~ msgstr ""
+
+msgid "Active entry"
+msgstr ""
+`,
+			expected:    1,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary file
+			tmpDir := t.TempDir()
+			poFile := filepath.Join(tmpDir, "test.po")
+			err := os.WriteFile(poFile, []byte(tt.poContent), 0644)
+			if err != nil {
+				t.Fatalf("Failed to create test PO file: %v", err)
+			}
+
+			// Test CountPoEntries
+			count, err := CountPoEntries(poFile)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if count != tt.expected {
+				t.Errorf("Expected count %d, got %d", tt.expected, count)
+			}
+		})
+	}
+}
+
+func TestCountPoEntries_InvalidFile(t *testing.T) {
+	// Test with non-existent file
+	_, err := CountPoEntries("/nonexistent/file.po")
+	if err == nil {
+		t.Error("Expected error for non-existent PO file, got nil")
+	}
+}
+
+func TestCountPoEntries_EmptyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	poFile := filepath.Join(tmpDir, "empty.po")
+
+	// Create empty file
+	file, err := os.Create(poFile)
+	if err != nil {
+		t.Fatalf("Failed to create empty PO file: %v", err)
+	}
+	file.Close()
+
+	count, err := CountPoEntries(poFile)
+	if err != nil {
+		t.Errorf("Unexpected error for empty PO file: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("Expected count 0 for empty PO file, got %d", count)
+	}
+}
+
+func TestValidatePoEntryCount_Disabled(t *testing.T) {
+	// nil expectedCount
+	var expectedNil *int
+	if err := ValidatePoEntryCount("/nonexistent/file.po", expectedNil, "before update"); err != nil {
+		t.Errorf("Expected no error when validation is disabled with nil expectedCount, got %v", err)
+	}
+
+	// zero expectedCount
+	zero := 0
+	if err := ValidatePoEntryCount("/nonexistent/file.po", &zero, "after update"); err != nil {
+		t.Errorf("Expected no error when validation is disabled with zero expectedCount, got %v", err)
+	}
+}
+
+func TestValidatePoEntryCount_BeforeUpdateMissingFile(t *testing.T) {
+	expected := 1
+	if err := ValidatePoEntryCount("/nonexistent/file.po", &expected, "before update"); err == nil {
+		t.Errorf("Expected error when file is missing and expectedCount is non-zero in before update stage, got nil")
+	}
+}
+
+func TestValidatePoEntryCount_AfterUpdateMissingFile(t *testing.T) {
+	expected := 1
+	if err := ValidatePoEntryCount("/nonexistent/file.po", &expected, "after update"); err == nil {
+		t.Errorf("Expected error when file is missing in after update stage, got nil")
+	}
+}
+
+func TestValidatePoEntryCount_MatchingAndNonMatching(t *testing.T) {
+	// Prepare a temporary PO file with a single entry
+	const poContent = `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "First string"
+msgstr ""
+`
+
+	tmpDir := t.TempDir()
+	poFile := filepath.Join(tmpDir, "test.po")
+	if err := os.WriteFile(poFile, []byte(poContent), 0644); err != nil {
+		t.Fatalf("Failed to create test PO file: %v", err)
+	}
+
+	// Matching expected count
+	matching := 1
+	if err := ValidatePoEntryCount(poFile, &matching, "before update"); err != nil {
+		t.Errorf("Expected no error for matching entry count, got %v", err)
+	}
+
+	// Non-matching expected count
+	nonMatching := 2
+	if err := ValidatePoEntryCount(poFile, &nonMatching, "after update"); err == nil {
+		t.Errorf("Expected error for non-matching entry count, got nil")
+	}
+}

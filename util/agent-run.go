@@ -74,6 +74,49 @@ func ValidatePotEntryCount(potFile string, expectedCount *int, stage string) err
 	return nil
 }
 
+// ValidatePoEntryCount validates the entry count in a PO file.
+// If expectedCount is nil or 0, validation is disabled and the function returns nil.
+// Otherwise, it counts entries using CountPoEntries() and compares with expectedCount.
+// Returns an error if counts don't match, nil if they match or validation is disabled.
+// The stage parameter is used for error messages ("before update" or "after update").
+// For "before update" stage, if the file doesn't exist, the entry count is treated as 0.
+func ValidatePoEntryCount(poFile string, expectedCount *int, stage string) error {
+	// If expectedCount is nil or 0, validation is disabled
+	if expectedCount == nil || *expectedCount == 0 {
+		return nil
+	}
+
+	// Check if file exists
+	fileExists := Exist(poFile)
+	var actualCount int
+	var err error
+
+	if !fileExists {
+		// For "before update" stage, treat missing file as 0 entries
+		if stage == "before update" {
+			actualCount = 0
+			log.Debugf("file %s does not exist, treating entry count as 0 for %s validation", poFile, stage)
+		} else {
+			// For "after update" stage, file should exist
+			return fmt.Errorf("file does not exist %s: %s\nHint: The agent should have created the file", stage, poFile)
+		}
+	} else {
+		// Count entries in PO file
+		actualCount, err = CountPoEntries(poFile)
+		if err != nil {
+			return fmt.Errorf("failed to count entries %s in %s: %w", stage, poFile, err)
+		}
+	}
+
+	// Compare with expected count
+	if actualCount != *expectedCount {
+		return fmt.Errorf("entry count %s: expected %d, got %d (file: %s)", stage, *expectedCount, actualCount, poFile)
+	}
+
+	log.Debugf("entry count %s validation passed: %d entries", stage, actualCount)
+	return nil
+}
+
 // ValidatePoFile validates POT/PO file syntax.
 // For .pot files, it uses msgcat --use-first to validate (since POT files have placeholders in headers).
 // For .po files, it uses msgfmt to validate.
