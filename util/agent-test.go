@@ -98,6 +98,53 @@ func CleanPoDirectory() error {
 		return fmt.Errorf("failed to clean po/ directory: %s\nHint: Check that po/ directory exists and git repository is valid", errorMsg)
 	}
 
+	log.Debugf("po/ directory restored successfully")
+
+	// Clean untracked po/git.pot file that might not be in git repository
+	log.Debugf("cleaning untracked po/git.pot file using git clean")
+	cleanCmd := exec.Command("git",
+		"clean",
+		"-fx",
+		"--",
+		"po/git.pot")
+	cleanCmd.Dir = workDir
+
+	// Capture stderr for error messages
+	cleanStderr, err := cleanCmd.StderrPipe()
+	if err != nil {
+		log.Warnf("failed to create stderr pipe for git clean: %v", err)
+		// Continue even if we can't capture stderr
+	} else {
+		if err := cleanCmd.Start(); err != nil {
+			log.Warnf("failed to start git clean command: %v", err)
+			// Continue even if git clean fails
+		} else {
+			// Read stderr output
+			var cleanStderrOutput strings.Builder
+			buf := make([]byte, 1024)
+			for {
+				n, err := cleanStderr.Read(buf)
+				if n > 0 {
+					cleanStderrOutput.Write(buf[:n])
+				}
+				if err != nil {
+					break
+				}
+			}
+
+			if err := cleanCmd.Wait(); err != nil {
+				// git clean may fail if there's nothing to clean, which is fine
+				errorMsg := cleanStderrOutput.String()
+				if errorMsg != "" {
+					log.Debugf("git clean output: %s", errorMsg)
+				}
+				log.Debugf("git clean completed (exit code may be non-zero if nothing to clean)")
+			} else {
+				log.Debugf("untracked po/git.pot file cleaned successfully")
+			}
+		}
+	}
+
 	log.Debugf("po/ directory cleaned successfully")
 	return nil
 }
