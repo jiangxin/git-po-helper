@@ -759,7 +759,6 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 		// agentResult is never nil (always returns a result structure)
 		result := RunResult{
 			RunNumber:           runNum,
-			Score:               agentResult.ReviewScore, // Use ReviewScore for review
 			PreValidationPass:   agentResult.PreValidationPass,
 			PostValidationPass:  agentResult.PostValidationPass,
 			AgentExecuted:       agentResult.AgentExecuted,
