@@ -2,6 +2,7 @@
 package util
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -87,6 +88,94 @@ func CalculateReviewScore(review *ReviewJSONResult) (int, error) {
 	}
 
 	return scorePercent, nil
+}
+
+// ExtractJSONFromOutput extracts a JSON object from agent output.
+// It searches for JSON object boundaries ({ and }) and handles cases where
+// output contains other text before/after JSON.
+// Returns the JSON bytes or an error if not found.
+func ExtractJSONFromOutput(output []byte) ([]byte, error) {
+	if len(output) == 0 {
+		return nil, fmt.Errorf("empty output, no JSON found")
+	}
+
+	// Find the first '{' character
+	startIdx := -1
+	for i, b := range output {
+		if b == '{' {
+			startIdx = i
+			break
+		}
+	}
+
+	if startIdx == -1 {
+		return nil, fmt.Errorf("no JSON object found in output (missing opening brace)")
+	}
+
+	// Find the matching closing '}' by counting braces
+	braceCount := 0
+	endIdx := -1
+	for i := startIdx; i < len(output); i++ {
+		if output[i] == '{' {
+			braceCount++
+		} else if output[i] == '}' {
+			braceCount--
+			if braceCount == 0 {
+				endIdx = i
+				break
+			}
+		}
+	}
+
+	if endIdx == -1 {
+		return nil, fmt.Errorf("no complete JSON object found in output (missing closing brace)")
+	}
+
+	// Extract JSON bytes
+	jsonBytes := output[startIdx : endIdx+1]
+	return jsonBytes, nil
+}
+
+// ParseReviewJSON parses JSON output from agent and validates the structure.
+// It validates that the JSON matches ReviewJSONResult structure and that
+// all score values are in the valid range (0-3).
+// Returns parsed result or error.
+func ParseReviewJSON(jsonData []byte) (*ReviewJSONResult, error) {
+	if len(jsonData) == 0 {
+		return nil, fmt.Errorf("empty JSON data")
+	}
+
+	var review ReviewJSONResult
+	if err := json.Unmarshal(jsonData, &review); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	// Validate total_entries
+	if review.TotalEntries <= 0 {
+		return nil, fmt.Errorf("invalid review result: total_entries must be greater than 0, got %d", review.TotalEntries)
+	}
+
+	// Validate issues array
+	if review.Issues == nil {
+		// Issues can be an empty array, but not nil
+		review.Issues = []ReviewIssue{}
+	}
+
+	// Validate each issue
+	for i, issue := range review.Issues {
+		// Validate score range
+		if issue.Score < 0 || issue.Score > 3 {
+			return nil, fmt.Errorf("invalid issue score %d at index %d: must be between 0 and 3", issue.Score, i)
+		}
+
+		// Validate required fields are not empty (msgid and msgstr can be empty, but should be present)
+		// Description and suggestion should not be empty for issues
+		if issue.Description == "" {
+			return nil, fmt.Errorf("invalid issue at index %d: description is required", i)
+		}
+	}
+
+	return &review, nil
 }
 
 // ValidatePotEntryCount validates the entry count in a POT file.
