@@ -325,6 +325,160 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string) (*AgentRunResu
 	return result, nil
 }
 
+// RunAgentUpdatePo executes a single agent-run update-po operation.
+// It performs pre-validation, executes the agent command, performs post-validation,
+// and validates PO file syntax. Returns a result structure with detailed information.
+func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string) (*AgentRunResult, error) {
+	result := &AgentRunResult{
+		Score: 0,
+	}
+
+	// Determine agent to use
+	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
+	if err != nil {
+		result.AgentError = err.Error()
+		return result, err
+	}
+
+	log.Debugf("using agent: %s", agentKey)
+
+	// Determine PO file path
+	workDir := repository.WorkDir()
+	if poFile == "" {
+		lang := cfg.DefaultLangCode
+		if lang == "" {
+			return result, fmt.Errorf("default_lang_code is not configured\nHint: Provide po/XX.po on the command line or set default_lang_code in git-po-helper.yaml")
+		}
+		poFile = filepath.Join(workDir, PoDir, fmt.Sprintf("%s.po", lang))
+	} else if !filepath.IsAbs(poFile) {
+		// Treat poFile as relative to repository root
+		poFile = filepath.Join(workDir, poFile)
+	}
+
+	log.Debugf("PO file path: %s", poFile)
+
+	// Pre-validation: Check entry count before update
+	if cfg.AgentTest.PoEntriesBeforeUpdate != nil && *cfg.AgentTest.PoEntriesBeforeUpdate != 0 {
+		log.Infof("performing pre-validation: checking PO entry count before update (expected: %d)", *cfg.AgentTest.PoEntriesBeforeUpdate)
+
+		// Get before count for result
+		if !Exist(poFile) {
+			result.BeforeCount = 0
+		} else {
+			result.BeforeCount, _ = CountPoEntries(poFile)
+		}
+
+		if err := ValidatePoEntryCount(poFile, cfg.AgentTest.PoEntriesBeforeUpdate, "before update"); err != nil {
+			log.Errorf("pre-validation failed: %v", err)
+			result.PreValidationError = err.Error()
+			return result, fmt.Errorf("pre-validation failed: %w\nHint: Ensure %s exists and has the expected number of entries", err, poFile)
+		}
+		result.PreValidationPass = true
+		log.Infof("pre-validation passed")
+	} else {
+		// No pre-validation configured, count entries for display purposes
+		if !Exist(poFile) {
+			result.BeforeCount = 0
+		} else {
+			result.BeforeCount, _ = CountPoEntries(poFile)
+		}
+		result.PreValidationPass = true // Consider it passed if not configured
+	}
+
+	// Get prompt for update-po from configuration
+	prompt := cfg.Prompt.UpdatePo
+	if prompt == "" {
+		log.Error("prompt.update_po is not configured")
+		return result, fmt.Errorf("prompt.update_po is not configured\nHint: Add 'prompt.update_po' to git-po-helper.yaml")
+	}
+	log.Debugf("using update-po prompt: %s", prompt)
+
+	// Build agent command with placeholders replaced
+	sourcePath := poFile
+	if rel, err := filepath.Rel(workDir, poFile); err == nil && rel != "" && rel != "." {
+		sourcePath = filepath.ToSlash(rel)
+	}
+	agentCmd := BuildAgentCommand(selectedAgent, prompt, sourcePath, "")
+
+	// Execute agent command
+	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
+	stdout, stderr, err := ExecuteAgentCommand(agentCmd, workDir)
+	result.AgentExecuted = true
+
+	if err != nil {
+		// Log stderr if available
+		if len(stderr) > 0 {
+			log.Errorf("agent command stderr: %s", string(stderr))
+			result.AgentError = err.Error() + "\nstderr: " + string(stderr)
+		} else {
+			result.AgentError = err.Error()
+		}
+		// Log stdout if available (might contain useful info even on error)
+		if len(stdout) > 0 {
+			log.Debugf("agent command stdout: %s", string(stdout))
+		}
+		log.Errorf("agent command execution failed: %v", err)
+		return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
+	}
+	result.AgentSuccess = true
+	log.Infof("agent command completed successfully")
+
+	// Log output if verbose
+	if len(stdout) > 0 {
+		log.Debugf("agent command stdout: %s", string(stdout))
+	}
+	if len(stderr) > 0 {
+		log.Debugf("agent command stderr: %s", string(stderr))
+	}
+
+	// Post-validation: Check entry count after update
+	if cfg.AgentTest.PoEntriesAfterUpdate != nil && *cfg.AgentTest.PoEntriesAfterUpdate != 0 {
+		log.Infof("performing post-validation: checking PO entry count after update (expected: %d)", *cfg.AgentTest.PoEntriesAfterUpdate)
+
+		// Get after count for result
+		if Exist(poFile) {
+			result.AfterCount, _ = CountPoEntries(poFile)
+		}
+
+		if err := ValidatePoEntryCount(poFile, cfg.AgentTest.PoEntriesAfterUpdate, "after update"); err != nil {
+			log.Errorf("post-validation failed: %v", err)
+			result.PostValidationError = err.Error()
+			result.Score = 0
+			return result, fmt.Errorf("post-validation failed: %w\nHint: The agent may not have updated the PO file correctly", err)
+		}
+		result.PostValidationPass = true
+		result.Score = 100
+		log.Infof("post-validation passed")
+	} else {
+		// No post-validation configured, score based on agent exit code
+		if Exist(poFile) {
+			result.AfterCount, _ = CountPoEntries(poFile)
+		}
+		if result.AgentSuccess {
+			result.Score = 100
+			result.PostValidationPass = true // Consider it passed if agent succeeded
+		} else {
+			result.Score = 0
+		}
+	}
+
+	// Validate PO file syntax (only if agent succeeded)
+	if result.AgentSuccess {
+		log.Infof("validating file syntax: %s", poFile)
+		if err := ValidatePoFile(poFile); err != nil {
+			log.Errorf("file syntax validation failed: %v", err)
+			result.SyntaxValidationError = err.Error()
+			// Don't fail the run for syntax errors in agent-run, but log it
+			// In agent-test, this might affect the score
+		} else {
+			result.SyntaxValidationPass = true
+			log.Infof("file syntax validation passed")
+		}
+	}
+
+	return result, nil
+}
+
 // CmdAgentRunUpdatePot implements the agent-run update-pot command logic.
 // It loads configuration and calls RunAgentUpdatePot, then handles errors appropriately.
 func CmdAgentRunUpdatePot(agentName string) error {
