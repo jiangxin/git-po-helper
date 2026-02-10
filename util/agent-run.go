@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/git-l10n/git-po-helper/config"
@@ -111,9 +110,8 @@ func CmdAgentRunUpdatePot(agentName string) error {
 
 	log.Debugf("using agent: %s", agentKey)
 
-	// Get repository root and POT file path
-	workDir := repository.WorkDir()
-	potFile := filepath.Join(workDir, PoDir, GitPot)
+	// Get POT file path
+	potFile := GetPotFilePath()
 	log.Debugf("POT file path: %s", potFile)
 
 	// Pre-validation: Check entry count before update
@@ -127,21 +125,16 @@ func CmdAgentRunUpdatePot(agentName string) error {
 	}
 
 	// Get prompt from configuration
-	prompt := cfg.Prompt.UpdatePot
-	if prompt == "" {
-		log.Error("prompt.update_pot is not configured")
-		return fmt.Errorf("prompt.update_pot is not configured\nHint: Add 'prompt.update_pot' to git-po-helper.yaml")
+	prompt, err := GetPrompt(cfg)
+	if err != nil {
+		return err
 	}
-	log.Debugf("using prompt: %s", prompt)
 
-	// Replace placeholders in agent command
-	// For update-pot, we only need to replace {prompt}
-	agentCmd := make([]string, len(selectedAgent.Cmd))
-	for i, arg := range selectedAgent.Cmd {
-		agentCmd[i] = ReplacePlaceholders(arg, prompt, "", "")
-	}
+	// Build agent command with placeholders replaced
+	agentCmd := BuildAgentCommand(selectedAgent, prompt, "", "")
 
 	// Execute agent command
+	workDir := repository.WorkDir()
 	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
 	stdout, stderr, err := ExecuteAgentCommand(agentCmd, workDir)
 	if err != nil {

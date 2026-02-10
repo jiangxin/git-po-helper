@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/git-l10n/git-po-helper/config"
+	"github.com/git-l10n/git-po-helper/repository"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -231,4 +233,31 @@ func SelectAgent(cfg *config.AgentConfig, agentName string) (config.Agent, strin
 
 	// This should never happen, but handle it gracefully
 	return config.Agent{}, "", fmt.Errorf("unexpected error: no agent selected")
+}
+
+// BuildAgentCommand builds an agent command by replacing placeholders in the agent's command template.
+// It replaces {prompt}, {source}, and {commit} placeholders with actual values.
+func BuildAgentCommand(agent config.Agent, prompt, source, commit string) []string {
+	cmd := make([]string, len(agent.Cmd))
+	for i, arg := range agent.Cmd {
+		cmd[i] = ReplacePlaceholders(arg, prompt, source, commit)
+	}
+	return cmd
+}
+
+// GetPotFilePath returns the full path to the POT file in the repository.
+func GetPotFilePath() string {
+	workDir := repository.WorkDir()
+	return filepath.Join(workDir, PoDir, GitPot)
+}
+
+// GetPrompt returns the update_pot prompt from configuration, or an error if not configured.
+func GetPrompt(cfg *config.AgentConfig) (string, error) {
+	prompt := cfg.Prompt.UpdatePot
+	if prompt == "" {
+		log.Error("prompt.update_pot is not configured")
+		return "", fmt.Errorf("prompt.update_pot is not configured\nHint: Add 'prompt.update_pot' to git-po-helper.yaml")
+	}
+	log.Debugf("using prompt: %s", prompt)
+	return prompt, nil
 }

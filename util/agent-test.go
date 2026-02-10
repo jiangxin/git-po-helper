@@ -3,7 +3,6 @@ package util
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/git-l10n/git-po-helper/config"
@@ -80,23 +79,17 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 
 	log.Debugf("using agent: %s", agentKey)
 
-	// Get repository root and POT file path
-	workDir := repository.WorkDir()
-	potFile := filepath.Join(workDir, PoDir, GitPot)
+	// Get POT file path
+	potFile := GetPotFilePath()
 
 	// Get prompt from configuration
-	prompt := cfg.Prompt.UpdatePot
-	if prompt == "" {
-		log.Error("prompt.update_pot is not configured")
-		return nil, 0, fmt.Errorf("prompt.update_pot is not configured\nHint: Add 'prompt.update_pot' to git-po-helper.yaml")
+	prompt, err := GetPrompt(cfg)
+	if err != nil {
+		return nil, 0, err
 	}
-	log.Debugf("using prompt: %s", prompt)
 
-	// Replace placeholders in agent command
-	agentCmd := make([]string, len(selectedAgent.Cmd))
-	for i, arg := range selectedAgent.Cmd {
-		agentCmd[i] = ReplacePlaceholders(arg, prompt, "", "")
-	}
+	// Build agent command with placeholders replaced
+	agentCmd := BuildAgentCommand(selectedAgent, prompt, "", "")
 
 	// Run the test multiple times
 	results := make([]RunResult, runs)
@@ -151,6 +144,7 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 		}
 
 		// Execute agent command (only if pre-validation passed or was disabled)
+		workDir := repository.WorkDir()
 		log.Debugf("run %d: executing agent command", runNum)
 		stdout, stderr, err := ExecuteAgentCommand(agentCmd, workDir)
 		result.AgentExecuted = true
