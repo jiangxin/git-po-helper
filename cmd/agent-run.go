@@ -191,7 +191,7 @@ Examples:
 
 	// Add review subcommand
 	reviewCmd := &cobra.Command{
-		Use:   "review [--commit commit] [--since commit] [po/XX.po]",
+		Use:   "review [po/XX.po]",
 		Short: "Review translations in a po/XX.po file using an agent",
 		Long: `Review translations in a PO file using a configured agent.
 
