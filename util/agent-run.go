@@ -178,6 +178,54 @@ func ParseReviewJSON(jsonData []byte) (*ReviewJSONResult, error) {
 	return &review, nil
 }
 
+// SaveReviewJSON saves review JSON result to file.
+// It determines the output path from the PO file path:
+// po/XX.po -> po/XX-reviewed.json (where XX is the language code).
+// Creates directory if needed, writes JSON with proper formatting.
+// Returns the file path or error.
+func SaveReviewJSON(poFile string, review *ReviewJSONResult) (string, error) {
+	if review == nil {
+		return "", fmt.Errorf("review result is nil")
+	}
+
+	// Determine output file path from PO file path
+	// Example: po/zh_CN.po -> po/zh_CN-reviewed.json
+	poFileName := filepath.Base(poFile)
+	langCode := strings.TrimSuffix(poFileName, ".po")
+	if langCode == "" || langCode == poFileName {
+		return "", fmt.Errorf("invalid PO file path: %s (expected format: po/XX.po)", poFile)
+	}
+
+	// Build output path: po/XX-reviewed.json
+	workDir := repository.WorkDir()
+	outputPath := filepath.Join(workDir, PoDir, fmt.Sprintf("%s-reviewed.json", langCode))
+
+	log.Debugf("saving review JSON to %s", outputPath)
+
+	// Create po/ directory if it doesn't exist
+	poDir := filepath.Join(workDir, PoDir)
+	if err := os.MkdirAll(poDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create directory %s: %w", poDir, err)
+	}
+
+	// Marshal JSON with indentation for readability
+	jsonData, err := json.MarshalIndent(review, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+
+	// Add newline at end of file
+	jsonData = append(jsonData, '\n')
+
+	// Write JSON to file
+	if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
+		return "", fmt.Errorf("failed to write JSON file %s: %w", outputPath, err)
+	}
+
+	log.Infof("review JSON saved to %s", outputPath)
+	return outputPath, nil
+}
+
 // ValidatePotEntryCount validates the entry count in a POT file.
 // If expectedCount is nil or 0, validation is disabled and the function returns nil.
 // Otherwise, it counts entries using CountPotEntries() and compares with expectedCount.
