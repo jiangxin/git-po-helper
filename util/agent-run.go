@@ -18,16 +18,33 @@ import (
 // Otherwise, it counts entries using CountPotEntries() and compares with expectedCount.
 // Returns an error if counts don't match, nil if they match or validation is disabled.
 // The stage parameter is used for error messages ("before update" or "after update").
+// For "before update" stage, if the file doesn't exist, the entry count is treated as 0.
 func ValidatePotEntryCount(potFile string, expectedCount *int, stage string) error {
 	// If expectedCount is nil or 0, validation is disabled
 	if expectedCount == nil || *expectedCount == 0 {
 		return nil
 	}
 
-	// Count entries in POT file
-	actualCount, err := CountPotEntries(potFile)
-	if err != nil {
-		return fmt.Errorf("failed to count entries %s in %s: %w", stage, potFile, err)
+	// Check if file exists
+	fileExists := Exist(potFile)
+	var actualCount int
+	var err error
+
+	if !fileExists {
+		// For "before update" stage, treat missing file as 0 entries
+		if stage == "before update" {
+			actualCount = 0
+			log.Debugf("file %s does not exist, treating entry count as 0 for %s validation", potFile, stage)
+		} else {
+			// For "after update" stage, file should exist
+			return fmt.Errorf("file does not exist %s: %s\nHint: The agent should have created the file", stage, potFile)
+		}
+	} else {
+		// Count entries in POT file
+		actualCount, err = CountPotEntries(potFile)
+		if err != nil {
+			return fmt.Errorf("failed to count entries %s in %s: %w", stage, potFile, err)
+		}
 	}
 
 	// Compare with expected count

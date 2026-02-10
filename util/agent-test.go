@@ -116,13 +116,22 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 		// Pre-validation: Check entry count before update
 		if cfg.AgentTest.PotEntriesBeforeUpdate != nil && *cfg.AgentTest.PotEntriesBeforeUpdate != 0 {
 			log.Debugf("run %d: performing pre-validation (expected: %d entries)", runNum, *cfg.AgentTest.PotEntriesBeforeUpdate)
-			beforeCount, err := CountPotEntries(potFile)
-			if err != nil {
-				result.PreValidationError = fmt.Sprintf("failed to count entries: %v", err)
-				log.Errorf("run %d: pre-validation failed - %s", runNum, result.PreValidationError)
-				results[i] = result
-				totalScore += 0 // Score = 0 for failure
-				continue
+			var beforeCount int
+			var err error
+
+			// For pre-validation, if file doesn't exist, treat entry count as 0
+			if !Exist(potFile) {
+				beforeCount = 0
+				log.Debugf("run %d: file %s does not exist, treating entry count as 0 for pre-validation", runNum, potFile)
+			} else {
+				beforeCount, err = CountPotEntries(potFile)
+				if err != nil {
+					result.PreValidationError = fmt.Sprintf("failed to count entries: %v", err)
+					log.Errorf("run %d: pre-validation failed - %s", runNum, result.PreValidationError)
+					results[i] = result
+					totalScore += 0 // Score = 0 for failure
+					continue
+				}
 			}
 
 			result.BeforeCount = beforeCount
@@ -139,9 +148,14 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 			log.Debugf("run %d: pre-validation passed (%d entries)", runNum, beforeCount)
 		} else {
 			// No pre-validation configured, count entries for display purposes
-			beforeCount, err := CountPotEntries(potFile)
-			if err == nil {
-				result.BeforeCount = beforeCount
+			// If file doesn't exist, treat entry count as 0
+			if !Exist(potFile) {
+				result.BeforeCount = 0
+			} else {
+				beforeCount, err := CountPotEntries(potFile)
+				if err == nil {
+					result.BeforeCount = beforeCount
+				}
 			}
 			result.PreValidationPass = true // Consider it passed if not configured
 		}
