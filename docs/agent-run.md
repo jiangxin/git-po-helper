@@ -56,10 +56,10 @@ agents:
 #### Agent Test Configuration
 
 - `agent-test.runs`: Default number of runs for `agent-test` (default: 5)
-- `agent-test.pot_entries_before_update`: Expected entry count before update (null or 0 to disable)
-- `agent-test.pot_entries_after_update`: Expected entry count after update (null or 0 to disable)
-- `agent-test.po_entries_before_update`: Expected PO entry count before update (for future use)
-- `agent-test.po_entries_after_update`: Expected PO entry count after update (for future use)
+- `agent-test.pot_entries_before_update`: Expected POT entry count before update (null or 0 to disable)
+- `agent-test.pot_entries_after_update`: Expected POT entry count after update (null or 0 to disable)
+- `agent-test.po_entries_before_update`: Expected PO entry count before update (used by update-po)
+- `agent-test.po_entries_after_update`: Expected PO entry count after update (used by update-po)
 - `agent-test.po_new_entries_after_update`: Expected new PO entries after update (for future use)
 - `agent-test.po_fuzzy_entries_after_update`: Expected fuzzy PO entries after update (for future use)
 
@@ -70,6 +70,8 @@ Each agent is defined with a name and a command. The command is a list of string
 - `{prompt}`: Replaced with the actual prompt text
 - `{source}`: Replaced with the source file path (PO file)
 - `{commit}`: Replaced with the commit ID (default: HEAD)
+
+## Commands
 
 ## Commands
 
@@ -109,6 +111,50 @@ git-po-helper agent-run update-pot --agent claude
 **Success Criteria:**
 - Agent command exits with code 0
 - `po/git.pot` file exists and is valid
+- Pre-validation passes (if configured)
+- Post-validation passes (if configured)
+
+### agent-run update-po
+
+Update a specific `po/XX.po` file using a configured agent.
+
+**Usage:**
+```bash
+git-po-helper agent-run update-po [--agent <agent-name>] [po/XX.po]
+```
+
+**Options:**
+- `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
+- `po/XX.po`: Optional PO file path; if omitted, `default_lang_code` is used (e.g., `zh_CN` → `po/zh_CN.po`)
+
+**Examples:**
+```bash
+# Use default_lang_code to locate PO file
+git-po-helper agent-run update-po
+
+# Explicitly specify the PO file
+git-po-helper agent-run update-po po/zh_CN.po
+
+# Use a specific agent
+git-po-helper agent-run update-po --agent claude po/zh_CN.po
+```
+
+**What it does:**
+1. Loads configuration from `git-po-helper.yaml`
+2. Determines target PO file from CLI argument or `default_lang_code`
+3. Selects an agent (auto-selects if only one, or uses `--agent` flag)
+4. Performs pre-validation (if `po_entries_before_update` is configured):
+   - Counts entries in the target `po/XX.po`
+   - Verifies count matches expected value
+5. Executes the agent command with the `prompt.update_po` template and `{source}` pointing to the PO file
+6. Performs post-validation (if `po_entries_after_update` is configured):
+   - Counts entries in the target `po/XX.po`
+   - Verifies count matches expected value
+7. Validates PO file syntax using `msgfmt`
+
+**Success Criteria:**
+- Agent command exits with code 0
+- Target `po/XX.po` file exists and is valid
 - Pre-validation passes (if configured)
 - Post-validation passes (if configured)
 
@@ -157,6 +203,54 @@ git-po-helper agent-test update-pot --agent claude --runs 10
 **Output:**
 The command displays:
 - Individual run results with validation status
+- Success/failure counts
+- Average score
+- Entry count validation results (if configured)
+
+### agent-test update-po
+
+Test the `update-po` operation multiple times and calculate an average score.
+
+**Usage:**
+```bash
+git-po-helper agent-test update-po [--agent <agent-name>] [--runs <n>] [po/XX.po]
+```
+
+**Options:**
+- `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
+- `--runs <n>`: Number of test runs (default: 5, or from config file)
+- `po/XX.po`: Optional PO file path; if omitted, `default_lang_code` is used (e.g., `zh_CN` → `po/zh_CN.po`)
+
+**Examples:**
+```bash
+# Run tests using default_lang_code to locate PO file
+git-po-helper agent-test update-po
+
+# Run tests for a specific PO file
+git-po-helper agent-test update-po po/zh_CN.po
+
+# Run 10 tests with a specific agent and PO file
+git-po-helper agent-test update-po --agent claude --runs 10 po/zh_CN.po
+```
+
+**What it does:**
+1. Loads configuration from `git-po-helper.yaml`
+2. Determines number of runs (from `--runs` flag, config file, or default to 5)
+3. For each run:
+   - Restores `po/` directory to `HEAD` for a clean state
+   - Calls `agent-run update-po` logic via `RunAgentUpdatePo`
+   - Applies PO entry-count validation (if `po_entries_before_update` / `po_entries_after_update` are configured)
+   - Scores the run (100 for success, 0 for failure)
+4. Calculates average score across all runs
+5. Displays detailed results including validation status and entry counts
+
+**Scoring:**
+- **With validation enabled**: Score is 0 if any enabled validation fails, otherwise 100
+- **With validation disabled**: Score is 100 if agent command and PO syntax validation succeed, otherwise 0
+
+**Output:**
+The command displays:
+- Individual run results with validation and agent execution status
 - Success/failure counts
 - Average score
 - Entry count validation results (if configured)

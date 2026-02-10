@@ -1,6 +1,6 @@
 #!/bin/sh
 
-test_description="test git-po-helper agent-test update-pot"
+test_description="test git-po-helper agent-test update-pot and update-po"
 
 . ./lib/test-lib.sh
 
@@ -10,10 +10,11 @@ HELPER="po-helper --no-special-gettext-versions"
 create_mock_agent() {
 	cat >"$1" <<'EOF'
 #!/bin/sh
-# Mock agent that updates po/git.pot
-# Usage: mock-agent --prompt "<prompt>"
+# Mock agent that updates po/git.pot or a specific po/XX.po
+# Usage: mock-agent --prompt "<prompt>" [<source>]
 
 # Parse arguments
+SOURCE=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--prompt|-p)
@@ -21,12 +22,27 @@ while [ $# -gt 0 ]; do
 			PROMPT="$1"
 			;;
 		*)
+			# Treat the first non-flag argument as source path if not set
+			if [ -z "$SOURCE" ]; then
+				SOURCE="$1"
+			fi
 			;;
 	esac
 	shift
 done
 
-# Simulate agent work: just touch the pot file to indicate it was "updated"
+# If a source path is provided, update that PO file (used by update-po)
+if [ -n "$SOURCE" ]; then
+	if [ -f "$SOURCE" ]; then
+		echo "# Updated by mock agent: $PROMPT" >>"$SOURCE"
+		exit 0
+	else
+		echo "Error: $SOURCE not found" >&2
+		exit 1
+	fi
+fi
+
+# Fallback: simulate agent work on po/git.pot (used by update-pot)
 if [ -f "po/git.pot" ]; then
 	# Add a comment to indicate the file was updated
 	echo "# Updated by mock agent: $PROMPT" >> po/git.pot
@@ -235,6 +251,38 @@ EOF
 
 	# Should show average score (likely 0 if all failed)
 	grep "Average score" actual
+'
+
+test_expect_success "agent-test update-po: basic test with default runs" '
+	test -f workdir/po/zh_CN.po &&
+
+	cat >workdir/git-po-helper.yaml <<-EOF
+default_lang_code: "zh_CN"
+prompt:
+  update_po: "update {source} according to po/README.md"
+agent-test:
+  runs: 2
+agents:
+  mock:
+    cmd: ["$PWD/mock-agent", "--prompt", "{prompt}", "{source}"]
+EOF
+	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
+	rm -f workdir/git-po-helper.yaml.bak &&
+
+	# Remove any previous mock agent comments from zh_CN.po
+	sed -i.bak '/Updated by mock agent/d' workdir/po/zh_CN.po &&
+	rm -f workdir/po/zh_CN.po.bak &&
+
+	git -C workdir $HELPER agent-test update-po >out 2>&1 &&
+	make_user_friendly_and_stable_output <out >actual &&
+
+	# Should show test results
+	grep "Agent Test Results" actual &&
+	grep "Summary" actual &&
+	grep "Average score" actual &&
+
+	# Should complete successfully
+	grep "completed successfully" actual
 '
 
 test_done
