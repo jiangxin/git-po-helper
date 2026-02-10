@@ -3,9 +3,11 @@ package util
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/git-l10n/git-po-helper/config"
+	"github.com/git-l10n/git-po-helper/repository"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -24,6 +26,57 @@ type RunResult struct {
 	AfterCount          int
 	ExpectedBefore      *int
 	ExpectedAfter       *int
+}
+
+// CleanPoDirectory restores the po/ directory to its state in HEAD using git restore.
+// This is useful for agent-test operations to ensure a clean state before each test run.
+// Returns an error if the git restore command fails.
+func CleanPoDirectory() error {
+	workDir := repository.WorkDir()
+	log.Debugf("cleaning po/ directory using git restore (workDir: %s)", workDir)
+
+	cmd := exec.Command("git",
+		"restore",
+		"--staged",
+		"--worktree",
+		"--source", "HEAD",
+		"--",
+		"po/")
+	cmd.Dir = workDir
+
+	// Capture stderr for error messages
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe for git restore: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start git restore command: %w\nHint: Ensure git is installed and po/ directory exists", err)
+	}
+
+	// Read stderr output
+	var stderrOutput strings.Builder
+	buf := make([]byte, 1024)
+	for {
+		n, err := stderr.Read(buf)
+		if n > 0 {
+			stderrOutput.Write(buf[:n])
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if err := cmd.Wait(); err != nil {
+		errorMsg := stderrOutput.String()
+		if errorMsg == "" {
+			errorMsg = err.Error()
+		}
+		return fmt.Errorf("failed to clean po/ directory: %s\nHint: Check that po/ directory exists and git repository is valid", errorMsg)
+	}
+
+	log.Debugf("po/ directory cleaned successfully")
+	return nil
 }
 
 // CmdAgentTestUpdatePot implements the agent-test update-pot command logic.
@@ -78,6 +131,12 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 	for i := 0; i < runs; i++ {
 		runNum := i + 1
 		log.Infof("run %d/%d", runNum, runs)
+
+		// Clean po/ directory before each run to ensure a clean state
+		if err := CleanPoDirectory(); err != nil {
+			log.Warnf("run %d: failed to clean po/ directory: %v", runNum, err)
+			// Continue with the run even if cleanup fails, but log the warning
+		}
 
 		// Reuse RunAgentUpdatePot for each run
 		agentResult, err := RunAgentUpdatePot(cfg, agentName)
