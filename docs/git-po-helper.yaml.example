@@ -1,0 +1,68 @@
+# Example git-po-helper.yaml configuration file
+#
+# This file can be placed in:
+# - User home directory: ~/.git-po-helper.yaml (lower priority)
+# - Repository root: <repo-root>/git-po-helper.yaml (higher priority, overrides user config)
+#
+# The repository config takes precedence over the user config when both exist.
+
+# Default language code for operations
+default_lang_code: "zh_CN"
+
+# Prompt templates for different operations
+# Placeholders:
+#   {prompt} - replaced with the actual prompt text
+#   {source} - replaced with the source file path (po file)
+#   {commit} - replaced with the commit ID (default: HEAD)
+prompt:
+  # Prompt for updating the POT file
+  update_pot: "update po/git.pot according to po/README.md"
+
+  # Prompt for updating a PO file
+  update_po: "update {source} according to po/README.md"
+
+  # Prompt for translating a PO file
+  translate: "translate {source} according to po/README.md"
+
+  # Prompt for reviewing changes since a commit
+  review_since: "review changes of {source} since commit {commit} according to po/README.md"
+
+  # Prompt for reviewing a specific commit
+  review_commit: "review changes of commit {commit} according to po/README.md"
+
+# Agent test configuration
+agent-test:
+  # Default number of runs for agent-test command (default: 5)
+  runs: 5
+
+  # Entry count validation (null or 0 to disable)
+  # Pre-validation: Check entry count before agent execution
+  pot_entries_before_update: null  # e.g., 5000
+
+  # Post-validation: Check entry count after agent execution
+  pot_entries_after_update: null  # e.g., 5100
+
+  # PO file validation (for future use)
+  po_entries_before_update: null
+  po_entries_after_update: null
+  po_new_entries_after_update: null
+  po_fuzzy_entries_after_update: null
+
+# Agent definitions
+# Each agent has a name and a command list
+# Placeholders in commands will be replaced:
+#   {prompt} - replaced with the actual prompt text
+#   {source} - replaced with the source file path (po file)
+#   {commit} - replaced with the commit ID (default: HEAD)
+agents:
+  # Example: Claude agent
+  claude:
+    cmd: ["claude", "-p", "{prompt}"]
+
+  # Example: Gemini agent
+  gemini:
+    cmd: ["gemini", "--prompt", "{prompt}"]
+
+  # Example: Custom agent script
+  # my-custom-agent:
+  #   cmd: ["/path/to/my-agent", "--prompt", "{prompt}", "--workdir", "."]
