@@ -33,7 +33,13 @@ type RunResult struct {
 // ConfirmAgentTestExecution displays a warning and requires user confirmation before proceeding.
 // The user must explicitly type "yes" to continue, otherwise the function returns an error.
 // This is used to prevent accidental data loss when agent-test commands modify po/ directory.
-func ConfirmAgentTestExecution() error {
+// If skipConfirmation is true, the confirmation prompt is skipped.
+func ConfirmAgentTestExecution(skipConfirmation bool) error {
+	if skipConfirmation {
+		log.Debugf("skipping confirmation prompt (--dangerously-remove-po-directory flag set)")
+		return nil
+	}
+
 	fmt.Fprintln(os.Stderr, "WARNING: This command will modify files under po/ and may cause data loss.")
 	fmt.Fprint(os.Stderr, "Are you sure you want to continue? Type 'yes' to proceed: ")
 
@@ -151,9 +157,9 @@ func CleanPoDirectory() error {
 
 // CmdAgentTestUpdatePot implements the agent-test update-pot command logic.
 // It runs the agent-run update-pot operation multiple times and calculates an average score.
-func CmdAgentTestUpdatePot(agentName string, runs int) error {
+func CmdAgentTestUpdatePot(agentName string, runs int, skipConfirmation bool) error {
 	// Require user confirmation before proceeding
-	if err := ConfirmAgentTestExecution(); err != nil {
+	if err := ConfirmAgentTestExecution(skipConfirmation); err != nil {
 		return err
 	}
 

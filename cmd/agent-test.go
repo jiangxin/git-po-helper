@@ -10,8 +10,9 @@ import (
 type agentTestCommand struct {
 	cmd *cobra.Command
 	O   struct {
-		Agent string
-		Runs  int
+		Agent                  string
+		Runs                   int
+		DangerouslyRemovePoDir bool
 	}
 }
 
@@ -36,6 +37,14 @@ Entry count validation can be configured to verify that the agent correctly
 updates files with the expected number of entries.`,
 		SilenceErrors: true,
 	}
+
+	// Add global flag for --dangerously-remove-po-directory
+	v.cmd.PersistentFlags().BoolVar(&v.O.DangerouslyRemovePoDir,
+		"dangerously-remove-po-directory",
+		false,
+		"skip confirmation prompt (dangerous: may cause data loss)")
+
+	_ = viper.BindPFlag("agent-test--dangerously-remove-po-directory", v.cmd.PersistentFlags().Lookup("dangerously-remove-po-directory"))
 
 	// Add update-pot subcommand
 	updatePotCmd := &cobra.Command{
@@ -78,7 +87,7 @@ Examples:
 				return newUserError("update-pot command needs no arguments")
 			}
 
-			return util.CmdAgentTestUpdatePot(v.O.Agent, v.O.Runs)
+			return util.CmdAgentTestUpdatePot(v.O.Agent, v.O.Runs, v.O.DangerouslyRemovePoDir)
 		},
 	}
 
@@ -120,7 +129,7 @@ will be displayed.`,
 			}
 
 			// Require user confirmation before proceeding
-			if err := util.ConfirmAgentTestExecution(); err != nil {
+			if err := util.ConfirmAgentTestExecution(v.O.DangerouslyRemovePoDir); err != nil {
 				return err
 			}
 
