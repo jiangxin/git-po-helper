@@ -720,6 +720,99 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 	return results, averageScore, nil
 }
 
+// RunAgentTestReview runs the agent-test review operation multiple times.
+// It reuses RunAgentReview for each run, saves results to output directory,
+// and accumulates scores. Returns scores for each run, average score, and error.
+func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs int, commit, since string) ([]RunResult, float64, error) {
+	// Determine the agent to use (for saving results)
+	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
+	if err != nil {
+		return nil, 0, err
+	}
+	_ = selectedAgent // Avoid unused variable warning
+
+	// Determine PO file path
+	workDir := repository.WorkDir()
+	if poFile == "" {
+		lang := cfg.DefaultLangCode
+		if lang == "" {
+			return nil, 0, fmt.Errorf("default_lang_code is not configured\nHint: Provide po/XX.po on the command line or set default_lang_code in git-po-helper.yaml")
+		}
+		poFile = filepath.Join(workDir, PoDir, fmt.Sprintf("%s.po", lang))
+	} else if !filepath.IsAbs(poFile) {
+		// Treat poFile as relative to repository root
+		poFile = filepath.Join(workDir, poFile)
+	}
+
+	// Run the test multiple times
+	results := make([]RunResult, runs)
+	totalScore := 0
+
+	for i := 0; i < runs; i++ {
+		runNum := i + 1
+		log.Infof("run %d/%d", runNum, runs)
+
+		// Reuse RunAgentReview for each run
+		agentResult, err := RunAgentReview(cfg, agentName, poFile, commit, since)
+
+		// Convert AgentRunResult to RunResult
+		// agentResult is never nil (always returns a result structure)
+		result := RunResult{
+			RunNumber:           runNum,
+			Score:               agentResult.ReviewScore, // Use ReviewScore for review
+			PreValidationPass:   agentResult.PreValidationPass,
+			PostValidationPass:  agentResult.PostValidationPass,
+			AgentExecuted:       agentResult.AgentExecuted,
+			AgentSuccess:        agentResult.AgentSuccess,
+			PreValidationError:  agentResult.PreValidationError,
+			PostValidationError: agentResult.PostValidationError,
+			AgentError:          agentResult.AgentError,
+			BeforeCount:         agentResult.BeforeCount,
+			AfterCount:          agentResult.AfterCount,
+			BeforeNewCount:      agentResult.BeforeNewCount,
+			AfterNewCount:       agentResult.AfterNewCount,
+			BeforeFuzzyCount:    agentResult.BeforeFuzzyCount,
+			AfterFuzzyCount:     agentResult.AfterFuzzyCount,
+			ExpectedBefore:      nil, // Not used for review
+			ExpectedAfter:       nil, // Not used for review
+		}
+
+		// Calculate score from review JSON if available
+		if agentResult.ReviewJSON != nil {
+			// Score is already calculated in RunAgentReview and stored in ReviewScore
+			result.Score = agentResult.ReviewScore
+		} else if agentResult.AgentSuccess {
+			// If agent succeeded but no JSON, score is 0 (invalid output)
+			result.Score = 0
+		} else {
+			// If agent failed, score is 0
+			result.Score = 0
+		}
+
+		// If there was an error, log it but continue (for agent-test, we want to collect all results)
+		if err != nil {
+			log.Debugf("run %d: agent-run returned error: %v", runNum, err)
+			// Error details are already in the result structure
+		}
+
+		// Save review results to output directory (ignore errors)
+		if err := SaveReviewResults(agentKey, runNum, poFile, agentResult.ReviewJSONPath, agentResult.AgentStdout, agentResult.AgentStderr); err != nil {
+			log.Warnf("run %d: failed to save review results: %v", runNum, err)
+			// Continue even if saving results fails
+		}
+
+		results[i] = result
+		totalScore += result.Score
+		log.Debugf("run %d: completed with score %d", runNum, result.Score)
+	}
+
+	// Calculate average score
+	averageScore := float64(totalScore) / float64(runs)
+	log.Infof("all runs completed. Total score: %d/%d, Average: %.2f", totalScore, runs, averageScore)
+
+	return results, averageScore, nil
+}
+
 // displayTranslateTestResults displays the translation test results in a readable format.
 func displayTranslateTestResults(results []RunResult, averageScore float64, totalRuns int) {
 	fmt.Println()

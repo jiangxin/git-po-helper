@@ -40,6 +40,10 @@ type AgentRunResult struct {
 	ReviewJSON     *ReviewJSONResult `json:"review_json,omitempty"`
 	ReviewScore    int               `json:"review_score,omitempty"`
 	ReviewJSONPath string            `json:"review_json_path,omitempty"`
+
+	// Agent output (for saving logs in agent-test)
+	AgentStdout []byte `json:"-"`
+	AgentStderr []byte `json:"-"`
 }
 
 // ReviewIssue represents a single issue in a review JSON result.
@@ -1071,6 +1075,8 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
 	stdout, stderr, err := ExecuteAgentCommand(agentCmd, workDir)
 	result.AgentExecuted = true
+	result.AgentStdout = stdout
+	result.AgentStderr = stderr
 
 	if err != nil {
 		// Log stderr if available
