@@ -580,3 +580,252 @@ msgstr ""
 		t.Errorf("Expected error for non-matching entry count, got nil")
 	}
 }
+
+func TestCountNewEntries(t *testing.T) {
+	// Check if msgattrib is available
+	if _, err := exec.LookPath("msgattrib"); err != nil {
+		t.Skip("msgattrib not found, skipping test")
+	}
+
+	tests := []struct {
+		name        string
+		poContent   string
+		expected    int
+		expectError bool
+	}{
+		{
+			name: "PO file with untranslated entries",
+			poContent: `# Translation file
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Translated string"
+msgstr "已翻译的字符串"
+
+msgid "Untranslated string 1"
+msgstr ""
+
+msgid "Untranslated string 2"
+msgstr ""
+`,
+			expected:    2,
+			expectError: false,
+		},
+		{
+			name: "PO file with all translated entries",
+			poContent: `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "First string"
+msgstr "第一个字符串"
+
+msgid "Second string"
+msgstr "第二个字符串"
+`,
+			expected:    0,
+			expectError: false,
+		},
+		{
+			name: "PO file with only header",
+			poContent: `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+`,
+			expected:    0,
+			expectError: false,
+		},
+		{
+			name: "PO file with multi-line untranslated msgid",
+			poContent: `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Line 1 "
+"Line 2"
+msgstr ""
+
+msgid "Another string"
+msgstr "另一个字符串"
+`,
+			expected:    1,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			poFile := filepath.Join(tmpDir, "test.po")
+			err := os.WriteFile(poFile, []byte(tt.poContent), 0644)
+			if err != nil {
+				t.Fatalf("Failed to create test PO file: %v", err)
+			}
+
+			count, err := CountNewEntries(poFile)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if count != tt.expected {
+				t.Errorf("Expected count %d, got %d", tt.expected, count)
+			}
+		})
+	}
+}
+
+func TestCountNewEntries_InvalidFile(t *testing.T) {
+	// Check if msgattrib is available
+	if _, err := exec.LookPath("msgattrib"); err != nil {
+		t.Skip("msgattrib not found, skipping test")
+	}
+
+	_, err := CountNewEntries("/nonexistent/file.po")
+	if err == nil {
+		t.Error("Expected error for non-existent file, got nil")
+	}
+}
+
+func TestCountFuzzyEntries(t *testing.T) {
+	// Check if msgattrib is available
+	if _, err := exec.LookPath("msgattrib"); err != nil {
+		t.Skip("msgattrib not found, skipping test")
+	}
+
+	tests := []struct {
+		name        string
+		poContent   string
+		expected    int
+		expectError bool
+	}{
+		{
+			name: "PO file with fuzzy entries",
+			poContent: `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Normal string"
+msgstr "普通字符串"
+
+#, fuzzy
+msgid "Fuzzy string 1"
+msgstr "模糊字符串 1"
+
+#, fuzzy
+msgid "Fuzzy string 2"
+msgstr "模糊字符串 2"
+`,
+			expected:    2,
+			expectError: false,
+		},
+		{
+			name: "PO file with no fuzzy entries",
+			poContent: `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "First string"
+msgstr "第一个字符串"
+
+msgid "Second string"
+msgstr "第二个字符串"
+`,
+			expected:    0,
+			expectError: false,
+		},
+		{
+			name: "PO file with only header",
+			poContent: `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+`,
+			expected:    0,
+			expectError: false,
+		},
+		{
+			name: "PO file with multi-line fuzzy msgid",
+			poContent: `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#, fuzzy
+msgid "Line 1 "
+"Line 2"
+msgstr "第一行第二行"
+
+msgid "Another string"
+msgstr "另一个字符串"
+`,
+			expected:    1,
+			expectError: false,
+		},
+		{
+			name: "PO file with mixed fuzzy and untranslated",
+			poContent: `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#, fuzzy
+msgid "Fuzzy string"
+msgstr "模糊字符串"
+
+msgid "Untranslated string"
+msgstr ""
+
+msgid "Normal string"
+msgstr "普通字符串"
+`,
+			expected:    1,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			poFile := filepath.Join(tmpDir, "test.po")
+			err := os.WriteFile(poFile, []byte(tt.poContent), 0644)
+			if err != nil {
+				t.Fatalf("Failed to create test PO file: %v", err)
+			}
+
+			count, err := CountFuzzyEntries(poFile)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if count != tt.expected {
+				t.Errorf("Expected count %d, got %d", tt.expected, count)
+			}
+		})
+	}
+}
+
+func TestCountFuzzyEntries_InvalidFile(t *testing.T) {
+	// Check if msgattrib is available
+	if _, err := exec.LookPath("msgattrib"); err != nil {
+		t.Skip("msgattrib not found, skipping test")
+	}
+
+	_, err := CountFuzzyEntries("/nonexistent/file.po")
+	if err == nil {
+		t.Error("Expected error for non-existent file, got nil")
+	}
+}

@@ -355,3 +355,131 @@ func GetPrompt(cfg *config.AgentConfig) (string, error) {
 	log.Debugf("using prompt: %s", prompt)
 	return prompt, nil
 }
+
+// CountNewEntries counts untranslated entries in a PO file.
+// It uses `msgattrib --untranslated` to extract untranslated entries,
+// then counts the msgid entries excluding the header entry (empty msgid).
+//
+// The function:
+// - Executes `msgattrib --untranslated poFile`
+// - Scans output for lines starting with "msgid "
+// - Excludes the header entry (msgid "")
+// - Returns the count of untranslated msgid entries
+func CountNewEntries(poFile string) (int, error) {
+	cmd := exec.Command("msgattrib", "--untranslated", poFile)
+	output, err := cmd.Output()
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			return 0, fmt.Errorf("msgattrib failed for %s: %w\nstderr: %s",
+				poFile, err, string(exitError.Stderr))
+		}
+		return 0, fmt.Errorf("failed to execute msgattrib for %s: %w", poFile, err)
+	}
+
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	count := 0
+	inMsgid := false
+	msgidValue := ""
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Check for msgid line
+		if strings.HasPrefix(trimmed, "msgid ") {
+			// Extract msgid value
+			msgidValue = strings.TrimPrefix(trimmed, "msgid ")
+			msgidValue = strings.TrimSpace(msgidValue)
+			inMsgid = true
+			continue
+		}
+
+		// If we're in a msgid and encounter a continuation line
+		if inMsgid && strings.HasPrefix(trimmed, `"`) {
+			// This is a multi-line msgid, just mark it as non-empty
+			msgidValue += "continuation"
+			continue
+		}
+
+		// If we encounter msgstr, finish the msgid
+		if inMsgid && strings.HasPrefix(trimmed, "msgstr") {
+			// Check if msgid is non-empty (not the header)
+			if strings.Trim(msgidValue, `"`) != "" {
+				count++
+			}
+			inMsgid = false
+			msgidValue = ""
+			continue
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return 0, fmt.Errorf("failed to scan msgattrib output: %w", err)
+	}
+
+	return count, nil
+}
+
+// CountFuzzyEntries counts fuzzy entries in a PO file.
+// It uses `msgattrib --only-fuzzy` to extract fuzzy entries,
+// then counts the msgid entries excluding the header entry (empty msgid).
+//
+// The function:
+// - Executes `msgattrib --only-fuzzy poFile`
+// - Scans output for lines starting with "msgid "
+// - Excludes the header entry (msgid "")
+// - Returns the count of fuzzy msgid entries
+func CountFuzzyEntries(poFile string) (int, error) {
+	cmd := exec.Command("msgattrib", "--only-fuzzy", poFile)
+	output, err := cmd.Output()
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			return 0, fmt.Errorf("msgattrib failed for %s: %w\nstderr: %s",
+				poFile, err, string(exitError.Stderr))
+		}
+		return 0, fmt.Errorf("failed to execute msgattrib for %s: %w", poFile, err)
+	}
+
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	count := 0
+	inMsgid := false
+	msgidValue := ""
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Check for msgid line
+		if strings.HasPrefix(trimmed, "msgid ") {
+			// Extract msgid value
+			msgidValue = strings.TrimPrefix(trimmed, "msgid ")
+			msgidValue = strings.TrimSpace(msgidValue)
+			inMsgid = true
+			continue
+		}
+
+		// If we're in a msgid and encounter a continuation line
+		if inMsgid && strings.HasPrefix(trimmed, `"`) {
+			// This is a multi-line msgid, just mark it as non-empty
+			msgidValue += "continuation"
+			continue
+		}
+
+		// If we encounter msgstr, finish the msgid
+		if inMsgid && strings.HasPrefix(trimmed, "msgstr") {
+			// Check if msgid is non-empty (not the header)
+			if strings.Trim(msgidValue, `"`) != "" {
+				count++
+			}
+			inMsgid = false
+			msgidValue = ""
+			continue
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return 0, fmt.Errorf("failed to scan msgattrib output: %w", err)
+	}
+
+	return count, nil
+}
