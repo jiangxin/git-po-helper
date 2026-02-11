@@ -319,11 +319,6 @@ will be displayed.`,
 				return newUserError("show-config command needs no arguments")
 			}
 
-			// Require user confirmation before proceeding
-			if err := util.ConfirmAgentTestExecution(v.O.DangerouslyRemovePoDir); err != nil {
-				return err
-			}
-
 			return util.CmdAgentRunShowConfig()
 		},
 	}
