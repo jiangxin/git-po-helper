@@ -1117,15 +1117,28 @@ func PrepareReviewData(poFile, commit, since string) (origPath, newPath, reviewI
 
 	// Get original file from git
 	log.Infof("getting original file from commit: %s", baseCommit)
+	// Convert absolute path to relative path for git show command
+	poFileRel, err := filepath.Rel(workDir, poFile)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to convert PO file path to relative: %w", err)
+	}
+	// Normalize to use forward slashes (git uses forward slashes in paths)
+	poFileRel = filepath.ToSlash(poFileRel)
 	origFileRevision := FileRevision{
 		Revision: baseCommit,
-		File:     poFile,
+		File:     poFileRel,
 	}
 	if err := checkoutTmpfile(&origFileRevision); err != nil {
-		// If file doesn't exist in that commit, create empty file
-		log.Debugf("file not found in commit %s, creating empty orig file", baseCommit)
-		if err := os.WriteFile(origPath, []byte{}, 0644); err != nil {
-			return "", "", "", fmt.Errorf("failed to create empty orig file: %w", err)
+		// Check if error is because file doesn't exist in the commit
+		if strings.Contains(err.Error(), "does not exist in") {
+			// If file doesn't exist in that commit, create empty file
+			log.Infof("file %s not found in commit %s, using empty file as original", poFileRel, baseCommit)
+			if err := os.WriteFile(origPath, []byte{}, 0644); err != nil {
+				return "", "", "", fmt.Errorf("failed to create empty orig file: %w", err)
+			}
+		} else {
+			// For other errors, return them
+			return "", "", "", fmt.Errorf("failed to get original file from commit %s: %w", baseCommit, err)
 		}
 	} else {
 		// Copy tmpfile to orig.po
@@ -1145,9 +1158,10 @@ func PrepareReviewData(poFile, commit, since string) (origPath, newPath, reviewI
 	if newFileSource != "" {
 		// Get file from specified commit
 		log.Debugf("getting new file from commit: %s", newFileSource)
+		// Use the same relative path for git show command
 		newFileRevision := FileRevision{
 			Revision: newFileSource,
-			File:     poFile,
+			File:     poFileRel,
 		}
 		if err := checkoutTmpfile(&newFileRevision); err != nil {
 			return "", "", "", fmt.Errorf("failed to get new file from commit %s: %w", newFileSource, err)
@@ -1243,6 +1257,12 @@ func extractReviewInput(origPath, newPath, outputPath string) error {
 	newEntries, newHeader, err := parsePoEntries(newData)
 	if err != nil {
 		return fmt.Errorf("failed to parse new file: %w", err)
+	}
+
+	// If orig file is empty, all entries in new file will be considered new
+	// This handles the case where the file doesn't exist in HEAD
+	if len(origData) == 0 {
+		log.Debugf("orig file is empty, all entries in new file will be included in review-input")
 	}
 
 	// Create a map of orig entries by msgid for quick lookup
