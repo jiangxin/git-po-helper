@@ -1300,24 +1300,67 @@ func parsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			}
 		}
 
-		// Check for end of header (empty msgstr after empty msgid)
+		// Check for header msgstr (empty msgstr after empty msgid)
 		if inHeader && strings.HasPrefix(trimmed, "msgstr ") {
 			value := strings.TrimPrefix(trimmed, "msgstr ")
 			value = strings.Trim(value, `"`)
 			if msgidValue.Len() == 0 && value == "" {
-				// End of header
+				// This is the header msgstr line
 				headerLines = append(headerLines, line)
+				// Continue collecting header (including continuation lines starting with ")
+				// Header ends when we encounter an empty line or a new msgid entry
+				continue
+			}
+		}
+
+		// Collect header lines (including continuation lines after msgstr "")
+		if inHeader {
+			// Check if this is a continuation line of header msgstr (starts with ")
+			// Only collect as header if we're still in header mode and haven't started parsing an entry
+			// Also check that we're not in the middle of parsing a msgid or msgstr (which would indicate an entry)
+			if strings.HasPrefix(trimmed, `"`) {
+				// If we're already parsing an entry (currentEntry exists or inMsgid/inMsgstr is set),
+				// this continuation line belongs to the entry, not the header
+				if currentEntry != nil || inMsgid || inMsgstr || inMsgidPlural {
+					// This is a continuation line of an entry, not header
+					// Don't process it here, let it be handled by entry parsing logic below
+				} else {
+					// For header continuation lines, remove the quotes
+					unquoted := strings.Trim(trimmed, `"`)
+					headerLines = append(headerLines, unquoted)
+					continue
+				}
+			}
+			// Check if this is an empty line - end of header
+			if trimmed == "" {
 				inHeader = false
 				msgidValue.Reset()
 				msgstrValue.Reset()
 				continue
 			}
-		}
-
-		// Collect header lines
-		if inHeader {
-			headerLines = append(headerLines, line)
-			continue
+			// Check if this is a new msgid entry - end of header
+			if strings.HasPrefix(trimmed, "msgid ") {
+				value := strings.TrimPrefix(trimmed, "msgid ")
+				value = strings.Trim(value, `"`)
+				if value != "" {
+					// This is a real entry, not header
+					inHeader = false
+					msgidValue.Reset()
+					msgstrValue.Reset()
+					// Don't continue, let it be processed as a normal entry
+				} else {
+					// This is a duplicate empty msgid after header - this should not happen
+					// in a valid PO file, but if it does, end the header and start a new entry
+					inHeader = false
+					msgidValue.Reset()
+					msgstrValue.Reset()
+					// Don't continue, let it be processed as a normal entry
+				}
+			} else {
+				// Other header lines (comments, etc.)
+				headerLines = append(headerLines, line)
+				continue
+			}
 		}
 
 		// Parse entry
@@ -1331,16 +1374,27 @@ func parsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			entryLines = append(entryLines, line)
 		} else if strings.HasPrefix(trimmed, "msgid ") {
 			// Start of new entry
-			if currentEntry != nil && msgidValue.Len() > 0 {
+			// Save previous entry if we have one and it has content
+			// (either msgid with continuation lines or msgstr)
+			if currentEntry != nil && (msgidValue.Len() > 0 || msgstrValue.Len() > 0) {
 				// Save previous entry
 				currentEntry.MsgID = msgidValue.String()
 				currentEntry.MsgStr = msgstrValue.String()
 				currentEntry.RawLines = entryLines
 				entries = append(entries, currentEntry)
 			}
-			// Start new entry
-			currentEntry = &PoEntry{}
-			entryLines = []string{}
+			// Start new entry (or continue existing entry if it only has comments)
+			if currentEntry == nil {
+				// Create a new entry
+				currentEntry = &PoEntry{}
+				entryLines = []string{}
+			} else if msgidValue.Len() > 0 || msgstrValue.Len() > 0 {
+				// Previous entry was saved, create new entry
+				currentEntry = &PoEntry{}
+				entryLines = []string{}
+			}
+			// If currentEntry has comments but no msgid/msgstr, keep it and continue
+			// entryLines already contains the comments, so we don't reset it
 			msgidValue.Reset()
 			msgstrValue.Reset()
 			msgidPluralValue.Reset()
@@ -1405,7 +1459,10 @@ func parsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			entryLines = append(entryLines, line)
 		} else if trimmed == "" {
 			// Empty line - end of entry (only if we have a current entry)
-			if currentEntry != nil && msgidValue.Len() > 0 {
+			// For entries with msgid starting with empty string, we need to check
+			// if we have collected any continuation lines (msgidValue.Len() > 0)
+			// or if we have a complete entry with msgstr
+			if currentEntry != nil && (msgidValue.Len() > 0 || msgstrValue.Len() > 0) {
 				currentEntry.MsgID = msgidValue.String()
 				currentEntry.MsgStr = msgstrValue.String()
 				if msgidPluralValue.Len() > 0 {
@@ -1441,7 +1498,10 @@ func parsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 	}
 
 	// Handle last entry
-	if currentEntry != nil && msgidValue.Len() > 0 {
+	// For entries with msgid starting with empty string, we need to check
+	// if we have collected any continuation lines (msgidValue.Len() > 0)
+	// or if we have a complete entry with msgstr
+	if currentEntry != nil && (msgidValue.Len() > 0 || msgstrValue.Len() > 0) {
 		currentEntry.MsgID = msgidValue.String()
 		currentEntry.MsgStr = msgstrValue.String()
 		if msgidPluralValue.Len() > 0 {
@@ -1487,8 +1547,15 @@ func writeReviewInputPo(outputPath string, header []string, entries []*PoEntry) 
 	// Write header
 	for _, line := range header {
 		content.WriteString(line)
-		content.WriteString("\n")
+		// Only add newline if the line doesn't already end with \n
+		// (header continuation lines already contain \n as part of their content)
+		if !strings.HasSuffix(line, "\n") {
+			content.WriteString("\n")
+		}
 	}
+
+	// Add empty line after header
+	content.WriteString("\n")
 
 	// Write entries
 	for _, entry := range entries {
