@@ -42,8 +42,8 @@ msgstr ""
 				`#`,
 				`msgid ""`,
 				`msgstr ""`,
-				`Content-Type: text/plain; charset=UTF-8\n`,
-				`Content-Transfer-Encoding: 8bit\n`,
+				`"Content-Type: text/plain; charset=UTF-8\n"`,
+				`"Content-Transfer-Encoding: 8bit\n"`,
 			},
 			expectedCount: 2,
 			validateEntry: func(t *testing.T, entries []*PoEntry) {
@@ -83,7 +83,7 @@ msgstr "单行"
 			expectedHeader: []string{
 				`msgid ""`,
 				`msgstr ""`,
-				`Content-Type: text/plain; charset=UTF-8\n`,
+				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
 			validateEntry: func(t *testing.T, entries []*PoEntry) {
@@ -122,7 +122,7 @@ msgstr[1] "文件"
 			expectedHeader: []string{
 				`msgid ""`,
 				`msgstr ""`,
-				`Content-Type: text/plain; charset=UTF-8\n`,
+				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
 			validateEntry: func(t *testing.T, entries []*PoEntry) {
@@ -176,7 +176,7 @@ msgstr[1] ""
 			expectedHeader: []string{
 				`msgid ""`,
 				`msgstr ""`,
-				`Content-Type: text/plain; charset=UTF-8\n`,
+				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
 			validateEntry: func(t *testing.T, entries []*PoEntry) {
@@ -218,7 +218,7 @@ msgstr "简单字符串"
 			expectedHeader: []string{
 				`msgid ""`,
 				`msgstr ""`,
-				`Content-Type: text/plain; charset=UTF-8\n`,
+				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
 			validateEntry: func(t *testing.T, entries []*PoEntry) {
@@ -263,8 +263,8 @@ msgstr ""
 			expectedHeader: []string{
 				`msgid ""`,
 				`msgstr ""`,
-				`Content-Type: text/plain; charset=UTF-8\n`,
-				`Language: zh_CN\n`,
+				`"Content-Type: text/plain; charset=UTF-8\n"`,
+				`"Language: zh_CN\n"`,
 			},
 			expectedCount: 0,
 			validateEntry: func(t *testing.T, entries []*PoEntry) {
@@ -288,7 +288,7 @@ msgstr "已翻译"
 			expectedHeader: []string{
 				`msgid ""`,
 				`msgstr ""`,
-				`Content-Type: text/plain; charset=UTF-8\n`,
+				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
 			validateEntry: func(t *testing.T, entries []*PoEntry) {
@@ -333,7 +333,7 @@ msgstr "正常字符串"
 			expectedHeader: []string{
 				`msgid ""`,
 				`msgstr ""`,
-				`Content-Type: text/plain; charset=UTF-8\n`,
+				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
 			validateEntry: func(t *testing.T, entries []*PoEntry) {

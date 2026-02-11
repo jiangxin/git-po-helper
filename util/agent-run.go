@@ -1355,9 +1355,8 @@ func parsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 					// This is a continuation line of an entry, not header
 					// Don't process it here, let it be handled by entry parsing logic below
 				} else {
-					// For header continuation lines, remove the quotes
-					unquoted := strings.Trim(trimmed, `"`)
-					headerLines = append(headerLines, unquoted)
+					// For header continuation lines, keep the quotes
+					headerLines = append(headerLines, trimmed)
 					continue
 				}
 			}
@@ -1575,10 +1574,14 @@ func writeReviewInputPo(outputPath string, header []string, entries []*PoEntry) 
 	var content strings.Builder
 
 	// Write header
+	// Header structure:
+	// - Comments (if any) - lines starting with #
+	// - msgid "" - line starting with msgid
+	// - msgstr "" - line starting with msgstr
+	// - Continuation lines - already wrapped in quotes (preserved from parsePoEntries)
 	for _, line := range header {
 		content.WriteString(line)
 		// Only add newline if the line doesn't already end with \n
-		// (header continuation lines already contain \n as part of their content)
 		if !strings.HasSuffix(line, "\n") {
 			content.WriteString("\n")
 		}
@@ -1714,7 +1717,15 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	log.Infof("merging review-output.po with new.po using msgcat")
 	cmd := exec.Command("msgcat", "--use-first", reviewOutputPath, newPath, "-o", reviewedPath)
 	cmd.Dir = workDir
+	// Capture stderr to show error details
+	var stderrBuf strings.Builder
+	cmd.Stderr = &stderrBuf
 	if err := cmd.Run(); err != nil {
+		stderrStr := stderrBuf.String()
+		if stderrStr != "" {
+			log.Errorf("failed to merge files with msgcat: %v\nstderr: %s", err, stderrStr)
+			return result, fmt.Errorf("failed to merge review-output.po with new.po: %w\nstderr: %s\nHint: Check that msgcat is available and files are valid", err, stderrStr)
+		}
 		log.Errorf("failed to merge files with msgcat: %v", err)
 		return result, fmt.Errorf("failed to merge review-output.po with new.po: %w\nHint: Check that msgcat is available and files are valid", err)
 	}
