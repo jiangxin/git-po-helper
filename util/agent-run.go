@@ -1174,7 +1174,7 @@ func PrepareReviewData(poFile, commit, since string) (origPath, newPath, reviewI
 	}()
 
 	// Sort orig file
-	cmd := exec.Command("msgcat", "--sort-by-file", origPath, "-o", origSortedPath)
+	cmd := exec.Command("msgcat", "--sort-output", origPath, "-o", origSortedPath)
 	cmd.Dir = workDir
 	if err := cmd.Run(); err != nil {
 		// If msgcat fails (e.g., empty file), just copy the file
@@ -1185,7 +1185,7 @@ func PrepareReviewData(poFile, commit, since string) (origPath, newPath, reviewI
 	}
 
 	// Sort new file
-	cmd = exec.Command("msgcat", "--sort-by-file", newPath, "-o", newSortedPath)
+	cmd = exec.Command("msgcat", "--sort-output", newPath, "-o", newSortedPath)
 	cmd.Dir = workDir
 	if err := cmd.Run(); err != nil {
 		return "", "", "", fmt.Errorf("failed to sort new file: %w", err)
