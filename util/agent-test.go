@@ -65,99 +65,136 @@ func ConfirmAgentTestExecution(skipConfirmation bool) error {
 // CleanPoDirectory restores the po/ directory to its state in HEAD using git restore.
 // This is useful for agent-test operations to ensure a clean state before each test run.
 // Returns an error if the git restore command fails.
-func CleanPoDirectory() error {
+func CleanPoDirectory(paths ...string) error {
 	workDir := repository.WorkDir()
-	log.Debugf("cleaning po/ directory using git restore (workDir: %s)", workDir)
 
-	cmd := exec.Command("git",
-		"restore",
-		"--staged",
-		"--worktree",
-		"--source", "HEAD",
-		"--",
-		"po/")
-	cmd.Dir = workDir
-
-	// Capture stderr for error messages
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stderr pipe for git restore: %w", err)
+	// If no paths provided, use default "po/"
+	targetPaths := paths
+	if len(targetPaths) == 0 {
+		targetPaths = []string{"po/"}
 	}
 
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start git restore command: %w\nHint: Ensure git is installed and po/ directory exists", err)
-	}
+	log.Debugf("cleaning paths using git restore (workDir: %s, paths: %v)", workDir, targetPaths)
 
-	// Read stderr output
-	var stderrOutput strings.Builder
-	buf := make([]byte, 1024)
-	for {
-		n, err := stderr.Read(buf)
-		if n > 0 {
-			stderrOutput.Write(buf[:n])
+	// Process each path individually to avoid failures on non-existent paths
+	for _, path := range targetPaths {
+		log.Debugf("restoring path: %s", path)
+
+		// Build git restore command for this path
+		args := []string{
+			"restore",
+			"--staged",
+			"--worktree",
+			"--source", "HEAD",
+			"--",
+			path,
 		}
+
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workDir
+
+		// Capture stderr for error messages
+		stderr, err := cmd.StderrPipe()
 		if err != nil {
-			break
+			log.Debugf("failed to create stderr pipe for git restore on path %s: %v", path, err)
+			continue // Skip this path and continue with next
+		}
+
+		if err := cmd.Start(); err != nil {
+			log.Debugf("failed to start git restore command for path %s: %v", path, err)
+			continue // Skip this path and continue with next
+		}
+
+		// Read stderr output
+		var stderrOutput strings.Builder
+		buf := make([]byte, 1024)
+		for {
+			n, err := stderr.Read(buf)
+			if n > 0 {
+				stderrOutput.Write(buf[:n])
+			}
+			if err != nil {
+				break
+			}
+		}
+
+		if err := cmd.Wait(); err != nil {
+			// Ignore errors for individual paths (path might not exist in repository)
+			errorMsg := stderrOutput.String()
+			if errorMsg == "" {
+				errorMsg = err.Error()
+			}
+			log.Debugf("git restore failed for path %s (ignored): %s", path, errorMsg)
+		} else {
+			log.Debugf("path %s restored successfully", path)
 		}
 	}
 
-	if err := cmd.Wait(); err != nil {
-		errorMsg := stderrOutput.String()
-		if errorMsg == "" {
-			errorMsg = err.Error()
-		}
-		return fmt.Errorf("failed to clean po/ directory: %s\nHint: Check that po/ directory exists and git repository is valid", errorMsg)
-	}
-
-	log.Debugf("po/ directory restored successfully")
+	log.Debugf("all paths processed")
 
 	// Clean untracked po/git.pot file that might not be in git repository
-	log.Debugf("cleaning untracked po/git.pot file using git clean")
-	cleanCmd := exec.Command("git",
-		"clean",
-		"-fx",
-		"--",
-		"po/git.pot")
-	cleanCmd.Dir = workDir
+	// Only clean po/git.pot if default path "po/" is being used or explicitly specified
+	shouldCleanPot := len(paths) == 0 || containsPath(paths, "po/") || containsPath(paths, "po/git.pot")
+	if shouldCleanPot {
+		log.Debugf("cleaning untracked po/git.pot file using git clean")
+		cleanCmd := exec.Command("git",
+			"clean",
+			"-fx",
+			"--",
+			"po/git.pot")
+		cleanCmd.Dir = workDir
 
-	// Capture stderr for error messages
-	cleanStderr, err := cleanCmd.StderrPipe()
-	if err != nil {
-		log.Warnf("failed to create stderr pipe for git clean: %v", err)
-		// Continue even if we can't capture stderr
-	} else {
-		if err := cleanCmd.Start(); err != nil {
-			log.Warnf("failed to start git clean command: %v", err)
-			// Continue even if git clean fails
+		// Capture stderr for error messages
+		cleanStderr, err := cleanCmd.StderrPipe()
+		if err != nil {
+			log.Warnf("failed to create stderr pipe for git clean: %v", err)
+			// Continue even if we can't capture stderr
 		} else {
-			// Read stderr output
-			var cleanStderrOutput strings.Builder
-			buf := make([]byte, 1024)
-			for {
-				n, err := cleanStderr.Read(buf)
-				if n > 0 {
-					cleanStderrOutput.Write(buf[:n])
-				}
-				if err != nil {
-					break
-				}
-			}
-
-			if err := cleanCmd.Wait(); err != nil {
-				// git clean may fail if there's nothing to clean, which is fine
-				errorMsg := cleanStderrOutput.String()
-				if errorMsg != "" {
-					log.Debugf("git clean output: %s", errorMsg)
-				}
-				log.Debugf("git clean completed (exit code may be non-zero if nothing to clean)")
+			if err := cleanCmd.Start(); err != nil {
+				log.Warnf("failed to start git clean command: %v", err)
+				// Continue even if git clean fails
 			} else {
-				log.Debugf("untracked po/git.pot file cleaned successfully")
+				// Read stderr output
+				var cleanStderrOutput strings.Builder
+				buf := make([]byte, 1024)
+				for {
+					n, err := cleanStderr.Read(buf)
+					if n > 0 {
+						cleanStderrOutput.Write(buf[:n])
+					}
+					if err != nil {
+						break
+					}
+				}
+
+				if err := cleanCmd.Wait(); err != nil {
+					// git clean may fail if there's nothing to clean, which is fine
+					errorMsg := cleanStderrOutput.String()
+					if errorMsg != "" {
+						log.Debugf("git clean output: %s", errorMsg)
+					}
+					log.Debugf("git clean completed (exit code may be non-zero if nothing to clean)")
+				} else {
+					log.Debugf("untracked po/git.pot file cleaned successfully")
+				}
 			}
 		}
+	} else {
+		log.Debugf("skipping po/git.pot cleanup (not in specified paths)")
 	}
 
-	log.Debugf("po/ directory cleaned successfully")
+	log.Debugf("paths cleaned successfully")
 	return nil
+}
+
+// containsPath checks if a path exists in the paths slice (exact match or prefix match).
+func containsPath(paths []string, target string) bool {
+	for _, p := range paths {
+		if p == target || strings.HasPrefix(target, p) || strings.HasPrefix(p, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // CmdAgentTestUpdatePot implements the agent-test update-pot command logic.
@@ -219,7 +256,7 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 		log.Infof("run %d/%d", runNum, runs)
 
 		// Clean po/ directory before each run to ensure a clean state
-		if err := CleanPoDirectory(); err != nil {
+		if err := CleanPoDirectory("po/git.pot"); err != nil {
 			log.Warnf("run %d: failed to clean po/ directory: %v", runNum, err)
 			// Continue with the run even if cleanup fails, but log the warning
 		}
@@ -316,13 +353,17 @@ func RunAgentTestUpdatePo(agentName, poFile string, runs int, cfg *config.AgentC
 	// Run the test multiple times
 	results := make([]RunResult, runs)
 	totalScore := 0
+	relPoFile, err := GetPoFileRelPath(cfg, poFile)
+	if err != nil {
+		log.Warnf("failed to get relative path of poFile: %v", err)
+	}
 
 	for i := 0; i < runs; i++ {
 		runNum := i + 1
 		log.Infof("run %d/%d", runNum, runs)
 
 		// Clean po/ directory before each run to ensure a clean state
-		if err := CleanPoDirectory(); err != nil {
+		if err := CleanPoDirectory(relPoFile, "po/git.pot"); err != nil {
 			log.Warnf("run %d: failed to clean po/ directory: %v", runNum, err)
 			// Continue with the run even if cleanup fails, but log the warning
 		}
@@ -650,16 +691,20 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 		return nil, 0, err
 	}
 
+	// Will clean poFile using relative path
+	relPoFile, err := GetPoFileRelPath(cfg, poFile)
+	if err != nil {
+		log.Warnf("failed to get relative path of poFile: %v", err)
+	}
+
 	// Run the test multiple times
 	results := make([]RunResult, runs)
 	totalScore := 0
-
 	for i := 0; i < runs; i++ {
 		runNum := i + 1
 		log.Infof("run %d/%d", runNum, runs)
 
-		// Clean po/ directory before each run to ensure a clean state
-		if err := CleanPoDirectory(); err != nil {
+		if err := CleanPoDirectory(relPoFile); err != nil {
 			log.Warnf("run %d: failed to clean po/ directory: %v", runNum, err)
 			// Continue with the run even if cleanup fails, but log the warning
 		}
@@ -725,16 +770,15 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 	_ = selectedAgent // Avoid unused variable warning
 
 	// Determine PO file path
-	workDir := repository.WorkDir()
-	if poFile == "" {
-		lang := cfg.DefaultLangCode
-		if lang == "" {
-			return nil, 0, fmt.Errorf("default_lang_code is not configured\nHint: Provide po/XX.po on the command line or set default_lang_code in git-po-helper.yaml")
-		}
-		poFile = filepath.Join(workDir, PoDir, fmt.Sprintf("%s.po", lang))
-	} else if !filepath.IsAbs(poFile) {
-		// Treat poFile as relative to repository root
-		poFile = filepath.Join(workDir, poFile)
+	poFile, err = GetPoFileAbsPath(cfg, poFile)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Will clean poFile using relative path
+	relPoFile, err := GetPoFileRelPath(cfg, poFile)
+	if err != nil {
+		log.Warnf("failed to get relative path of poFile: %v", err)
 	}
 
 	// Run the test multiple times
@@ -744,6 +788,11 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 	for i := 0; i < runs; i++ {
 		runNum := i + 1
 		log.Infof("run %d/%d", runNum, runs)
+
+		if err := CleanPoDirectory(relPoFile); err != nil {
+			log.Warnf("run %d: failed to clean po/ directory: %v", runNum, err)
+			// Continue with the run even if cleanup fails, but log the warning
+		}
 
 		// Reuse RunAgentReview for each run
 		agentResult, err := RunAgentReview(cfg, agentName, poFile, commit, since, true)

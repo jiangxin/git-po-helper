@@ -440,6 +440,35 @@ func GetPoFileAbsPath(cfg *config.AgentConfig, poFile string) (string, error) {
 	return poFile, nil
 }
 
+// GetPoFileRelPath determines the relative path of a PO file in "po/XX.po" format.
+// If poFile is empty, it uses cfg.DefaultLangCode to construct the path.
+// If poFile is an absolute path, it converts it to a relative path.
+// If poFile is already a relative path, it normalizes it to "po/XX.po" format.
+// Returns the relative path and an error if default_lang_code is not configured when needed.
+func GetPoFileRelPath(cfg *config.AgentConfig, poFile string) (string, error) {
+	workDir := repository.WorkDir()
+	var absPath string
+	var err error
+
+	// First get the absolute path
+	absPath, err = GetPoFileAbsPath(cfg, poFile)
+	if err != nil {
+		return "", err
+	}
+
+	// Convert absolute path to relative path
+	relPath, err := filepath.Rel(workDir, absPath)
+	if err != nil {
+		log.Errorf("failed to convert absolute path to relative path: %v", err)
+		return "", fmt.Errorf("failed to convert path to relative: %w", err)
+	}
+
+	// Normalize to use forward slashes (for consistency with "po/XX.po" format)
+	relPath = filepath.ToSlash(relPath)
+
+	return relPath, nil
+}
+
 // RunAgentUpdatePot executes a single agent-run update-pot operation.
 // It performs pre-validation, executes the agent command, performs post-validation,
 // and validates POT file syntax. Returns a result structure with detailed information.
