@@ -645,16 +645,9 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 	_ = selectedAgent // Avoid unused variable warning
 
 	// Determine PO file path
-	workDir := repository.WorkDir()
-	if poFile == "" {
-		lang := cfg.DefaultLangCode
-		if lang == "" {
-			return nil, 0, fmt.Errorf("default_lang_code is not configured\nHint: Provide po/XX.po on the command line or set default_lang_code in git-po-helper.yaml")
-		}
-		poFile = filepath.Join(workDir, PoDir, fmt.Sprintf("%s.po", lang))
-	} else if !filepath.IsAbs(poFile) {
-		// Treat poFile as relative to repository root
-		poFile = filepath.Join(workDir, poFile)
+	poFile, err = GetPoFileAbsPath(cfg, poFile)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	// Run the test multiple times

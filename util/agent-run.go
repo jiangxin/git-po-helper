@@ -420,6 +420,26 @@ func ValidatePoFile(potFile string) error {
 	return nil
 }
 
+// GetPoFileAbsPath determines the absolute path of a PO file.
+// If poFile is empty, it uses cfg.DefaultLangCode to construct the path.
+// If poFile is provided but not absolute, it's treated as relative to the repository root.
+// Returns the absolute path and an error if default_lang_code is not configured when needed.
+func GetPoFileAbsPath(cfg *config.AgentConfig, poFile string) (string, error) {
+	workDir := repository.WorkDir()
+	if poFile == "" {
+		lang := cfg.DefaultLangCode
+		if lang == "" {
+			log.Errorf("default_lang_code is not configured in agent configuration")
+			return "", fmt.Errorf("default_lang_code is not configured\nHint: Provide po/XX.po on the command line or set default_lang_code in git-po-helper.yaml")
+		}
+		poFile = filepath.Join(workDir, PoDir, fmt.Sprintf("%s.po", lang))
+	} else if !filepath.IsAbs(poFile) {
+		// Treat poFile as relative to repository root
+		poFile = filepath.Join(workDir, poFile)
+	}
+	return poFile, nil
+}
+
 // RunAgentUpdatePot executes a single agent-run update-pot operation.
 // It performs pre-validation, executes the agent command, performs post-validation,
 // and validates POT file syntax. Returns a result structure with detailed information.
@@ -581,17 +601,9 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	log.Debugf("using agent: %s", agentKey)
 
 	// Determine PO file path
-	workDir := repository.WorkDir()
-	if poFile == "" {
-		lang := cfg.DefaultLangCode
-		if lang == "" {
-			log.Errorf("default_lang_code is not configured in agent configuration")
-			return result, fmt.Errorf("default_lang_code is not configured\nHint: Provide po/XX.po on the command line or set default_lang_code in git-po-helper.yaml")
-		}
-		poFile = filepath.Join(workDir, PoDir, fmt.Sprintf("%s.po", lang))
-	} else if !filepath.IsAbs(poFile) {
-		// Treat poFile as relative to repository root
-		poFile = filepath.Join(workDir, poFile)
+	poFile, err = GetPoFileAbsPath(cfg, poFile)
+	if err != nil {
+		return result, err
 	}
 
 	log.Debugf("PO file path: %s", poFile)
@@ -633,6 +645,7 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	log.Debugf("using update-po prompt: %s", prompt)
 
 	// Build agent command with placeholders replaced
+	workDir := repository.WorkDir()
 	sourcePath := poFile
 	if rel, err := filepath.Rel(workDir, poFile); err == nil && rel != "" && rel != "." {
 		sourcePath = filepath.ToSlash(rel)
@@ -840,17 +853,9 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	log.Debugf("using agent: %s", agentKey)
 
 	// Determine PO file path
-	workDir := repository.WorkDir()
-	if poFile == "" {
-		lang := cfg.DefaultLangCode
-		if lang == "" {
-			log.Errorf("default_lang_code is not configured in agent configuration")
-			return result, fmt.Errorf("default_lang_code is not configured\nHint: Provide po/XX.po on the command line or set default_lang_code in git-po-helper.yaml")
-		}
-		poFile = filepath.Join(workDir, PoDir, fmt.Sprintf("%s.po", lang))
-	} else if !filepath.IsAbs(poFile) {
-		// Treat poFile as relative to repository root
-		poFile = filepath.Join(workDir, poFile)
+	poFile, err = GetPoFileAbsPath(cfg, poFile)
+	if err != nil {
+		return result, err
 	}
 
 	log.Debugf("PO file path: %s", poFile)
@@ -902,6 +907,7 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	log.Debugf("using translate prompt: %s", prompt)
 
 	// Build agent command with placeholders replaced
+	workDir := repository.WorkDir()
 	sourcePath := poFile
 	if rel, err := filepath.Rel(workDir, poFile); err == nil && rel != "" && rel != "." {
 		sourcePath = filepath.ToSlash(rel)
@@ -1491,17 +1497,9 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	log.Debugf("using agent: %s", agentKey)
 
 	// Determine PO file path
-	workDir := repository.WorkDir()
-	if poFile == "" {
-		lang := cfg.DefaultLangCode
-		if lang == "" {
-			log.Errorf("default_lang_code is not configured in agent configuration")
-			return result, fmt.Errorf("default_lang_code is not configured\nHint: Provide po/XX.po on the command line or set default_lang_code in git-po-helper.yaml")
-		}
-		poFile = filepath.Join(workDir, PoDir, fmt.Sprintf("%s.po", lang))
-	} else if !filepath.IsAbs(poFile) {
-		// Treat poFile as relative to repository root
-		poFile = filepath.Join(workDir, poFile)
+	poFile, err = GetPoFileAbsPath(cfg, poFile)
+	if err != nil {
+		return result, err
 	}
 
 	log.Debugf("PO file path: %s", poFile)
@@ -1525,6 +1523,7 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	}()
 
 	// Step 2: Copy review-input.po to review-output.po
+	workDir := repository.WorkDir()
 	poFileName := filepath.Base(poFile)
 	langCode := strings.TrimSuffix(poFileName, ".po")
 	poDir := filepath.Join(workDir, PoDir)
