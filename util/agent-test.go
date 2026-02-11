@@ -225,7 +225,7 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 		}
 
 		// Reuse RunAgentUpdatePot for each run
-		agentResult, err := RunAgentUpdatePot(cfg, agentName)
+		agentResult, err := RunAgentUpdatePot(cfg, agentName, true)
 
 		// Convert AgentRunResult to RunResult
 		// agentResult is never nil (always returns a result structure)
@@ -328,7 +328,7 @@ func RunAgentTestUpdatePo(agentName, poFile string, runs int, cfg *config.AgentC
 		}
 
 		// Reuse RunAgentUpdatePo for each run
-		agentResult, err := RunAgentUpdatePo(cfg, agentName, poFile)
+		agentResult, err := RunAgentUpdatePo(cfg, agentName, poFile, true)
 
 		// Convert AgentRunResult to RunResult
 		// agentResult is never nil (always returns a result structure)
@@ -672,7 +672,7 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 		}
 
 		// Reuse RunAgentTranslate for each run
-		agentResult, err := RunAgentTranslate(cfg, agentName, poFile)
+		agentResult, err := RunAgentTranslate(cfg, agentName, poFile, true)
 
 		// Convert AgentRunResult to RunResult
 		// agentResult is never nil (always returns a result structure)
@@ -753,7 +753,7 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 		log.Infof("run %d/%d", runNum, runs)
 
 		// Reuse RunAgentReview for each run
-		agentResult, err := RunAgentReview(cfg, agentName, poFile, commit, since)
+		agentResult, err := RunAgentReview(cfg, agentName, poFile, commit, since, true)
 
 		// Convert AgentRunResult to RunResult
 		// agentResult is never nil (always returns a result structure)

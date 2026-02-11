@@ -527,7 +527,7 @@ agents:
 	if config.Prompt.UpdatePo == "" {
 		t.Fatal("Prompt.UpdatePo should be filled with default")
 	}
-	if config.Prompt.UpdatePo != "update {source} according to po/README.md" {
+	if config.Prompt.UpdatePo != "Update `{source}` according to `po/README.md`." {
 		t.Fatalf("expected UpdatePo default, got '%s'", config.Prompt.UpdatePo)
 	}
 }
@@ -613,7 +613,7 @@ func TestLoadAgentConfig_PartialConfigWithDefaults(t *testing.T) {
 	if config.Prompt.UpdatePot == "" {
 		t.Fatal("Prompt.UpdatePot should be filled with default")
 	}
-	if config.Prompt.UpdatePot != "update po/git.pot according to po/README.md" {
+	if config.Prompt.UpdatePot != "Update `po/git.pot` according to `po/README.md`." {
 		t.Fatalf("expected UpdatePot default, got '%s'", config.Prompt.UpdatePot)
 	}
 

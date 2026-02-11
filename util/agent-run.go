@@ -423,7 +423,9 @@ func ValidatePoFile(potFile string) error {
 // RunAgentUpdatePot executes a single agent-run update-pot operation.
 // It performs pre-validation, executes the agent command, performs post-validation,
 // and validates POT file syntax. Returns a result structure with detailed information.
-func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string) (*AgentRunResult, error) {
+// The agentTest parameter controls whether AgentTest configuration should be used.
+// When agentTest is false (for agent-run), AgentTest configuration is ignored.
+func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool) (*AgentRunResult, error) {
 	result := &AgentRunResult{
 		Score: 0,
 	}
@@ -441,8 +443,8 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string) (*AgentRunResu
 	potFile := GetPotFilePath()
 	log.Debugf("POT file path: %s", potFile)
 
-	// Pre-validation: Check entry count before update
-	if cfg.AgentTest.PotEntriesBeforeUpdate != nil && *cfg.AgentTest.PotEntriesBeforeUpdate != 0 {
+	// Pre-validation: Check entry count before update (only for agent-test)
+	if agentTest && cfg.AgentTest.PotEntriesBeforeUpdate != nil && *cfg.AgentTest.PotEntriesBeforeUpdate != 0 {
 		log.Infof("performing pre-validation: checking entry count before update (expected: %d)", *cfg.AgentTest.PotEntriesBeforeUpdate)
 
 		// Get before count for result
@@ -511,8 +513,8 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string) (*AgentRunResu
 		log.Debugf("agent command stderr: %s", string(stderr))
 	}
 
-	// Post-validation: Check entry count after update
-	if cfg.AgentTest.PotEntriesAfterUpdate != nil && *cfg.AgentTest.PotEntriesAfterUpdate != 0 {
+	// Post-validation: Check entry count after update (only for agent-test)
+	if agentTest && cfg.AgentTest.PotEntriesAfterUpdate != nil && *cfg.AgentTest.PotEntriesAfterUpdate != 0 {
 		log.Infof("performing post-validation: checking entry count after update (expected: %d)", *cfg.AgentTest.PotEntriesAfterUpdate)
 
 		// Get after count for result
@@ -562,7 +564,9 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string) (*AgentRunResu
 // RunAgentUpdatePo executes a single agent-run update-po operation.
 // It performs pre-validation, executes the agent command, performs post-validation,
 // and validates PO file syntax. Returns a result structure with detailed information.
-func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string) (*AgentRunResult, error) {
+// The agentTest parameter controls whether AgentTest configuration should be used.
+// When agentTest is false (for agent-run), AgentTest configuration is ignored.
+func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTest bool) (*AgentRunResult, error) {
 	result := &AgentRunResult{
 		Score: 0,
 	}
@@ -592,8 +596,8 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string) (*Agent
 
 	log.Debugf("PO file path: %s", poFile)
 
-	// Pre-validation: Check entry count before update
-	if cfg.AgentTest.PoEntriesBeforeUpdate != nil && *cfg.AgentTest.PoEntriesBeforeUpdate != 0 {
+	// Pre-validation: Check entry count before update (only for agent-test)
+	if agentTest && cfg.AgentTest.PoEntriesBeforeUpdate != nil && *cfg.AgentTest.PoEntriesBeforeUpdate != 0 {
 		log.Infof("performing pre-validation: checking PO entry count before update (expected: %d)", *cfg.AgentTest.PoEntriesBeforeUpdate)
 
 		// Get before count for result
@@ -667,8 +671,8 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string) (*Agent
 		log.Debugf("agent command stderr: %s", string(stderr))
 	}
 
-	// Post-validation: Check entry count after update
-	if cfg.AgentTest.PoEntriesAfterUpdate != nil && *cfg.AgentTest.PoEntriesAfterUpdate != 0 {
+	// Post-validation: Check entry count after update (only for agent-test)
+	if agentTest && cfg.AgentTest.PoEntriesAfterUpdate != nil && *cfg.AgentTest.PoEntriesAfterUpdate != 0 {
 		log.Infof("performing post-validation: checking PO entry count after update (expected: %d)", *cfg.AgentTest.PoEntriesAfterUpdate)
 
 		// Get after count for result
@@ -726,7 +730,7 @@ func CmdAgentRunUpdatePot(agentName string) error {
 		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
 
-	result, err := RunAgentUpdatePot(cfg, agentName)
+	result, err := RunAgentUpdatePot(cfg, agentName, false)
 	if err != nil {
 		return err
 	}
@@ -738,7 +742,7 @@ func CmdAgentRunUpdatePot(agentName string) error {
 	if !result.AgentSuccess {
 		return fmt.Errorf("agent execution failed: %s", result.AgentError)
 	}
-	if cfg.AgentTest.PotEntriesAfterUpdate != nil && *cfg.AgentTest.PotEntriesAfterUpdate != 0 && !result.PostValidationPass {
+	if !result.PostValidationPass {
 		return fmt.Errorf("post-validation failed: %s", result.PostValidationError)
 	}
 	if result.SyntaxValidationError != "" {
@@ -764,7 +768,7 @@ func CmdAgentRunUpdatePo(agentName, poFile string) error {
 		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
 
-	result, err := RunAgentUpdatePo(cfg, agentName, poFile)
+	result, err := RunAgentUpdatePo(cfg, agentName, poFile, false)
 	if err != nil {
 		return err
 	}
@@ -776,7 +780,7 @@ func CmdAgentRunUpdatePo(agentName, poFile string) error {
 	if !result.AgentSuccess {
 		return fmt.Errorf("agent execution failed: %s", result.AgentError)
 	}
-	if cfg.AgentTest.PoEntriesAfterUpdate != nil && *cfg.AgentTest.PoEntriesAfterUpdate != 0 && !result.PostValidationPass {
+	if !result.PostValidationPass {
 		return fmt.Errorf("post-validation failed: %s", result.PostValidationError)
 	}
 	if result.SyntaxValidationError != "" {
@@ -819,7 +823,9 @@ func CmdAgentRunShowConfig() error {
 // It performs pre-validation (count new/fuzzy entries), executes the agent command,
 // performs post-validation (verify new=0 and fuzzy=0), and validates PO file syntax.
 // Returns a result structure with detailed information.
-func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string) (*AgentRunResult, error) {
+// The agentTest parameter is provided for consistency, though this method
+// does not use AgentTest configuration.
+func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentTest bool) (*AgentRunResult, error) {
 	result := &AgentRunResult{
 		Score: 0,
 	}
@@ -995,7 +1001,7 @@ func CmdAgentRunTranslate(agentName, poFile string) error {
 		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
 
-	result, err := RunAgentTranslate(cfg, agentName, poFile)
+	result, err := RunAgentTranslate(cfg, agentName, poFile, false)
 	if err != nil {
 		return err
 	}
@@ -1468,7 +1474,9 @@ func writeReviewInputPo(outputPath string, header []string, entries []*PoEntry) 
 // 4. Merge review-output.po with new.po using msgcat
 // 5. Parse JSON from agent output and calculate score
 // Returns a result structure with detailed information.
-func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since string) (*AgentRunResult, error) {
+// The agentTest parameter is provided for consistency, though this method
+// does not use AgentTest configuration.
+func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since string, agentTest bool) (*AgentRunResult, error) {
 	result := &AgentRunResult{
 		Score: 0,
 	}
@@ -1663,7 +1671,7 @@ func CmdAgentRunReview(agentName, poFile, commit, since string) error {
 		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
 
-	result, err := RunAgentReview(cfg, agentName, poFile, commit, since)
+	result, err := RunAgentReview(cfg, agentName, poFile, commit, since, false)
 	if err != nil {
 		return err
 	}
