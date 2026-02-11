@@ -354,7 +354,28 @@ func ValidatePoEntryCount(poFile string, expectedCount *int, stage string) error
 // For .pot files, it uses msgcat --use-first to validate (since POT files have placeholders in headers).
 // For .po files, it uses msgfmt to validate.
 // Returns an error if the file is invalid, nil if valid.
+// If the file path is absolute, it doesn't require repository context.
+// If the file path is relative, it uses repository.WorkDir() as the working directory.
 func ValidatePoFile(potFile string) error {
+	return validatePoFileInternal(potFile, false)
+}
+
+// ValidatePoFileFormat validates POT/PO file format syntax only (using --check-format for PO files).
+// This is a more lenient check that doesn't require complete headers.
+// For .pot files, it uses msgcat --use-first to validate.
+// For .po files, it uses msgfmt --check-format to validate (only checks format, not completeness).
+// Returns an error if the file format is invalid, nil if valid.
+// If the file path is absolute, it doesn't require repository context.
+// If the file path is relative, it uses repository.WorkDir() as the working directory.
+func ValidatePoFileFormat(potFile string) error {
+	return validatePoFileInternal(potFile, true)
+}
+
+// validatePoFileInternal is the internal implementation for PO/POT file validation.
+// checkFormatOnly: if true, uses --check-format for PO files (more lenient, only checks format).
+//
+//	if false, uses --check for PO files (stricter, checks format and completeness).
+func validatePoFileInternal(potFile string, checkFormatOnly bool) error {
 	if !Exist(potFile) {
 		return fmt.Errorf("POT file does not exist: %s\nHint: Ensure the file exists or run the agent to create it", potFile)
 	}
@@ -376,14 +397,32 @@ func ValidatePoFile(potFile string) error {
 	} else {
 		// For PO files, use msgfmt
 		toolName = "msgfmt"
-		log.Debugf("running msgfmt --check on %s", potFile)
-		cmd = exec.Command("msgfmt",
-			"-o",
-			os.DevNull,
-			"--check",
-			potFile)
+		if checkFormatOnly {
+			log.Debugf("running msgfmt --check-format on %s", potFile)
+			cmd = exec.Command("msgfmt",
+				"-o",
+				os.DevNull,
+				"--check-format",
+				potFile)
+		} else {
+			log.Debugf("running msgfmt --check on %s", potFile)
+			cmd = exec.Command("msgfmt",
+				"-o",
+				os.DevNull,
+				"--check",
+				potFile)
+		}
 	}
-	cmd.Dir = repository.WorkDir()
+
+	// Only set working directory if file path is relative
+	// For absolute paths, we don't need repository context
+	if filepath.IsAbs(potFile) {
+		// For absolute paths, use the directory containing the file as working directory
+		cmd.Dir = filepath.Dir(potFile)
+	} else {
+		// For relative paths, use repository working directory
+		cmd.Dir = repository.WorkDir()
+	}
 
 	// Capture stderr for error messages
 	stderr, err := cmd.StderrPipe()

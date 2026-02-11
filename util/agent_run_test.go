@@ -1,6 +1,7 @@
 package util
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -473,6 +474,22 @@ msgstr "正常字符串"
 	}
 }
 
+// validatePoFileFormat validates PO file format using ValidatePoFileFormat.
+// This is a test helper that reuses ValidatePoFileFormat, which handles absolute paths
+// without requiring repository context. It only checks syntax format, not completeness
+// (like missing header fields).
+func validatePoFile(poFile string) error {
+	// Ensure the path is absolute for ValidatePoFileFormat
+	absPath, err := filepath.Abs(poFile)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	// ValidatePoFileFormat handles absolute paths without requiring repository context
+	// and uses --check-format which is more lenient for test files
+	return ValidatePoFile(absPath)
+}
+
 // TestParsePoEntriesRoundTrip tests reading a PO file, writing it, and reading again
 // to verify that the round-trip preserves entry count, structure, and header.
 func TestParsePoEntriesRoundTrip(t *testing.T) {
@@ -513,6 +530,11 @@ func TestParsePoEntriesRoundTrip(t *testing.T) {
 	err = writeReviewInputPo(writtenPoPath, originalHeader, originalEntries)
 	if err != nil {
 		t.Fatalf("failed to write PO file: %v", err)
+	}
+
+	// Validate the format of the written PO file
+	if err := validatePoFile(writtenPoPath); err != nil {
+		t.Errorf("first written PO file format validation failed: %v", err)
 	}
 
 	// Read the written PO file
@@ -599,6 +621,11 @@ func TestParsePoEntriesRoundTrip(t *testing.T) {
 	err = writeReviewInputPo(secondWrittenPoPath, writtenHeader, writtenEntries)
 	if err != nil {
 		t.Fatalf("failed to write PO file second time: %v", err)
+	}
+
+	// Validate the format of the second written PO file
+	if err := validatePoFile(secondWrittenPoPath); err != nil {
+		t.Errorf("second written PO file format validation failed: %v", err)
 	}
 
 	secondReadData, err := os.ReadFile(secondWrittenPoPath)
