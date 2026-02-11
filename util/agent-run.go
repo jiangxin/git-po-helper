@@ -927,7 +927,17 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 
 	result.PreValidationPass = true
 
-	// Get prompt for translate from configuration
+	// We can extract new entries and fuzzy entries from the PO file using
+	// "msgattrib --untranslated --only-fuzzy poFile", and saved to a
+	// temporary file, then pass it to the agent as a source file.
+	// This way, we can translate the new entries and fuzzy entries in one
+	// round of translation. Later, we can use msgcat to merge the translations
+	// back to the PO file like "msgcat --use-first new.po original.po -o merged.po".
+	//
+	// But we can document this in the po/README.md, and let the code agent
+	// decide whether to use this feature.
+	//
+	// Now, load the simple prompt for translate the file.
 	prompt := cfg.Prompt.Translate
 	if prompt == "" {
 		log.Error("prompt.translate is not configured")
