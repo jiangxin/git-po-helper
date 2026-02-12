@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -287,6 +288,64 @@ func ExecuteAgentCommand(cmd []string, workDir string) ([]byte, []byte, error) {
 	return stdout, stderr, nil
 }
 
+// ExecuteAgentCommandStream executes an agent command and returns a reader for real-time stdout streaming.
+// The command is executed in the specified working directory.
+// This function is used for stream-json format to process output in real-time.
+//
+// Parameters:
+//   - cmd: Command and arguments as a slice
+//   - workDir: Working directory for command execution
+//
+// Returns:
+//   - stdoutReader: io.ReadCloser for reading stdout in real-time
+//   - stderr: Standard error from the command (captured after execution)
+//   - cmdProcess: *exec.Cmd for waiting on command completion
+//   - error: Error if command setup fails
+func ExecuteAgentCommandStream(cmd []string, workDir string) (stdoutReader io.ReadCloser, stderrBuf *bytes.Buffer, cmdProcess *exec.Cmd, err error) {
+	if len(cmd) == 0 {
+		return nil, nil, nil, fmt.Errorf("command cannot be empty")
+	}
+
+	// Determine working directory
+	if workDir == "" {
+		var err error
+		workDir, err = os.Getwd()
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to get working directory: %w", err)
+		}
+	}
+
+	// Create command
+	execCmd := exec.Command(cmd[0], cmd[1:]...)
+	execCmd.Dir = workDir
+
+	log.Debugf("executing agent command (streaming): %s (workDir: %s)", strings.Join(cmd, " "), workDir)
+
+	// Get stdout pipe for real-time reading
+	stdoutPipe, err := execCmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	// Capture stderr separately
+	var stderrBuffer bytes.Buffer
+	execCmd.Stderr = &stderrBuffer
+
+	// Start command execution
+	if err := execCmd.Start(); err != nil {
+		stdoutPipe.Close()
+		return nil, nil, nil, fmt.Errorf("failed to start agent command: %w", err)
+	}
+
+	return stdoutPipe, &stderrBuffer, execCmd, nil
+}
+
+// normalizeOutputFormat normalizes output format by converting underscores to hyphens.
+// This allows both "stream_json" and "stream-json" to be treated as "stream-json".
+func normalizeOutputFormat(format string) string {
+	return strings.ReplaceAll(format, "_", "-")
+}
+
 // SelectAgent selects an agent from the configuration based on the provided agent name.
 // If agentName is empty, it auto-selects an agent (only works if exactly one agent is configured).
 // Returns the selected agent, its key, and an error if selection fails.
@@ -356,16 +415,16 @@ func BuildAgentCommand(agent config.Agent, prompt, source, commit string) []stri
 
 		// Only add --output-format if it doesn't already exist
 		if !hasOutputFormat {
-			outputFormat := agent.Output
+			outputFormat := normalizeOutputFormat(agent.Output)
 			if outputFormat == "" {
 				outputFormat = "default"
 			}
 
-			// Add --output-format parameter for json or stream_json formats
+			// Add --output-format parameter for json or stream-json formats
 			if outputFormat == "json" {
 				cmd = append(cmd, "--output-format", "json")
-			} else if outputFormat == "stream_json" {
-				cmd = append(cmd, "--output-format", "stream-json")
+			} else if outputFormat == "stream-json" {
+				cmd = append(cmd, "--verbose", "--output-format", "stream-json")
 			}
 			// For "default" format, no additional parameter is needed
 		}
@@ -535,9 +594,50 @@ type ClaudeUsage struct {
 	OutputTokens int `json:"output_tokens"`
 }
 
+// ClaudeSystemMessage represents a system initialization message in stream-json format.
+type ClaudeSystemMessage struct {
+	Type              string   `json:"type"`
+	Subtype           string   `json:"subtype"`
+	CWD               string   `json:"cwd"`
+	SessionID         string   `json:"session_id"`
+	Model             string   `json:"model"`
+	Tools             []string `json:"tools,omitempty"`
+	Agents            []string `json:"agents,omitempty"`
+	ClaudeCodeVersion string   `json:"claude_code_version,omitempty"`
+	UUID              string   `json:"uuid"`
+}
+
+// ClaudeMessageContent represents a content item in assistant message.
+type ClaudeMessageContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// ClaudeMessage represents the message structure in assistant messages.
+type ClaudeMessage struct {
+	ID      string                 `json:"id"`
+	Type    string                 `json:"type"`
+	Role    string                 `json:"role"`
+	Model   string                 `json:"model"`
+	Content []ClaudeMessageContent `json:"content"`
+	Usage   *ClaudeUsage           `json:"usage,omitempty"`
+}
+
+// ClaudeAssistantMessage represents an assistant message in stream-json format.
+type ClaudeAssistantMessage struct {
+	Type            string        `json:"type"`
+	Message         ClaudeMessage `json:"message"`
+	ParentToolUseID *string       `json:"parent_tool_use_id"`
+	SessionID       string        `json:"session_id"`
+	UUID            string        `json:"uuid"`
+}
+
 // ParseAgentOutput parses agent output based on the output format.
 // Returns the actual content (result text) and the parsed JSON result.
 func ParseAgentOutput(output []byte, outputFormat string) (content []byte, result *ClaudeJSONOutput, err error) {
+	// Normalize output format (convert underscores to hyphens)
+	outputFormat = normalizeOutputFormat(outputFormat)
+
 	// Default format: return output as-is
 	if outputFormat == "" || outputFormat == "default" {
 		return output, nil, nil
@@ -553,7 +653,7 @@ func ParseAgentOutput(output []byte, outputFormat string) (content []byte, resul
 	}
 
 	// Stream JSON format: parse multiple JSON objects (one per line)
-	if outputFormat == "stream_json" {
+	if outputFormat == "stream-json" {
 		return parseStreamJSON(output)
 	}
 
@@ -596,6 +696,151 @@ func parseStreamJSON(output []byte) (content []byte, result *ClaudeJSONOutput, e
 	}
 
 	return []byte(resultBuilder.String()), lastResult, nil
+}
+
+// ParseStreamJSONRealtime parses stream JSON format in real-time, displaying messages as they arrive.
+// It reads from the provided reader line by line, parses each JSON object, and displays
+// system, assistant, and result messages in real-time.
+// Returns the final result message and accumulated result text.
+func ParseStreamJSONRealtime(reader io.Reader) (content []byte, result *ClaudeJSONOutput, err error) {
+	var resultBuilder strings.Builder
+	var lastResult *ClaudeJSONOutput
+
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		// Try to parse as JSON to determine message type
+		var baseMsg struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &baseMsg); err != nil {
+			// If line is not valid JSON, treat it as plain text
+			log.Debugf("stream-json: non-JSON line: %s", line)
+			resultBuilder.WriteString(line)
+			resultBuilder.WriteString("\n")
+			fmt.Println(line)
+			continue
+		}
+
+		// Parse based on message type
+		switch baseMsg.Type {
+		case "system":
+			var sysMsg ClaudeSystemMessage
+			if err := json.Unmarshal([]byte(line), &sysMsg); err == nil {
+				printSystemMessage(&sysMsg)
+			} else {
+				log.Debugf("stream-json: failed to parse system message: %v", err)
+			}
+		case "assistant":
+			var asstMsg ClaudeAssistantMessage
+			if err := json.Unmarshal([]byte(line), &asstMsg); err == nil {
+				printAssistantMessage(&asstMsg, &resultBuilder)
+			} else {
+				log.Debugf("stream-json: failed to parse assistant message: %v", err)
+			}
+		case "result":
+			var resultMsg ClaudeJSONOutput
+			if err := json.Unmarshal([]byte(line), &resultMsg); err == nil {
+				lastResult = &resultMsg
+				printResultMessage(&resultMsg, &resultBuilder)
+			} else {
+				log.Debugf("stream-json: failed to parse result message: %v", err)
+			}
+		case "user":
+			// User messages are typically tool results or intermediate messages
+			// Log at debug level but don't display to avoid cluttering output
+			log.Debugf("stream-json: received user message (suppressed from output)")
+		default:
+			// Unknown type, log at debug level and output as-is
+			log.Debugf("stream-json: unknown message type: %s", baseMsg.Type)
+			resultBuilder.WriteString(line)
+			resultBuilder.WriteString("\n")
+			fmt.Println(line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return []byte(resultBuilder.String()), lastResult, fmt.Errorf("failed to parse stream JSON: %w", err)
+	}
+
+	return []byte(resultBuilder.String()), lastResult, nil
+}
+
+// printSystemMessage displays system initialization information.
+func printSystemMessage(msg *ClaudeSystemMessage) {
+	fmt.Println()
+	fmt.Println("┌─────────────────────────────────────────────────────────┐")
+	fmt.Println("│ System Initialization                                    │")
+	fmt.Println("├─────────────────────────────────────────────────────────┤")
+	if msg.SessionID != "" {
+		fmt.Printf("│ Session ID:     %-42s │\n", msg.SessionID)
+	}
+	if msg.Model != "" {
+		fmt.Printf("│ Model:          %-42s │\n", msg.Model)
+	}
+	if msg.CWD != "" {
+		fmt.Printf("│ Working Dir:    %-42s │\n", msg.CWD)
+	}
+	if msg.ClaudeCodeVersion != "" {
+		fmt.Printf("│ Version:        %-42s │\n", msg.ClaudeCodeVersion)
+	}
+	if len(msg.Tools) > 0 {
+		fmt.Printf("│ Tools:          %-42d │\n", len(msg.Tools))
+	}
+	if len(msg.Agents) > 0 {
+		fmt.Printf("│ Agents:         %-42d │\n", len(msg.Agents))
+	}
+	fmt.Println("└─────────────────────────────────────────────────────────┘")
+	fmt.Println()
+}
+
+// printAssistantMessage displays assistant message content, printing each text block on a separate line.
+func printAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.Builder) {
+	if msg.Message.Content == nil {
+		return
+	}
+
+	for _, content := range msg.Message.Content {
+		if content.Type == "text" && content.Text != "" {
+			// Print each text block on a separate line
+			fmt.Println(content.Text)
+			resultBuilder.WriteString(content.Text)
+		}
+	}
+}
+
+// printResultMessage displays the final result message.
+func printResultMessage(msg *ClaudeJSONOutput, resultBuilder *strings.Builder) {
+	if msg.Result != "" {
+		fmt.Println()
+		fmt.Println("┌─────────────────────────────────────────────────────────┐")
+		fmt.Println("│ Final Result                                            │")
+		fmt.Println("├─────────────────────────────────────────────────────────┤")
+		// Print result text (may be multi-line)
+		lines := strings.Split(msg.Result, "\n")
+		for _, line := range lines {
+			if line != "" {
+				fmt.Printf("│ %-57s │\n", truncateString(line, 57))
+			}
+		}
+		fmt.Println("└─────────────────────────────────────────────────────────┘")
+		resultBuilder.WriteString(msg.Result)
+	}
+}
+
+// truncateString truncates a string to the specified length, adding "..." if needed.
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
 }
 
 // PrintAgentDiagnostics prints diagnostic information in a beautiful format.
