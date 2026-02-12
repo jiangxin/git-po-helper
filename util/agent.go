@@ -751,7 +751,33 @@ func ParseStreamJSONRealtime(reader io.Reader) (content []byte, result *ClaudeJS
 		case "result":
 			var resultMsg ClaudeJSONOutput
 			if err := json.Unmarshal([]byte(line), &resultMsg); err == nil {
-				lastResult = &resultMsg
+				// Merge usage information: prefer the result with more complete usage info
+				if lastResult == nil {
+					lastResult = &resultMsg
+				} else {
+					// Merge usage information if the new result has it
+					if resultMsg.Usage != nil && (resultMsg.Usage.InputTokens > 0 || resultMsg.Usage.OutputTokens > 0) {
+						if lastResult.Usage == nil {
+							lastResult.Usage = resultMsg.Usage
+						} else {
+							// Use the values from the new result if they are non-zero
+							if resultMsg.Usage.InputTokens > 0 {
+								lastResult.Usage.InputTokens = resultMsg.Usage.InputTokens
+							}
+							if resultMsg.Usage.OutputTokens > 0 {
+								lastResult.Usage.OutputTokens = resultMsg.Usage.OutputTokens
+							}
+						}
+					}
+					// Always update duration_api_ms with the latest value
+					if resultMsg.DurationAPIMS > 0 {
+						lastResult.DurationAPIMS = resultMsg.DurationAPIMS
+					}
+					// Update result text if present
+					if resultMsg.Result != "" {
+						lastResult.Result = resultMsg.Result
+					}
+				}
 				printResultMessage(&resultMsg, &resultBuilder)
 			} else {
 				log.Debugf("stream-json: failed to parse result message: %v", err)
