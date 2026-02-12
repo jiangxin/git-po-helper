@@ -773,28 +773,27 @@ func ParseStreamJSONRealtime(reader io.Reader) (content []byte, result *ClaudeJS
 // printSystemMessage displays system initialization information.
 func printSystemMessage(msg *ClaudeSystemMessage) {
 	fmt.Println()
-	fmt.Println("┌─────────────────────────────────────────────────────────┐")
-	fmt.Println("│ System Initialization                                    │")
-	fmt.Println("├─────────────────────────────────────────────────────────┤")
+	fmt.Println("🤖 System Initialization")
+	fmt.Println("==========================================")
 	if msg.SessionID != "" {
-		fmt.Printf("│ Session ID:     %-42s │\n", msg.SessionID)
+		fmt.Printf("**Session ID:** %s\n", msg.SessionID)
 	}
 	if msg.Model != "" {
-		fmt.Printf("│ Model:          %-42s │\n", msg.Model)
+		fmt.Printf("**Model:** %s\n", msg.Model)
 	}
 	if msg.CWD != "" {
-		fmt.Printf("│ Working Dir:    %-42s │\n", msg.CWD)
+		fmt.Printf("**Working Dir:** %s\n", msg.CWD)
 	}
 	if msg.ClaudeCodeVersion != "" {
-		fmt.Printf("│ Version:        %-42s │\n", msg.ClaudeCodeVersion)
+		fmt.Printf("**Version:** %s\n", msg.ClaudeCodeVersion)
 	}
 	if len(msg.Tools) > 0 {
-		fmt.Printf("│ Tools:          %-42d │\n", len(msg.Tools))
+		fmt.Printf("**Tools:** %d\n", len(msg.Tools))
 	}
 	if len(msg.Agents) > 0 {
-		fmt.Printf("│ Agents:         %-42d │\n", len(msg.Agents))
+		fmt.Printf("**Agents:** %d\n", len(msg.Agents))
 	}
-	fmt.Println("└─────────────────────────────────────────────────────────┘")
+	fmt.Println("==========================================")
 	fmt.Println()
 }
 
@@ -806,7 +805,8 @@ func printAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.B
 
 	for _, content := range msg.Message.Content {
 		if content.Type == "text" && content.Text != "" {
-			// Print each text block on a separate line
+			// Print agent marker with robot emoji at the beginning of agent output
+			fmt.Print("🤖 ")
 			fmt.Println(content.Text)
 			resultBuilder.WriteString(content.Text)
 		}
@@ -817,30 +817,18 @@ func printAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.B
 func printResultMessage(msg *ClaudeJSONOutput, resultBuilder *strings.Builder) {
 	if msg.Result != "" {
 		fmt.Println()
-		fmt.Println("┌─────────────────────────────────────────────────────────┐")
-		fmt.Println("│ Final Result                                            │")
-		fmt.Println("├─────────────────────────────────────────────────────────┤")
+		fmt.Println("✅ Final Result")
+		fmt.Println("==========================================")
 		// Print result text (may be multi-line)
 		lines := strings.Split(msg.Result, "\n")
 		for _, line := range lines {
 			if line != "" {
-				fmt.Printf("│ %-57s │\n", truncateString(line, 57))
+				fmt.Println(line)
 			}
 		}
-		fmt.Println("└─────────────────────────────────────────────────────────┘")
+		fmt.Println("==========================================")
 		resultBuilder.WriteString(msg.Result)
 	}
-}
-
-// truncateString truncates a string to the specified length, adding "..." if needed.
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
 }
 
 // PrintAgentDiagnostics prints diagnostic information in a beautiful format.
@@ -861,20 +849,19 @@ func PrintAgentDiagnostics(result *ClaudeJSONOutput) {
 	}
 
 	fmt.Println()
-	fmt.Println("┌─────────────────────────────────────────────────────────┐")
-	fmt.Println("│ Agent Diagnostics                                       │")
-	fmt.Println("├─────────────────────────────────────────────────────────┤")
+	fmt.Println("📊 Agent Diagnostics")
+	fmt.Println("==========================================")
 	if result.Usage != nil {
 		if result.Usage.InputTokens > 0 {
-			fmt.Printf("│ Input tokens:    %-42d │\n", result.Usage.InputTokens)
+			fmt.Printf("**Input tokens:** %d\n", result.Usage.InputTokens)
 		}
 		if result.Usage.OutputTokens > 0 {
-			fmt.Printf("│ Output tokens:   %-42d │\n", result.Usage.OutputTokens)
+			fmt.Printf("**Output tokens:** %d\n", result.Usage.OutputTokens)
 		}
 	}
 	if result.DurationAPIMS > 0 {
 		durationSec := float64(result.DurationAPIMS) / 1000.0
-		fmt.Printf("│ API duration:   %-42.2f s │\n", durationSec)
+		fmt.Printf("**API duration:** %.2f s\n", durationSec)
 	}
-	fmt.Println("└─────────────────────────────────────────────────────────┘")
+	fmt.Println("==========================================")
 }
