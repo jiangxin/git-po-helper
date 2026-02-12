@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -811,6 +812,8 @@ func CmdAgentRunUpdatePot(agentName string) error {
 		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
 
+	startTime := time.Now()
+
 	result, err := RunAgentUpdatePot(cfg, agentName, false)
 	if err != nil {
 		return err
@@ -834,6 +837,10 @@ func CmdAgentRunUpdatePot(agentName string) error {
 		return fmt.Errorf("file validation failed: %s\nHint: Check the PO file syntax using 'msgfmt --check-format'", result.SyntaxValidationError)
 	}
 
+	elapsed := time.Since(startTime)
+	fmt.Printf("\nSummary:\n")
+	fmt.Printf("  Execution time: %s\n", elapsed.Round(time.Millisecond))
+
 	log.Infof("agent-run update-pot completed successfully")
 	return nil
 }
@@ -848,6 +855,8 @@ func CmdAgentRunUpdatePo(agentName, poFile string) error {
 		log.Errorf("failed to load agent configuration: %v", err)
 		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
+
+	startTime := time.Now()
 
 	result, err := RunAgentUpdatePo(cfg, agentName, poFile, false)
 	if err != nil {
@@ -867,6 +876,10 @@ func CmdAgentRunUpdatePo(agentName, poFile string) error {
 	if result.SyntaxValidationError != "" {
 		return fmt.Errorf("file validation failed: %s\nHint: Check the PO file syntax using 'msgfmt --check-format'", result.SyntaxValidationError)
 	}
+
+	elapsed := time.Since(startTime)
+	fmt.Printf("\nSummary:\n")
+	fmt.Printf("  Execution time: %s\n", elapsed.Round(time.Millisecond))
 
 	log.Infof("agent-run update-po completed successfully")
 	return nil
@@ -1085,6 +1098,8 @@ func CmdAgentRunTranslate(agentName, poFile string) error {
 		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
 
+	startTime := time.Now()
+
 	result, err := RunAgentTranslate(cfg, agentName, poFile, false)
 	if err != nil {
 		return err
@@ -1103,6 +1118,10 @@ func CmdAgentRunTranslate(agentName, poFile string) error {
 	if result.SyntaxValidationError != "" {
 		return fmt.Errorf("file validation failed: %s\nHint: Check the PO file syntax using 'msgfmt --check-format'", result.SyntaxValidationError)
 	}
+
+	elapsed := time.Since(startTime)
+	fmt.Printf("\nSummary:\n")
+	fmt.Printf("  Execution time: %s\n", elapsed.Round(time.Millisecond))
 
 	log.Infof("agent-run translate completed successfully")
 	return nil
@@ -1846,6 +1865,8 @@ func CmdAgentRunReview(agentName, poFile, commit, since string) error {
 		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
 
+	startTime := time.Now()
+
 	result, err := RunAgentReview(cfg, agentName, poFile, commit, since, false)
 	if err != nil {
 		return err
@@ -1855,6 +1876,8 @@ func CmdAgentRunReview(agentName, poFile, commit, since string) error {
 	if !result.AgentSuccess {
 		return fmt.Errorf("agent execution failed: %s", result.AgentError)
 	}
+
+	elapsed := time.Since(startTime)
 
 	// Display review results
 	if result.ReviewJSON != nil {
@@ -1897,6 +1920,9 @@ func CmdAgentRunReview(agentName, poFile, commit, since string) error {
 			fmt.Printf("  Reviewed file: %s\n", result.ReviewedFilePath)
 		}
 	}
+
+	fmt.Printf("\nSummary:\n")
+	fmt.Printf("  Execution time: %s\n", elapsed.Round(time.Millisecond))
 
 	log.Infof("agent-run review completed successfully")
 	return nil

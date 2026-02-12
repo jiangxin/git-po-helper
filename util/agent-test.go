@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/git-l10n/git-po-helper/config"
 	"github.com/git-l10n/git-po-helper/repository"
@@ -228,6 +229,8 @@ func CmdAgentTestUpdatePot(agentName string, runs int, skipConfirmation bool) er
 
 	log.Infof("starting agent-test update-pot with %d runs", runs)
 
+	startTime := time.Now()
+
 	// Run the test
 	results, averageScore, err := RunAgentTestUpdatePot(agentName, runs, cfg)
 	if err != nil {
@@ -235,9 +238,11 @@ func CmdAgentTestUpdatePot(agentName string, runs int, skipConfirmation bool) er
 		return fmt.Errorf("agent-test failed: %w", err)
 	}
 
+	elapsed := time.Since(startTime)
+
 	// Display results
 	log.Debugf("displaying test results (average score: %.2f)", averageScore)
-	displayTestResults(results, averageScore, runs)
+	displayTestResults(results, averageScore, runs, elapsed)
 
 	log.Infof("agent-test update-pot completed successfully (average score: %.2f/100)", averageScore)
 	return nil
@@ -331,6 +336,8 @@ func CmdAgentTestUpdatePo(agentName, poFile string, runs int, skipConfirmation b
 
 	log.Infof("starting agent-test update-po with %d runs", runs)
 
+	startTime := time.Now()
+
 	// Run the test
 	results, averageScore, err := RunAgentTestUpdatePo(agentName, poFile, runs, cfg)
 	if err != nil {
@@ -338,9 +345,11 @@ func CmdAgentTestUpdatePo(agentName, poFile string, runs int, skipConfirmation b
 		return fmt.Errorf("agent-test failed: %w", err)
 	}
 
+	elapsed := time.Since(startTime)
+
 	// Display results
 	log.Debugf("displaying test results (average score: %.2f)", averageScore)
-	displayTestResults(results, averageScore, runs)
+	displayTestResults(results, averageScore, runs, elapsed)
 
 	log.Infof("agent-test update-po completed successfully (average score: %.2f/100)", averageScore)
 	return nil
@@ -408,7 +417,7 @@ func RunAgentTestUpdatePo(agentName, poFile string, runs int, cfg *config.AgentC
 }
 
 // displayTestResults displays the test results in a readable format.
-func displayTestResults(results []RunResult, averageScore float64, totalRuns int) {
+func displayTestResults(results []RunResult, averageScore float64, totalRuns int, elapsed time.Duration) {
 	fmt.Println()
 	fmt.Println("=" + strings.Repeat("=", 70))
 	fmt.Println("Agent Test Results")
@@ -484,6 +493,7 @@ func displayTestResults(results []RunResult, averageScore float64, totalRuns int
 		fmt.Printf("Post-validation failures: %d\n", postValidationFailures)
 	}
 	fmt.Printf("Average score:     %.2f/100\n", averageScore)
+	fmt.Printf("Execution time:    %s\n", elapsed.Round(time.Millisecond))
 	fmt.Println("=" + strings.Repeat("=", 70))
 }
 
@@ -659,6 +669,8 @@ func CmdAgentTestTranslate(agentName, poFile string, runs int, skipConfirmation 
 
 	log.Infof("starting agent-test translate with %d runs", runs)
 
+	startTime := time.Now()
+
 	// Run the test
 	results, averageScore, err := RunAgentTestTranslate(agentName, poFile, runs, cfg)
 	if err != nil {
@@ -666,9 +678,11 @@ func CmdAgentTestTranslate(agentName, poFile string, runs int, skipConfirmation 
 		return fmt.Errorf("agent-test failed: %w", err)
 	}
 
+	elapsed := time.Since(startTime)
+
 	// Display results
 	log.Debugf("displaying test results (average score: %.2f)", averageScore)
-	displayTranslateTestResults(results, averageScore, runs)
+	displayTranslateTestResults(results, averageScore, runs, elapsed)
 
 	log.Infof("agent-test translate completed successfully (average score: %.2f/100)", averageScore)
 	return nil
@@ -867,7 +881,7 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 }
 
 // displayTranslateTestResults displays the translation test results in a readable format.
-func displayTranslateTestResults(results []RunResult, averageScore float64, totalRuns int) {
+func displayTranslateTestResults(results []RunResult, averageScore float64, totalRuns int, elapsed time.Duration) {
 	fmt.Println()
 	fmt.Println("=" + strings.Repeat("=", 70))
 	fmt.Println("Agent Test Results (Translate)")
@@ -922,6 +936,7 @@ func displayTranslateTestResults(results []RunResult, averageScore float64, tota
 	fmt.Printf("Successful runs:   %d\n", successCount)
 	fmt.Printf("Failed runs:       %d\n", failureCount)
 	fmt.Printf("Average score:     %.2f/100\n", averageScore)
+	fmt.Printf("Execution time:    %s\n", elapsed.Round(time.Millisecond))
 	fmt.Println("=" + strings.Repeat("=", 70))
 }
 
@@ -956,6 +971,8 @@ func CmdAgentTestReview(agentName, poFile string, runs int, skipConfirmation boo
 
 	log.Infof("starting agent-test review with %d runs", runs)
 
+	startTime := time.Now()
+
 	// Run the test
 	results, averageScore, err := RunAgentTestReview(cfg, agentName, poFile, runs, commit, since)
 	if err != nil {
@@ -963,16 +980,18 @@ func CmdAgentTestReview(agentName, poFile string, runs int, skipConfirmation boo
 		return fmt.Errorf("agent-test failed: %w", err)
 	}
 
+	elapsed := time.Since(startTime)
+
 	// Display results
 	log.Debugf("displaying test results (average score: %.2f)", averageScore)
-	displayReviewTestResults(results, averageScore, runs)
+	displayReviewTestResults(results, averageScore, runs, elapsed)
 
 	log.Infof("agent-test review completed successfully (average score: %.2f/100)", averageScore)
 	return nil
 }
 
 // displayReviewTestResults displays the review test results in a readable format.
-func displayReviewTestResults(results []RunResult, averageScore float64, totalRuns int) {
+func displayReviewTestResults(results []RunResult, averageScore float64, totalRuns int, elapsed time.Duration) {
 	fmt.Println()
 	fmt.Println("=" + strings.Repeat("=", 70))
 	fmt.Println("Agent Test Results (Review)")
@@ -1022,5 +1041,6 @@ func displayReviewTestResults(results []RunResult, averageScore float64, totalRu
 	fmt.Printf("Successful runs:   %d\n", successCount)
 	fmt.Printf("Failed runs:       %d\n", failureCount)
 	fmt.Printf("Average score:     %.2f/100\n", averageScore)
+	fmt.Printf("Execution time:    %s\n", elapsed.Round(time.Millisecond))
 	fmt.Println("=" + strings.Repeat("=", 70))
 }
