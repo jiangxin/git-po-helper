@@ -48,6 +48,10 @@ type AgentRunResult struct {
 	// Agent output (for saving logs in agent-test)
 	AgentStdout []byte `json:"-"`
 	AgentStderr []byte `json:"-"`
+
+	// Agent diagnostics
+	NumTurns      int           // Number of turns in the conversation
+	ExecutionTime time.Duration // Execution time for this run
 }
 
 // ReviewIssue represents a single issue in a review JSON result.
@@ -517,6 +521,7 @@ func GetPoFileRelPath(cfg *config.AgentConfig, poFile string) (string, error) {
 // The agentTest parameter controls whether AgentTest configuration should be used.
 // When agentTest is false (for agent-run), AgentTest configuration is ignored.
 func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool) (*AgentRunResult, error) {
+	startTime := time.Now()
 	result := &AgentRunResult{
 		Score: 0,
 	}
@@ -656,6 +661,10 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 	// Print diagnostics if available
 	if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
+		// Extract NumTurns from diagnostics
+		if jsonResult.NumTurns > 0 {
+			result.NumTurns = jsonResult.NumTurns
+		}
 	}
 
 	// Log output if verbose
@@ -711,6 +720,9 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 		}
 	}
 
+	// Record execution time
+	result.ExecutionTime = time.Since(startTime)
+
 	return result, nil
 }
 
@@ -720,6 +732,7 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 // The agentTest parameter controls whether AgentTest configuration should be used.
 // When agentTest is false (for agent-run), AgentTest configuration is ignored.
 func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTest bool) (*AgentRunResult, error) {
+	startTime := time.Now()
 	result := &AgentRunResult{
 		Score: 0,
 	}
@@ -869,6 +882,10 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	// Print diagnostics if available
 	if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
+		// Extract NumTurns from diagnostics
+		if jsonResult.NumTurns > 0 {
+			result.NumTurns = jsonResult.NumTurns
+		}
 	}
 
 	// Log output if verbose
@@ -923,6 +940,9 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 			log.Infof("file syntax validation passed")
 		}
 	}
+
+	// Record execution time
+	result.ExecutionTime = time.Since(startTime)
 
 	return result, nil
 }
@@ -1046,6 +1066,7 @@ func CmdAgentRunShowConfig() error {
 // The agentTest parameter is provided for consistency, though this method
 // does not use AgentTest configuration.
 func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentTest bool) (*AgentRunResult, error) {
+	startTime := time.Now()
 	result := &AgentRunResult{
 		Score: 0,
 	}
@@ -1215,6 +1236,10 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	// Print diagnostics if available
 	if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
+		// Extract NumTurns from diagnostics
+		if jsonResult.NumTurns > 0 {
+			result.NumTurns = jsonResult.NumTurns
+		}
 	}
 
 	// Log output if verbose
@@ -1271,6 +1296,9 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 			log.Infof("file syntax validation passed")
 		}
 	}
+
+	// Record execution time
+	result.ExecutionTime = time.Since(startTime)
 
 	return result, nil
 }
@@ -1858,6 +1886,7 @@ func writeReviewInputPo(outputPath string, header []string, entries []*PoEntry) 
 // The agentTest parameter is provided for consistency, though this method
 // does not use AgentTest configuration.
 func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since string, agentTest bool) (*AgentRunResult, error) {
+	startTime := time.Now()
 	result := &AgentRunResult{
 		Score: 0,
 	}
@@ -2020,6 +2049,10 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	// Print diagnostics if available
 	if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
+		// Extract NumTurns from diagnostics
+		if jsonResult.NumTurns > 0 {
+			result.NumTurns = jsonResult.NumTurns
+		}
 	}
 
 	// For review, save the original stdout (before parsing) for JSON extraction
@@ -2115,6 +2148,9 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 
 	log.Infof("review completed successfully (score: %d/100, total entries: %d, issues: %d, reviewed file: %s)",
 		reviewScore, reviewJSON.TotalEntries, len(reviewJSON.Issues), reviewedPath)
+
+	// Record execution time
+	result.ExecutionTime = time.Since(startTime)
 
 	return result, nil
 }

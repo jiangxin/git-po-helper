@@ -15,6 +15,38 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// formatDuration formats a duration in a user-friendly way.
+// For durations >= 60 seconds, uses format like "1h4m50s".
+// For durations < 60 seconds, uses format like "45s".
+// Seconds are rounded to integers (no decimal precision).
+func formatDuration(d time.Duration) string {
+	// Round to nearest second
+	d = d.Round(time.Second)
+
+	// If less than 60 seconds, just show seconds
+	if d < 60*time.Second {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+
+	// For >= 60 seconds, use hours, minutes, seconds format
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+	seconds := int(d.Seconds()) % 60
+
+	var parts []string
+	if hours > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", hours))
+	}
+	if minutes > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", minutes))
+	}
+	if seconds > 0 || len(parts) == 0 {
+		parts = append(parts, fmt.Sprintf("%ds", seconds))
+	}
+
+	return strings.Join(parts, "")
+}
+
 // RunResult holds the result of a single test run.
 type RunResult struct {
 	RunNumber           int
@@ -34,6 +66,8 @@ type RunResult struct {
 	AfterFuzzyCount     int // For translate: fuzzy entries after
 	ExpectedBefore      *int
 	ExpectedAfter       *int
+	NumTurns            int           // Number of turns in the conversation
+	ExecutionTime       time.Duration // Execution time for this run
 }
 
 // ConfirmAgentTestExecution displays a warning and requires user confirmation before proceeding.
@@ -285,6 +319,8 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 			AfterCount:          agentResult.AfterCount,
 			ExpectedBefore:      cfg.AgentTest.PotEntriesBeforeUpdate,
 			ExpectedAfter:       cfg.AgentTest.PotEntriesAfterUpdate,
+			NumTurns:            agentResult.NumTurns,
+			ExecutionTime:       agentResult.ExecutionTime,
 		}
 
 		// If there was an error, log it but continue (for agent-test, we want to collect all results)
@@ -396,6 +432,8 @@ func RunAgentTestUpdatePo(agentName, poFile string, runs int, cfg *config.AgentC
 			AfterCount:          agentResult.AfterCount,
 			ExpectedBefore:      cfg.AgentTest.PoEntriesBeforeUpdate,
 			ExpectedAfter:       cfg.AgentTest.PoEntriesAfterUpdate,
+			NumTurns:            agentResult.NumTurns,
+			ExecutionTime:       agentResult.ExecutionTime,
 		}
 
 		// If there was an error, log it but continue (for agent-test, we want to collect all results)
@@ -479,21 +517,66 @@ func displayTestResults(results []RunResult, averageScore float64, totalRuns int
 		fmt.Println()
 	}
 
+	// Calculate statistics for NumTurns and execution time
+	var numTurnsList []int
+	var executionTimes []time.Duration
+	totalNumTurns := 0
+	totalExecutionTime := time.Duration(0)
+	numTurnsCount := 0
+
+	for _, result := range results {
+		if result.NumTurns > 0 {
+			numTurnsList = append(numTurnsList, result.NumTurns)
+			totalNumTurns += result.NumTurns
+			numTurnsCount++
+		}
+		if result.ExecutionTime > 0 {
+			executionTimes = append(executionTimes, result.ExecutionTime)
+			totalExecutionTime += result.ExecutionTime
+		}
+	}
+
 	// Display summary statistics
+	const labelWidth = 25
 	fmt.Println("=" + strings.Repeat("=", 70))
 	fmt.Println("Summary")
 	fmt.Println("=" + strings.Repeat("=", 70))
-	fmt.Printf("Total runs:        %d\n", totalRuns)
-	fmt.Printf("Successful runs:   %d\n", successCount)
-	fmt.Printf("Failed runs:       %d\n", failureCount)
+	fmt.Printf("%-*s %d\n", labelWidth, "Total runs:", totalRuns)
+	fmt.Printf("%-*s %d\n", labelWidth, "Successful runs:", successCount)
+	fmt.Printf("%-*s %d\n", labelWidth, "Failed runs:", failureCount)
 	if preValidationFailures > 0 {
-		fmt.Printf("Pre-validation failures: %d\n", preValidationFailures)
+		fmt.Printf("%-*s %d\n", labelWidth, "Pre-validation failures:", preValidationFailures)
 	}
 	if postValidationFailures > 0 {
-		fmt.Printf("Post-validation failures: %d\n", postValidationFailures)
+		fmt.Printf("%-*s %d\n", labelWidth, "Post-validation failures:", postValidationFailures)
 	}
-	fmt.Printf("Average score:     %.2f/100\n", averageScore)
-	fmt.Printf("Execution time:    %s\n", elapsed.Round(time.Millisecond))
+	fmt.Printf("%-*s %.2f/100\n", labelWidth, "Average score:", averageScore)
+
+	// Display NumTurns statistics
+	if numTurnsCount > 0 {
+		avgNumTurns := totalNumTurns / numTurnsCount
+		var numTurnsStrs []string
+		for _, turns := range numTurnsList {
+			turnsStr := fmt.Sprintf("%d", turns)
+			numTurnsStrs = append(numTurnsStrs, turnsStr)
+		}
+		fmt.Printf("%-*s %d (%s)\n", labelWidth, "Avg Num turns:", avgNumTurns, strings.Join(numTurnsStrs, ", "))
+	}
+
+	// Display execution time statistics
+	if len(executionTimes) > 0 {
+		avgExecutionTime := totalExecutionTime / time.Duration(len(executionTimes))
+		var execTimeStrs []string
+		avgTimeStr := formatDuration(avgExecutionTime)
+		for _, execTime := range executionTimes {
+			timeStr := formatDuration(execTime)
+			execTimeStrs = append(execTimeStrs, timeStr)
+		}
+		fmt.Printf("%-*s %s (%s)\n", labelWidth, "Avg Execution Time:", avgTimeStr, strings.Join(execTimeStrs, ", "))
+	}
+
+	// Always display total elapsed time
+	fmt.Printf("%-*s %s\n", labelWidth, "Total Elapsed Time:", formatDuration(elapsed))
 	fmt.Println("=" + strings.Repeat("=", 70))
 }
 
@@ -746,6 +829,8 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 			AfterFuzzyCount:     agentResult.AfterFuzzyCount,
 			ExpectedBefore:      nil, // Not used for translate
 			ExpectedAfter:       nil, // Not used for translate
+			NumTurns:            agentResult.NumTurns,
+			ExecutionTime:       agentResult.ExecutionTime,
 		}
 
 		// If there was an error, log it but continue (for agent-test, we want to collect all results)
@@ -830,6 +915,8 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 			AfterFuzzyCount:     agentResult.AfterFuzzyCount,
 			ExpectedBefore:      nil, // Not used for review
 			ExpectedAfter:       nil, // Not used for review
+			NumTurns:            agentResult.NumTurns,
+			ExecutionTime:       agentResult.ExecutionTime,
 		}
 
 		// Calculate score from review JSON if available
@@ -928,15 +1015,60 @@ func displayTranslateTestResults(results []RunResult, averageScore float64, tota
 		fmt.Println()
 	}
 
+	// Calculate statistics for NumTurns and execution time
+	var numTurnsList []int
+	var executionTimes []time.Duration
+	totalNumTurns := 0
+	totalExecutionTime := time.Duration(0)
+	numTurnsCount := 0
+
+	for _, result := range results {
+		if result.NumTurns > 0 {
+			numTurnsList = append(numTurnsList, result.NumTurns)
+			totalNumTurns += result.NumTurns
+			numTurnsCount++
+		}
+		if result.ExecutionTime > 0 {
+			executionTimes = append(executionTimes, result.ExecutionTime)
+			totalExecutionTime += result.ExecutionTime
+		}
+	}
+
 	// Display summary statistics
+	const labelWidth = 25
 	fmt.Println("=" + strings.Repeat("=", 70))
 	fmt.Println("Summary")
 	fmt.Println("=" + strings.Repeat("=", 70))
-	fmt.Printf("Total runs:        %d\n", totalRuns)
-	fmt.Printf("Successful runs:   %d\n", successCount)
-	fmt.Printf("Failed runs:       %d\n", failureCount)
-	fmt.Printf("Average score:     %.2f/100\n", averageScore)
-	fmt.Printf("Execution time:    %s\n", elapsed.Round(time.Millisecond))
+	fmt.Printf("%-*s %d\n", labelWidth, "Total runs:", totalRuns)
+	fmt.Printf("%-*s %d\n", labelWidth, "Successful runs:", successCount)
+	fmt.Printf("%-*s %d\n", labelWidth, "Failed runs:", failureCount)
+	fmt.Printf("%-*s %.2f/100\n", labelWidth, "Average score:", averageScore)
+
+	// Display NumTurns statistics
+	if numTurnsCount > 0 {
+		avgNumTurns := totalNumTurns / numTurnsCount
+		var numTurnsStrs []string
+		for _, nt := range numTurnsList {
+			turnsStr := fmt.Sprintf("%d", nt)
+			numTurnsStrs = append(numTurnsStrs, turnsStr)
+		}
+		fmt.Printf("%-*s %d (%s)\n", labelWidth, "Avg Num turns:", avgNumTurns, strings.Join(numTurnsStrs, ", "))
+	}
+
+	// Display execution time statistics
+	if len(executionTimes) > 0 {
+		avgExecutionTime := totalExecutionTime / time.Duration(len(executionTimes))
+		var execTimeStrs []string
+		avgTimeStr := formatDuration(avgExecutionTime)
+		for _, et := range executionTimes {
+			timeStr := formatDuration(et)
+			execTimeStrs = append(execTimeStrs, timeStr)
+		}
+		fmt.Printf("%-*s %s (%s)\n", labelWidth, "Avg Execution Time:", avgTimeStr, strings.Join(execTimeStrs, ", "))
+	}
+
+	// Always display total elapsed time
+	fmt.Printf("%-*s %s\n", labelWidth, "Total Elapsed Time:", formatDuration(elapsed))
 	fmt.Println("=" + strings.Repeat("=", 70))
 }
 
@@ -1033,14 +1165,59 @@ func displayReviewTestResults(results []RunResult, averageScore float64, totalRu
 		fmt.Println()
 	}
 
+	// Calculate statistics for NumTurns and execution time
+	var numTurnsList []int
+	var executionTimes []time.Duration
+	totalNumTurns := 0
+	totalExecutionTime := time.Duration(0)
+	numTurnsCount := 0
+
+	for _, result := range results {
+		if result.NumTurns > 0 {
+			numTurnsList = append(numTurnsList, result.NumTurns)
+			totalNumTurns += result.NumTurns
+			numTurnsCount++
+		}
+		if result.ExecutionTime > 0 {
+			executionTimes = append(executionTimes, result.ExecutionTime)
+			totalExecutionTime += result.ExecutionTime
+		}
+	}
+
 	// Display summary statistics
+	const labelWidth = 25
 	fmt.Println("=" + strings.Repeat("=", 70))
 	fmt.Println("Summary")
 	fmt.Println("=" + strings.Repeat("=", 70))
-	fmt.Printf("Total runs:        %d\n", totalRuns)
-	fmt.Printf("Successful runs:   %d\n", successCount)
-	fmt.Printf("Failed runs:       %d\n", failureCount)
-	fmt.Printf("Average score:     %.2f/100\n", averageScore)
-	fmt.Printf("Execution time:    %s\n", elapsed.Round(time.Millisecond))
+	fmt.Printf("%-*s %d\n", labelWidth, "Total runs:", totalRuns)
+	fmt.Printf("%-*s %d\n", labelWidth, "Successful runs:", successCount)
+	fmt.Printf("%-*s %d\n", labelWidth, "Failed runs:", failureCount)
+	fmt.Printf("%-*s %.2f/100\n", labelWidth, "Average score:", averageScore)
+
+	// Display NumTurns statistics
+	if numTurnsCount > 0 {
+		avgNumTurns := totalNumTurns / numTurnsCount
+		var numTurnsStrs []string
+		for _, nt := range numTurnsList {
+			turnsStr := fmt.Sprintf("%d", nt)
+			numTurnsStrs = append(numTurnsStrs, turnsStr)
+		}
+		fmt.Printf("%-*s %d (%s)\n", labelWidth, "Avg Num turns:", avgNumTurns, strings.Join(numTurnsStrs, ", "))
+	}
+
+	// Display execution time statistics
+	if len(executionTimes) > 0 {
+		avgExecutionTime := totalExecutionTime / time.Duration(len(executionTimes))
+		var execTimeStrs []string
+		avgTimeStr := formatDuration(avgExecutionTime)
+		for _, et := range executionTimes {
+			timeStr := formatDuration(et)
+			execTimeStrs = append(execTimeStrs, timeStr)
+		}
+		fmt.Printf("%-*s %s (%s)\n", labelWidth, "Avg Execution Time:", avgTimeStr, strings.Join(execTimeStrs, ", "))
+	}
+
+	// Always display total elapsed time
+	fmt.Printf("%-*s %s\n", labelWidth, "Total Elapsed Time:", formatDuration(elapsed))
 	fmt.Println("=" + strings.Repeat("=", 70))
 }
