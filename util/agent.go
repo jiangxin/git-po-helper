@@ -4,6 +4,7 @@ package util
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -331,11 +332,45 @@ func SelectAgent(cfg *config.AgentConfig, agentName string) (config.Agent, strin
 
 // BuildAgentCommand builds an agent command by replacing placeholders in the agent's command template.
 // It replaces {prompt}, {source}, and {commit} placeholders with actual values.
+// For claude command, it also adds --output-format parameter based on agent.Output configuration.
 func BuildAgentCommand(agent config.Agent, prompt, source, commit string) []string {
 	cmd := make([]string, len(agent.Cmd))
 	for i, arg := range agent.Cmd {
 		cmd[i] = ReplacePlaceholders(arg, prompt, source, commit)
 	}
+
+	// For claude command, add --output-format parameter if output format is specified
+	if len(cmd) > 0 && cmd[0] == "claude" {
+		// Check if --output-format parameter already exists in the command
+		hasOutputFormat := false
+		for i, arg := range cmd {
+			if arg == "--output-format" {
+				hasOutputFormat = true
+				// Skip the next argument (the format value)
+				if i+1 < len(cmd) {
+					_ = cmd[i+1]
+				}
+				break
+			}
+		}
+
+		// Only add --output-format if it doesn't already exist
+		if !hasOutputFormat {
+			outputFormat := agent.Output
+			if outputFormat == "" {
+				outputFormat = "default"
+			}
+
+			// Add --output-format parameter for json or stream_json formats
+			if outputFormat == "json" {
+				cmd = append(cmd, "--output-format", "json")
+			} else if outputFormat == "stream_json" {
+				cmd = append(cmd, "--output-format", "stream-json")
+			}
+			// For "default" format, no additional parameter is needed
+		}
+	}
+
 	return cmd
 }
 
@@ -482,4 +517,119 @@ func CountFuzzyEntries(poFile string) (int, error) {
 	}
 
 	return count, nil
+}
+
+// ClaudeJSONOutput represents the JSON output format from Claude API.
+type ClaudeJSONOutput struct {
+	Type          string       `json:"type"`
+	Subtype       string       `json:"subtype"`
+	NumTurns      int          `json:"num_turns"`
+	Result        string       `json:"result"`
+	DurationAPIMS int          `json:"duration_api_ms"`
+	Usage         *ClaudeUsage `json:"usage,omitempty"`
+}
+
+// ClaudeUsage represents usage information in Claude JSON output.
+type ClaudeUsage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
+// ParseAgentOutput parses agent output based on the output format.
+// Returns the actual content (result text) and the parsed JSON result.
+func ParseAgentOutput(output []byte, outputFormat string) (content []byte, result *ClaudeJSONOutput, err error) {
+	// Default format: return output as-is
+	if outputFormat == "" || outputFormat == "default" {
+		return output, nil, nil
+	}
+
+	// JSON format: parse single JSON object
+	if outputFormat == "json" {
+		var jsonOutput ClaudeJSONOutput
+		if err := json.Unmarshal(output, &jsonOutput); err != nil {
+			return output, nil, fmt.Errorf("failed to parse JSON output: %w", err)
+		}
+		return []byte(jsonOutput.Result), &jsonOutput, nil
+	}
+
+	// Stream JSON format: parse multiple JSON objects (one per line)
+	if outputFormat == "stream_json" {
+		return parseStreamJSON(output)
+	}
+
+	// Unknown format: return as-is
+	log.Warnf("unknown output format: %s, treating as default", outputFormat)
+	return output, nil, nil
+}
+
+// parseStreamJSON parses stream JSON format where each line is a JSON object.
+func parseStreamJSON(output []byte) (content []byte, result *ClaudeJSONOutput, err error) {
+	var resultBuilder strings.Builder
+	var lastResult *ClaudeJSONOutput
+
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		var jsonOutput ClaudeJSONOutput
+		if err := json.Unmarshal([]byte(line), &jsonOutput); err != nil {
+			// If line is not valid JSON, treat it as plain text
+			resultBuilder.WriteString(line)
+			resultBuilder.WriteString("\n")
+			continue
+		}
+
+		// Accumulate result text
+		if jsonOutput.Result != "" {
+			resultBuilder.WriteString(jsonOutput.Result)
+		}
+
+		// Keep the latest JSON output (contains all fields including usage and duration_api_ms)
+		lastResult = &jsonOutput
+	}
+
+	if err := scanner.Err(); err != nil {
+		return output, nil, fmt.Errorf("failed to parse stream JSON: %w", err)
+	}
+
+	return []byte(resultBuilder.String()), lastResult, nil
+}
+
+// PrintAgentDiagnostics prints diagnostic information in a beautiful format.
+func PrintAgentDiagnostics(result *ClaudeJSONOutput) {
+	if result == nil {
+		return
+	}
+
+	hasInfo := false
+	if result.Usage != nil && (result.Usage.InputTokens > 0 || result.Usage.OutputTokens > 0) {
+		hasInfo = true
+	}
+	if result.DurationAPIMS > 0 {
+		hasInfo = true
+	}
+	if !hasInfo {
+		return
+	}
+
+	fmt.Println()
+	fmt.Println("┌─────────────────────────────────────────────────────────┐")
+	fmt.Println("│ Agent Diagnostics                                       │")
+	fmt.Println("├─────────────────────────────────────────────────────────┤")
+	if result.Usage != nil {
+		if result.Usage.InputTokens > 0 {
+			fmt.Printf("│ Input tokens:    %-42d │\n", result.Usage.InputTokens)
+		}
+		if result.Usage.OutputTokens > 0 {
+			fmt.Printf("│ Output tokens:   %-42d │\n", result.Usage.OutputTokens)
+		}
+	}
+	if result.DurationAPIMS > 0 {
+		durationSec := float64(result.DurationAPIMS) / 1000.0
+		fmt.Printf("│ API duration:   %-42.2f s │\n", durationSec)
+	}
+	fmt.Println("└─────────────────────────────────────────────────────────┘")
 }

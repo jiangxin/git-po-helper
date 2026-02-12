@@ -594,6 +594,21 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 	result.AgentSuccess = true
 	log.Infof("agent command completed successfully")
 
+	// Parse output based on agent output format
+	outputFormat := selectedAgent.Output
+	if outputFormat == "" {
+		outputFormat = "default"
+	}
+	parsedStdout, jsonResult, err := ParseAgentOutput(stdout, outputFormat)
+	if err != nil {
+		log.Warnf("failed to parse agent output: %v, using raw output", err)
+		parsedStdout = stdout
+	} else {
+		stdout = parsedStdout
+		// Print diagnostics if available
+		PrintAgentDiagnostics(jsonResult)
+	}
+
 	// Log output if verbose
 	if len(stdout) > 0 {
 		log.Debugf("agent command stdout: %s", string(stdout))
@@ -744,6 +759,21 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	}
 	result.AgentSuccess = true
 	log.Infof("agent command completed successfully")
+
+	// Parse output based on agent output format
+	outputFormat := selectedAgent.Output
+	if outputFormat == "" {
+		outputFormat = "default"
+	}
+	parsedStdout, jsonResult, err := ParseAgentOutput(stdout, outputFormat)
+	if err != nil {
+		log.Warnf("failed to parse agent output: %v, using raw output", err)
+		parsedStdout = stdout
+	} else {
+		stdout = parsedStdout
+		// Print diagnostics if available
+		PrintAgentDiagnostics(jsonResult)
+	}
 
 	// Log output if verbose
 	if len(stdout) > 0 {
@@ -1028,6 +1058,21 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	}
 	result.AgentSuccess = true
 	log.Infof("agent command completed successfully")
+
+	// Parse output based on agent output format
+	outputFormat := selectedAgent.Output
+	if outputFormat == "" {
+		outputFormat = "default"
+	}
+	parsedStdout, jsonResult, err := ParseAgentOutput(stdout, outputFormat)
+	if err != nil {
+		log.Warnf("failed to parse agent output: %v, using raw output", err)
+		parsedStdout = stdout
+	} else {
+		stdout = parsedStdout
+		// Print diagnostics if available
+		PrintAgentDiagnostics(jsonResult)
+	}
 
 	// Log output if verbose
 	if len(stdout) > 0 {
@@ -1762,6 +1807,27 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	}
 	result.AgentSuccess = true
 	log.Infof("agent command completed successfully")
+
+	// Save original stdout before parsing (for review function)
+	originalStdout := stdout
+
+	// Parse output based on agent output format
+	outputFormat := selectedAgent.Output
+	if outputFormat == "" {
+		outputFormat = "default"
+	}
+	parsedStdout, jsonResult, err := ParseAgentOutput(stdout, outputFormat)
+	if err != nil {
+		log.Warnf("failed to parse agent output: %v, using raw output", err)
+		parsedStdout = stdout
+	} else {
+		stdout = parsedStdout
+		// Print diagnostics if available
+		PrintAgentDiagnostics(jsonResult)
+	}
+
+	// For review, save the original stdout (before parsing) for JSON extraction
+	result.AgentStdout = originalStdout
 
 	// Log output if verbose
 	if len(stdout) > 0 {

@@ -63,7 +63,8 @@ type AgentTestConfig struct {
 
 // Agent holds configuration for a single agent.
 type Agent struct {
-	Cmd []string `yaml:"cmd"`
+	Cmd    []string `yaml:"cmd"`
+	Output string   `yaml:"output"` // Output format: "default", "json", or "stream_json"
 }
 
 // getSystemLocale gets the system locale from environment variables.
