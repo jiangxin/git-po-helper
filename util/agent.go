@@ -751,6 +751,9 @@ func ParseStreamJSONRealtime(reader io.Reader) (content []byte, result *ClaudeJS
 		case "result":
 			var resultMsg ClaudeJSONOutput
 			if err := json.Unmarshal([]byte(line), &resultMsg); err == nil {
+				// Print result parsing process
+				resultSize := len(resultMsg.Result)
+				printResultParsing(&resultMsg, resultSize)
 				// Merge usage information: prefer the result with more complete usage info
 				if lastResult == nil {
 					lastResult = &resultMsg
@@ -776,6 +779,10 @@ func ParseStreamJSONRealtime(reader io.Reader) (content []byte, result *ClaudeJS
 					// Update result text if present
 					if resultMsg.Result != "" {
 						lastResult.Result = resultMsg.Result
+					}
+					// Merge NumTurns: use the maximum value
+					if resultMsg.NumTurns > lastResult.NumTurns {
+						lastResult.NumTurns = resultMsg.NumTurns
 					}
 				}
 				printResultMessage(&resultMsg, &resultBuilder)
@@ -845,6 +852,11 @@ func printAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.B
 	}
 }
 
+// printResultParsing displays the parsing process of a result message.
+func printResultParsing(msg *ClaudeJSONOutput, resultSize int) {
+	fmt.Printf("🤖 return result (%d bytes)\n", resultSize)
+}
+
 // printResultMessage displays the final result message.
 func printResultMessage(msg *ClaudeJSONOutput, resultBuilder *strings.Builder) {
 	if msg.Result != "" {
@@ -870,6 +882,9 @@ func PrintAgentDiagnostics(result *ClaudeJSONOutput) {
 	}
 
 	hasInfo := false
+	if result.NumTurns > 0 {
+		hasInfo = true
+	}
 	if result.Usage != nil && (result.Usage.InputTokens > 0 || result.Usage.OutputTokens > 0) {
 		hasInfo = true
 	}
@@ -883,6 +898,9 @@ func PrintAgentDiagnostics(result *ClaudeJSONOutput) {
 	fmt.Println()
 	fmt.Println("📊 Agent Diagnostics")
 	fmt.Println("==========================================")
+	if result.NumTurns > 0 {
+		fmt.Printf("**Num turns:** %d\n", result.NumTurns)
+	}
 	if result.Usage != nil {
 		if result.Usage.InputTokens > 0 {
 			fmt.Printf("**Input tokens:** %d\n", result.Usage.InputTokens)
