@@ -668,6 +668,9 @@ func parseStreamJSON(output []byte) (content []byte, result *ClaudeJSONOutput, e
 	var lastResult *ClaudeJSONOutput
 
 	scanner := bufio.NewScanner(bytes.NewReader(output))
+	// Increase buffer size to handle long lines (1MB initial, 10MB max)
+	buf := make([]byte, 0, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024) // Max token size: 10MB
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -707,6 +710,9 @@ func ParseStreamJSONRealtime(reader io.Reader) (content []byte, result *ClaudeJS
 	var lastResult *ClaudeJSONOutput
 
 	scanner := bufio.NewScanner(reader)
+	// Increase buffer size to handle long lines (1MB initial, 10MB max)
+	buf := make([]byte, 0, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024) // Max token size: 10MB
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
