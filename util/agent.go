@@ -11,10 +11,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/git-l10n/git-po-helper/config"
 	"github.com/git-l10n/git-po-helper/repository"
 	log "github.com/sirupsen/logrus"
+)
+
+const (
+	// maxDisplayBytes is the maximum number of bytes to display for agent messages (4KB).
+	maxDisplayBytes = 4096
 )
 
 // CountPotEntries counts msgid entries in a POT file.
@@ -899,6 +905,16 @@ func printSystemMessage(msg *ClaudeSystemMessage) {
 	fmt.Println()
 }
 
+// truncateText truncates text to maxBytes bytes, appending "..." if truncated.
+func truncateText(text string, maxBytes int) string {
+	if len(text) <= maxBytes {
+		return text
+	}
+	// Truncate to maxBytes - 3 to leave room for "..."
+	truncated := text[:maxBytes-3]
+	return truncated + "..."
+}
+
 // printAssistantMessage displays assistant message content, printing each text block on a separate line.
 func printAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.Builder) {
 	if msg.Message.Content == nil {
@@ -907,9 +923,11 @@ func printAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.B
 
 	for _, content := range msg.Message.Content {
 		if content.Type == "text" && content.Text != "" {
+			// Truncate text to 4KB for display
+			displayText := truncateText(content.Text, maxDisplayBytes)
 			// Print agent marker with robot emoji at the beginning of agent output
 			fmt.Print("🤖 ")
-			fmt.Println(content.Text)
+			fmt.Println(displayText)
 			resultBuilder.WriteString(content.Text)
 		}
 	}
@@ -1024,8 +1042,9 @@ func PrintAgentDiagnostics(result interface{}) {
 // thread.started, item.completed (agent_message), and turn.completed messages in real-time.
 // Returns the final result and accumulated result text.
 func ParseCodexJSONLRealtime(reader io.Reader) (content []byte, result *CodexJSONOutput, err error) {
-	var resultBuilder strings.Builder
 	var lastResult *CodexJSONOutput
+	var lastAgentMessage string
+	startTime := time.Now()
 
 	scanner := bufio.NewScanner(reader)
 	// Increase buffer size to handle long lines (1MB initial, 10MB max)
@@ -1042,10 +1061,9 @@ func ParseCodexJSONLRealtime(reader io.Reader) (content []byte, result *CodexJSO
 			Type string `json:"type"`
 		}
 		if err := json.Unmarshal([]byte(line), &baseMsg); err != nil {
-			// If line is not valid JSON, treat it as plain text
-			log.Debugf("codex-json: non-JSON line: %s", line)
-			resultBuilder.WriteString(line)
-			resultBuilder.WriteString("\n")
+			// If line is not valid JSON, log at debug level only
+			log.Debugf("codex-json: non-JSON lines, error: %s", err)
+			fmt.Print("❓ ")
 			fmt.Println(line)
 			continue
 		}
@@ -1074,8 +1092,10 @@ func ParseCodexJSONLRealtime(reader io.Reader) (content []byte, result *CodexJSO
 						lastResult = &CodexJSONOutput{}
 					}
 					lastResult.NumTurns++
-					// Display and accumulate message text
-					printCodexAgentMessage(&itemMsg.Item, &resultBuilder)
+					// Display message text
+					printCodexAgentMessage(&itemMsg.Item, nil)
+					// Store the last agent message (replace, don't accumulate)
+					lastAgentMessage = itemMsg.Item.Text
 				} else {
 					// Log other item types at debug level
 					log.Debugf("codex-json: received item.completed with type=%s (suppressed from output)", itemMsg.Item.Type)
@@ -1107,6 +1127,10 @@ func ParseCodexJSONLRealtime(reader io.Reader) (content []byte, result *CodexJSO
 				// Always update duration_api_ms with the latest value
 				if turnMsg.DurationMS > 0 {
 					lastResult.DurationAPIMS = turnMsg.DurationMS
+				} else {
+					// If DurationMS is 0, calculate elapsed time from function start
+					elapsed := time.Since(startTime)
+					lastResult.DurationAPIMS = int(elapsed.Milliseconds())
 				}
 				// Log turn completion at debug level
 				log.Debugf("codex-json: received turn.completed (suppressed from output)")
@@ -1114,19 +1138,17 @@ func ParseCodexJSONLRealtime(reader io.Reader) (content []byte, result *CodexJSO
 				log.Debugf("codex-json: failed to parse turn.completed message: %v", err)
 			}
 		default:
-			// Unknown type, log at debug level and output as-is
+			// Unknown type, log at debug level only
 			log.Debugf("codex-json: unknown message type: %s", baseMsg.Type)
-			resultBuilder.WriteString(line)
-			resultBuilder.WriteString("\n")
-			fmt.Println(line)
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return []byte(resultBuilder.String()), lastResult, fmt.Errorf("failed to parse codex JSONL: %w", err)
+		return []byte(lastAgentMessage), lastResult, fmt.Errorf("failed to parse codex JSONL: %w", err)
 	}
 
-	return []byte(resultBuilder.String()), lastResult, nil
+	// Only return the last agent message
+	return []byte(lastAgentMessage), lastResult, nil
 }
 
 // printCodexThreadStarted displays thread initialization information.
@@ -1144,9 +1166,11 @@ func printCodexThreadStarted(msg *CodexThreadStarted) {
 // printCodexAgentMessage displays agent message content.
 func printCodexAgentMessage(item *CodexItem, resultBuilder *strings.Builder) {
 	if item.Text != "" {
+		// Truncate text to 4KB for display
+		displayText := truncateText(item.Text, maxDisplayBytes)
 		// Print agent marker with robot emoji at the beginning of agent output
 		fmt.Print("🤖 ")
-		fmt.Println(item.Text)
-		resultBuilder.WriteString(item.Text)
+		fmt.Println(displayText)
+		// Note: resultBuilder is not used here, we only store the last message
 	}
 }
