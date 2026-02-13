@@ -21,6 +21,8 @@ import (
 const (
 	// maxDisplayBytes is the maximum number of bytes to display for agent messages (4KB).
 	maxDisplayBytes = 4096
+	// maxDisplayLines is the maximum number of lines to display for agent messages.
+	maxDisplayLines = 10
 )
 
 // CountPotEntries counts msgid entries in a POT file.
@@ -1013,8 +1015,19 @@ func printSystemMessage(msg *ClaudeSystemMessage) {
 	fmt.Println()
 }
 
-// truncateText truncates text to maxBytes bytes, appending "..." if truncated.
-func truncateText(text string, maxBytes int) string {
+// truncateText truncates text to maxBytes bytes and/or maxLines lines, appending "..." if truncated.
+// If maxLines > 0, the text is first limited to maxLines lines, then to maxBytes.
+func truncateText(text string, maxBytes int, maxLines int) string {
+	// First, limit by lines if maxLines > 0
+	if maxLines > 0 {
+		lines := strings.Split(text, "\n")
+		if len(lines) > maxLines {
+			lines = lines[:maxLines]
+			text = strings.Join(lines, "\n")
+		}
+	}
+
+	// Then, limit by bytes
 	if len(text) <= maxBytes {
 		return text
 	}
@@ -1031,8 +1044,8 @@ func printAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.B
 
 	for _, content := range msg.Message.Content {
 		if content.Type == "text" && content.Text != "" {
-			// Truncate text to 4KB for display
-			displayText := truncateText(content.Text, maxDisplayBytes)
+			// Truncate text to 4KB and 10 lines for display
+			displayText := truncateText(content.Text, maxDisplayBytes, maxDisplayLines)
 			// Print agent marker with robot emoji at the beginning of agent output
 			fmt.Print("🤖 ")
 			fmt.Println(displayText)
@@ -1296,8 +1309,8 @@ func printCodexThreadStarted(msg *CodexThreadStarted) {
 // printCodexAgentMessage displays agent message content.
 func printCodexAgentMessage(item *CodexItem, resultBuilder *strings.Builder) {
 	if item.Text != "" {
-		// Truncate text to 4KB for display
-		displayText := truncateText(item.Text, maxDisplayBytes)
+		// Truncate text to 4KB and 10 lines for display
+		displayText := truncateText(item.Text, maxDisplayBytes, maxDisplayLines)
 		// Print agent marker with robot emoji at the beginning of agent output
 		fmt.Print("🤖 ")
 		fmt.Println(displayText)
@@ -1314,7 +1327,6 @@ func ParseOpenCodeJSONLRealtime(reader io.Reader) (content []byte, result *OpenC
 	var lastResult *OpenCodeJSONOutput
 	var inStep bool
 	startTime := time.Now()
-	const maxToolOutputBytes = 2048 // 2KB limit for tool output
 
 	scanner := bufio.NewScanner(reader)
 	// Increase buffer size to handle long lines (1MB initial, 10MB max)
@@ -1399,7 +1411,7 @@ func ParseOpenCodeJSONLRealtime(reader io.Reader) (content []byte, result *OpenC
 			}
 			var toolMsg OpenCodeToolUse
 			if err := json.Unmarshal([]byte(line), &toolMsg); err == nil {
-				printOpenCodeToolUse(&toolMsg, &resultBuilder, maxToolOutputBytes)
+				printOpenCodeToolUse(&toolMsg, &resultBuilder)
 			} else {
 				log.Debugf("opencode-json: failed to parse tool_use message: %v", err)
 			}
@@ -1426,8 +1438,8 @@ func ParseOpenCodeJSONLRealtime(reader io.Reader) (content []byte, result *OpenC
 // printOpenCodeText displays text message content.
 func printOpenCodeText(msg *OpenCodeText, resultBuilder *strings.Builder) {
 	if msg.Part.Text != "" {
-		// Truncate text to 4KB for display
-		displayText := truncateText(msg.Part.Text, maxDisplayBytes)
+		// Truncate text to 4KB and 10 lines for display
+		displayText := truncateText(msg.Part.Text, maxDisplayBytes, maxDisplayLines)
 		// Print agent marker with robot emoji at the beginning of agent output
 		fmt.Print("🤖 ")
 		fmt.Println(displayText)
@@ -1436,7 +1448,7 @@ func printOpenCodeText(msg *OpenCodeText, resultBuilder *strings.Builder) {
 }
 
 // printOpenCodeToolUse displays tool use message content.
-func printOpenCodeToolUse(msg *OpenCodeToolUse, resultBuilder *strings.Builder, maxOutputBytes int) {
+func printOpenCodeToolUse(msg *OpenCodeToolUse, resultBuilder *strings.Builder) {
 	if msg.Part.State == nil {
 		return
 	}
@@ -1463,10 +1475,17 @@ func printOpenCodeToolUse(msg *OpenCodeToolUse, resultBuilder *strings.Builder, 
 		resultBuilder.WriteString(fmt.Sprintf("%s\n", toolType))
 	}
 
-	// Display output (truncated to maxOutputBytes)
+	// Display output (limited to 10 lines, with blank line separator)
 	if msg.Part.State.Output != "" {
-		outputText := truncateText(msg.Part.State.Output, maxOutputBytes)
-		fmt.Println(outputText)
+		// Add blank line separator between tool and output
+		fmt.Println()
+		resultBuilder.WriteString("\n")
+
+		// Truncate output to 4KB and 10 lines for display
+		displayOutput := truncateText(msg.Part.State.Output, maxDisplayBytes, maxDisplayLines)
+		fmt.Println(displayOutput)
+
+		// Write full output to resultBuilder (for accumulation)
 		resultBuilder.WriteString(msg.Part.State.Output)
 	}
 }
