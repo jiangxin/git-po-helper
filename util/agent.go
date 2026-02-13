@@ -290,7 +290,7 @@ func ExecuteAgentCommand(cmd []string, workDir string) ([]byte, []byte, error) {
 
 // ExecuteAgentCommandStream executes an agent command and returns a reader for real-time stdout streaming.
 // The command is executed in the specified working directory.
-// This function is used for stream-json format to process output in real-time.
+// This function is used for json format (stream-json internally) to process output in real-time.
 //
 // Parameters:
 //   - cmd: Command and arguments as a slice
@@ -340,10 +340,16 @@ func ExecuteAgentCommandStream(cmd []string, workDir string) (stdoutReader io.Re
 	return stdoutPipe, &stderrBuffer, execCmd, nil
 }
 
-// normalizeOutputFormat normalizes output format by converting underscores to hyphens.
-// This allows both "stream_json" and "stream-json" to be treated as "stream-json".
+// normalizeOutputFormat normalizes output format by converting underscores to hyphens
+// and unifying stream-json/stream_json to json.
+// This allows both "stream_json" and "stream-json" to be treated as "json".
 func normalizeOutputFormat(format string) string {
-	return strings.ReplaceAll(format, "_", "-")
+	normalized := strings.ReplaceAll(format, "_", "-")
+	// Unify stream-json to json (claude uses stream-json internally, but we simplify it to json)
+	if normalized == "stream-json" {
+		return "json"
+	}
+	return normalized
 }
 
 // SelectAgent selects an agent from the configuration based on the provided agent name.
@@ -420,10 +426,8 @@ func BuildAgentCommand(agent config.Agent, prompt, source, commit string) []stri
 				outputFormat = "default"
 			}
 
-			// Add --output-format parameter for json or stream-json formats
+			// Add --output-format parameter for json format (claude uses stream-json internally)
 			if outputFormat == "json" {
-				cmd = append(cmd, "--output-format", "json")
-			} else if outputFormat == "stream-json" {
 				cmd = append(cmd, "--verbose", "--output-format", "stream-json")
 			}
 			// For "default" format, no additional parameter is needed
@@ -594,7 +598,7 @@ type ClaudeUsage struct {
 	OutputTokens int `json:"output_tokens"`
 }
 
-// ClaudeSystemMessage represents a system initialization message in stream-json format.
+// ClaudeSystemMessage represents a system initialization message in json format (stream-json internally).
 type ClaudeSystemMessage struct {
 	Type              string   `json:"type"`
 	Subtype           string   `json:"subtype"`
@@ -623,7 +627,7 @@ type ClaudeMessage struct {
 	Usage   *ClaudeUsage           `json:"usage,omitempty"`
 }
 
-// ClaudeAssistantMessage represents an assistant message in stream-json format.
+// ClaudeAssistantMessage represents an assistant message in json format (stream-json internally).
 type ClaudeAssistantMessage struct {
 	Type            string        `json:"type"`
 	Message         ClaudeMessage `json:"message"`
@@ -634,8 +638,9 @@ type ClaudeAssistantMessage struct {
 
 // ParseAgentOutput parses agent output based on the output format.
 // Returns the actual content (result text) and the parsed JSON result.
+// For claude, json format is treated as stream-json (JSONL format).
 func ParseAgentOutput(output []byte, outputFormat string) (content []byte, result *ClaudeJSONOutput, err error) {
-	// Normalize output format (convert underscores to hyphens)
+	// Normalize output format (convert underscores to hyphens and unify stream-json to json)
 	outputFormat = normalizeOutputFormat(outputFormat)
 
 	// Default format: return output as-is
@@ -643,17 +648,8 @@ func ParseAgentOutput(output []byte, outputFormat string) (content []byte, resul
 		return output, nil, nil
 	}
 
-	// JSON format: parse single JSON object
+	// JSON format: parse as stream JSON (JSONL format, one JSON object per line)
 	if outputFormat == "json" {
-		var jsonOutput ClaudeJSONOutput
-		if err := json.Unmarshal(output, &jsonOutput); err != nil {
-			return output, nil, fmt.Errorf("failed to parse JSON output: %w", err)
-		}
-		return []byte(jsonOutput.Result), &jsonOutput, nil
-	}
-
-	// Stream JSON format: parse multiple JSON objects (one per line)
-	if outputFormat == "stream-json" {
 		return parseStreamJSON(output)
 	}
 

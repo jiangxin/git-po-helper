@@ -593,8 +593,8 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 	var stderr []byte
 	var jsonResult *ClaudeJSONOutput
 
-	// Use streaming execution for stream-json format
-	if outputFormat == "stream-json" {
+	// Use streaming execution for json format (treated as stream-json)
+	if outputFormat == "json" {
 		stdoutReader, stderrBuf, cmdProcess, err := ExecuteAgentCommandStream(agentCmd, workDir)
 		if err != nil {
 			log.Errorf("agent command execution failed: %v", err)
@@ -814,8 +814,8 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	var stderr []byte
 	var jsonResult *ClaudeJSONOutput
 
-	// Use streaming execution for stream-json format
-	if outputFormat == "stream-json" {
+	// Use streaming execution for json format (treated as stream-json)
+	if outputFormat == "json" {
 		stdoutReader, stderrBuf, cmdProcess, err := ExecuteAgentCommandStream(agentCmd, workDir)
 		if err != nil {
 			log.Errorf("agent command execution failed: %v", err)
@@ -1168,8 +1168,8 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	var stderr []byte
 	var jsonResult *ClaudeJSONOutput
 
-	// Use streaming execution for stream-json format
-	if outputFormat == "stream-json" {
+	// Use streaming execution for json format (treated as stream-json)
+	if outputFormat == "json" {
 		stdoutReader, stderrBuf, cmdProcess, err := ExecuteAgentCommandStream(agentCmd, workDir)
 		if err != nil {
 			log.Errorf("agent command execution failed: %v", err)
@@ -1973,8 +1973,8 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	var jsonResult *ClaudeJSONOutput
 	var originalStdout []byte
 
-	// Use streaming execution for stream-json format
-	if outputFormat == "stream-json" {
+	// Use streaming execution for json format (treated as stream-json)
+	if outputFormat == "json" {
 		stdoutReader, stderrBuf, cmdProcess, err := ExecuteAgentCommandStream(agentCmd, workDir)
 		if err != nil {
 			log.Errorf("agent command execution failed: %v", err)
