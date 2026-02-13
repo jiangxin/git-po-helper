@@ -139,7 +139,23 @@ func getDefaultConfig() *AgentConfig {
 			Runs: &defaultRuns,
 		},
 		Agents: map[string]Agent{
-			"test": {
+			"claude": {
+				Cmd:    []string{"claude", "--dangerously-skip-permissions", "-p", "{prompt}"},
+				Output: "json",
+			},
+			"codex": {
+				Cmd:    []string{"codex", "exec", "--yolo", "{prompt}"},
+				Output: "json",
+			},
+			"opencode": {
+				Cmd:    []string{"opencode", "run", "--thinking", "{prompt}"},
+				Output: "json",
+			},
+			"gemini": {
+				Cmd:    []string{"gemini", "--yolo", "{prompt}"},
+				Output: "json",
+			},
+			"echo": {
 				Cmd: []string{"echo", "{prompt}"},
 			},
 		},

@@ -304,22 +304,22 @@ func TestGetDefaultConfig(t *testing.T) {
 		t.Fatalf("expected Runs default 1, got %d", *config.AgentTest.Runs)
 	}
 
-	// Check default agent
-	if len(config.Agents) != 1 {
-		t.Fatalf("expected 1 default agent, got %d", len(config.Agents))
+	// Check default agents
+	if len(config.Agents) != 5 {
+		t.Fatalf("expected 5 default agents, got %d", len(config.Agents))
 	}
-	testAgent, ok := config.Agents["test"]
+	testAgent, ok := config.Agents["echo"]
 	if !ok {
-		t.Fatal("expected 'test' agent in default config")
+		t.Fatal("expected 'echo' agent in default config")
 	}
 	if len(testAgent.Cmd) != 2 {
-		t.Fatalf("expected test agent command with 2 args, got %d", len(testAgent.Cmd))
+		t.Fatalf("expected echo agent command with 2 args, got %d", len(testAgent.Cmd))
 	}
 	if testAgent.Cmd[0] != "echo" {
-		t.Fatalf("expected test agent command 'echo', got '%s'", testAgent.Cmd[0])
+		t.Fatalf("expected echo agent command 'echo', got '%s'", testAgent.Cmd[0])
 	}
 	if testAgent.Cmd[1] != "{prompt}" {
-		t.Fatalf("expected test agent command '{prompt}', got '%s'", testAgent.Cmd[1])
+		t.Fatalf("expected echo agent command '{prompt}', got '%s'", testAgent.Cmd[1])
 	}
 }
 

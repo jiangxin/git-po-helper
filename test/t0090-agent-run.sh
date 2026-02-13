@@ -76,11 +76,11 @@ EOF
 test_expect_success "agent-run update-pot: no config file" '
 	rm -f workdir/git-po-helper.yaml &&
 	# Without config file, default config is used (with default test agent)
-	git -C workdir $HELPER agent-run update-pot >out 2>&1 &&
+	test_must_fail git -C workdir $HELPER agent-run update-pot >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	# Should complete successfully with default agent
-	grep "completed successfully" actual
+	grep "multiple agents configured .*, please specify --agent" actual
 '
 
 test_expect_success "agent-run update-pot: empty agents uses default" '
