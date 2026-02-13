@@ -594,10 +594,12 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 	var jsonResult *ClaudeJSONOutput
 	var codexResult *CodexJSONOutput
 	var opencodeResult *OpenCodeJSONOutput
+	var geminiResult *GeminiJSONOutput
 
 	// Detect agent type
 	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
 	isOpencode := len(agentCmd) > 0 && agentCmd[0] == "opencode"
+	isGemini := len(agentCmd) > 0 && (agentCmd[0] == "gemini" || agentCmd[0] == "qwen")
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -622,6 +624,14 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 				log.Warnf("failed to parse opencode JSONL: %v", err)
 			}
 			opencodeResult = finalResult
+			stdout = parsedStdout
+		} else if isGemini {
+			// Parsing stream-json for Gemini-CLI
+			parsedStdout, finalResult, err := ParseGeminiJSONLRealtime(stdoutReader)
+			if err != nil {
+				log.Warnf("failed to parse gemini JSONL: %v", err)
+			}
+			geminiResult = finalResult
 			stdout = parsedStdout
 		} else {
 			// Parsing stream-json for Claude Code
@@ -695,6 +705,12 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 		// Extract NumTurns from diagnostics
 		if opencodeResult.NumTurns > 0 {
 			result.NumTurns = opencodeResult.NumTurns
+		}
+	} else if geminiResult != nil {
+		PrintAgentDiagnostics(geminiResult)
+		// Extract NumTurns from diagnostics
+		if geminiResult.NumTurns > 0 {
+			result.NumTurns = geminiResult.NumTurns
 		}
 	} else if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
@@ -852,10 +868,12 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	var jsonResult *ClaudeJSONOutput
 	var codexResult *CodexJSONOutput
 	var opencodeResult *OpenCodeJSONOutput
+	var geminiResult *GeminiJSONOutput
 
 	// Detect agent type
 	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
 	isOpencode := len(agentCmd) > 0 && agentCmd[0] == "opencode"
+	isGemini := len(agentCmd) > 0 && (agentCmd[0] == "gemini" || agentCmd[0] == "qwen")
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -881,7 +899,16 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 			}
 			opencodeResult = finalResult
 			stdout = parsedStdout
+		} else if isGemini {
+			// Parsing stream-json for Gemini-CLI
+			parsedStdout, finalResult, err := ParseGeminiJSONLRealtime(stdoutReader)
+			if err != nil {
+				log.Warnf("failed to parse gemini JSONL: %v", err)
+			}
+			geminiResult = finalResult
+			stdout = parsedStdout
 		} else {
+			// Parsing stream-json for Claude Code
 			parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
 			if err != nil {
 				log.Warnf("failed to parse stream JSON: %v", err)
@@ -952,6 +979,12 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 		// Extract NumTurns from diagnostics
 		if opencodeResult.NumTurns > 0 {
 			result.NumTurns = opencodeResult.NumTurns
+		}
+	} else if geminiResult != nil {
+		PrintAgentDiagnostics(geminiResult)
+		// Extract NumTurns from diagnostics
+		if geminiResult.NumTurns > 0 {
+			result.NumTurns = geminiResult.NumTurns
 		}
 	} else if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
@@ -1242,10 +1275,12 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	var jsonResult *ClaudeJSONOutput
 	var codexResult *CodexJSONOutput
 	var opencodeResult *OpenCodeJSONOutput
+	var geminiResult *GeminiJSONOutput
 
 	// Detect agent type
 	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
 	isOpencode := len(agentCmd) > 0 && agentCmd[0] == "opencode"
+	isGemini := len(agentCmd) > 0 && (agentCmd[0] == "gemini" || agentCmd[0] == "qwen")
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -1271,7 +1306,16 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 			}
 			opencodeResult = finalResult
 			stdout = parsedStdout
+		} else if isGemini {
+			// Parsing stream-json for Gemini-CLI
+			parsedStdout, finalResult, err := ParseGeminiJSONLRealtime(stdoutReader)
+			if err != nil {
+				log.Warnf("failed to parse gemini JSONL: %v", err)
+			}
+			geminiResult = finalResult
+			stdout = parsedStdout
 		} else {
+			// Parsing stream-json for Claude Code
 			parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
 			if err != nil {
 				log.Warnf("failed to parse stream JSON: %v", err)
@@ -1342,6 +1386,12 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 		// Extract NumTurns from diagnostics
 		if opencodeResult.NumTurns > 0 {
 			result.NumTurns = opencodeResult.NumTurns
+		}
+	} else if geminiResult != nil {
+		PrintAgentDiagnostics(geminiResult)
+		// Extract NumTurns from diagnostics
+		if geminiResult.NumTurns > 0 {
+			result.NumTurns = geminiResult.NumTurns
 		}
 	} else if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)

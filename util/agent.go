@@ -417,7 +417,7 @@ func BuildAgentCommand(agent config.Agent, prompt, source, commit string) []stri
 		// Check if --output-format parameter already exists in the command
 		hasOutputFormat := false
 		for i, arg := range cmd {
-			if arg == "--output-format" {
+			if arg == "--output-format" || arg == "-o" {
 				hasOutputFormat = true
 				// Skip the next argument (the format value)
 				if i+1 < len(cmd) {
@@ -493,6 +493,37 @@ func BuildAgentCommand(agent config.Agent, prompt, source, commit string) []stri
 			// Add --format json parameter for json format (opencode uses JSONL format)
 			if outputFormat == "json" {
 				cmd = append(cmd, "--format", "json")
+			}
+			// For "default" format, no additional parameter is needed
+		}
+	}
+
+	// For gemini/qwen command, add --output-format stream-json parameter if output format is json
+	// (Applicable to Claude Code and Gemini-CLI)
+	if len(cmd) > 0 && (cmd[0] == "gemini" || cmd[0] == "qwen") {
+		// Check if --output-format or -o parameter already exists in the command
+		hasOutputFormat := false
+		for i, arg := range cmd {
+			if arg == "--output-format" || arg == "-o" {
+				hasOutputFormat = true
+				// Skip the next argument (the format value)
+				if i+1 < len(cmd) {
+					_ = cmd[i+1]
+				}
+				break
+			}
+		}
+
+		// Only add --output-format if it doesn't already exist
+		if !hasOutputFormat {
+			outputFormat := normalizeOutputFormat(agent.Output)
+			if outputFormat == "" {
+				outputFormat = "default"
+			}
+
+			// Add --output-format stream-json parameter for json format (gemini uses stream-json)
+			if outputFormat == "json" {
+				cmd = append(cmd, "--output-format", "stream-json")
 			}
 			// For "default" format, no additional parameter is needed
 		}
@@ -819,6 +850,79 @@ type OpenCodeJSONOutput struct {
 	SessionID     string         `json:"session_id"`
 }
 
+// GeminiUsage represents usage information in Gemini-CLI messages.
+type GeminiUsage struct {
+	InputTokens          int `json:"input_tokens"`
+	OutputTokens         int `json:"output_tokens"`
+	CacheReadInputTokens int `json:"cache_read_input_tokens,omitempty"`
+	TotalTokens          int `json:"total_tokens"`
+}
+
+// GeminiContent represents content blocks in Gemini-CLI messages.
+type GeminiContent struct {
+	Type      string                 `json:"type"`
+	Text      string                 `json:"text,omitempty"`
+	ToolUseID string                 `json:"id,omitempty"`
+	Name      string                 `json:"name,omitempty"`
+	Input     map[string]interface{} `json:"input,omitempty"`
+	// For tool_result type
+	ToolUseID2 string `json:"tool_use_id,omitempty"`
+	IsError    bool   `json:"is_error,omitempty"`
+	Content    string `json:"content,omitempty"`
+}
+
+// GeminiMessage represents the message object in Gemini-CLI output.
+type GeminiMessage struct {
+	ID         string          `json:"id"`
+	Type       string          `json:"type"`
+	Role       string          `json:"role"`
+	Model      string          `json:"model"`
+	Content    []GeminiContent `json:"content"`
+	StopReason interface{}     `json:"stop_reason"`
+	Usage      *GeminiUsage    `json:"usage,omitempty"`
+}
+
+// GeminiSystemMessage represents a system initialization message in Gemini-CLI JSONL format.
+type GeminiSystemMessage struct {
+	Type      string   `json:"type"`
+	Subtype   string   `json:"subtype"`
+	UUID      string   `json:"uuid"`
+	SessionID string   `json:"session_id"`
+	CWD       string   `json:"cwd"`
+	Model     string   `json:"model"`
+	Tools     []string `json:"tools"`
+}
+
+// GeminiAssistantMessage represents an assistant message in Gemini-CLI JSONL format.
+type GeminiAssistantMessage struct {
+	Type            string        `json:"type"`
+	UUID            string        `json:"uuid"`
+	SessionID       string        `json:"session_id"`
+	ParentToolUseID *string       `json:"parent_tool_use_id"`
+	Message         GeminiMessage `json:"message"`
+}
+
+// GeminiUserMessage represents a user message (tool result) in Gemini-CLI JSONL format.
+type GeminiUserMessage struct {
+	Type            string  `json:"type"`
+	UUID            string  `json:"uuid"`
+	SessionID       string  `json:"session_id"`
+	ParentToolUseID *string `json:"parent_tool_use_id"`
+	Message         struct {
+		Role    string          `json:"role"`
+		Content []GeminiContent `json:"content"`
+	} `json:"message"`
+}
+
+// GeminiJSONOutput represents the unified parsed information from Gemini-CLI JSONL output.
+type GeminiJSONOutput struct {
+	NumTurns      int          `json:"num_turns"`
+	Usage         *GeminiUsage `json:"usage,omitempty"`
+	DurationAPIMS int          `json:"duration_api_ms"`
+	Result        string       `json:"result"`
+	SessionID     string       `json:"session_id"`
+}
+
 // ParseAgentOutput parses agent output based on the output format.
 // Returns the actual content (result text) and the parsed JSON result.
 // For claude, json format is treated as stream-json (JSONL format).
@@ -989,6 +1093,7 @@ func ParseStreamJSONRealtime(reader io.Reader) (content []byte, result *ClaudeJS
 }
 
 // printSystemMessage displays system initialization information.
+// (Applicable to Claude Code and Gemini-CLI)
 func printSystemMessage(msg *ClaudeSystemMessage) {
 	fmt.Println()
 	fmt.Println("🤖 System Initialization")
@@ -1037,6 +1142,7 @@ func truncateText(text string, maxBytes int, maxLines int) string {
 }
 
 // printAssistantMessage displays assistant message content, printing each text block on a separate line.
+// (Applicable to Claude Code and Gemini-CLI)
 func printAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.Builder) {
 	if msg.Message.Content == nil {
 		return
@@ -1078,7 +1184,7 @@ func printResultMessage(msg *ClaudeJSONOutput, resultBuilder *strings.Builder) {
 }
 
 // PrintAgentDiagnostics prints diagnostic information in a beautiful format.
-// It accepts either ClaudeJSONOutput or CodexJSONOutput.
+// It accepts ClaudeJSONOutput, CodexJSONOutput, OpenCodeJSONOutput, or GeminiJSONOutput.
 func PrintAgentDiagnostics(result interface{}) {
 	var numTurns int
 	var inputTokens, outputTokens int
@@ -1087,6 +1193,28 @@ func PrintAgentDiagnostics(result interface{}) {
 
 	// Extract information based on type
 	switch r := result.(type) {
+	case *GeminiJSONOutput:
+		if r == nil {
+			return
+		}
+		if r.NumTurns > 0 {
+			numTurns = r.NumTurns
+			hasInfo = true
+		}
+		if r.Usage != nil {
+			if r.Usage.InputTokens > 0 {
+				inputTokens = r.Usage.InputTokens
+				hasInfo = true
+			}
+			if r.Usage.OutputTokens > 0 {
+				outputTokens = r.Usage.OutputTokens
+				hasInfo = true
+			}
+		}
+		if r.DurationAPIMS > 0 {
+			durationAPIMS = r.DurationAPIMS
+			hasInfo = true
+		}
 	case *ClaudeJSONOutput:
 		if r == nil {
 			return
@@ -1488,4 +1616,142 @@ func printOpenCodeToolUse(msg *OpenCodeToolUse, resultBuilder *strings.Builder) 
 		// Write full output to resultBuilder (for accumulation)
 		resultBuilder.WriteString(msg.Part.State.Output)
 	}
+}
+
+// ParseGeminiJSONLRealtime parses Gemini-CLI JSONL output in real-time from an io.Reader.
+// It displays messages as they arrive and returns the final parsed result.
+func ParseGeminiJSONLRealtime(reader io.Reader) (content []byte, result *GeminiJSONOutput, err error) {
+	var lastResult *GeminiJSONOutput
+	var lastAssistantText string
+	startTime := time.Now()
+
+	scanner := bufio.NewScanner(reader)
+	// Increase buffer size to handle long lines (1MB initial, 10MB max)
+	buf := make([]byte, 0, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024) // Max token size: 10MB
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		// Try to parse as JSON to determine message type
+		var baseMsg struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &baseMsg); err != nil {
+			// If line is not valid JSON, treat it as plain text
+			fmt.Print("❓ ")
+			fmt.Println(line)
+			log.Debugf("gemini-json: non-JSON line: %s", line)
+			continue
+		}
+
+		// Parse based on message type
+		switch baseMsg.Type {
+		case "system":
+			var sysMsg GeminiSystemMessage
+			if err := json.Unmarshal([]byte(line), &sysMsg); err == nil {
+				if sysMsg.Subtype == "init" {
+					// Print session info (similar to Claude's printSystemMessage)
+					fmt.Println()
+					fmt.Println("🚀 Session Initialized")
+					fmt.Println("==========================================")
+					if sysMsg.Model != "" {
+						fmt.Printf("**Model:** %s\n", sysMsg.Model)
+					}
+					if sysMsg.SessionID != "" {
+						fmt.Printf("**Session ID:** %s\n", sysMsg.SessionID)
+					}
+					if sysMsg.CWD != "" {
+						fmt.Printf("**Working Directory:** %s\n", sysMsg.CWD)
+					}
+					if len(sysMsg.Tools) > 0 {
+						fmt.Printf("**Tools:** %s\n", strings.Join(sysMsg.Tools, ", "))
+					}
+					fmt.Println("==========================================")
+					fmt.Println()
+
+					// Initialize result
+					if lastResult == nil {
+						lastResult = &GeminiJSONOutput{
+							SessionID: sysMsg.SessionID,
+						}
+					}
+				}
+			} else {
+				log.Debugf("gemini-json: failed to parse system message: %v", err)
+			}
+		case "assistant":
+			var asstMsg GeminiAssistantMessage
+			if err := json.Unmarshal([]byte(line), &asstMsg); err == nil {
+				// Increment NumTurns
+				if lastResult == nil {
+					lastResult = &GeminiJSONOutput{
+						SessionID: asstMsg.SessionID,
+					}
+				}
+				lastResult.NumTurns++
+
+				// Extract text from message.content (type="text")
+				var assistantText strings.Builder
+				for _, content := range asstMsg.Message.Content {
+					if content.Type == "text" && content.Text != "" {
+						assistantText.WriteString(content.Text)
+					}
+				}
+
+				// Display with robot emoji (similar to Claude's printAssistantMessage)
+				if assistantText.Len() > 0 {
+					displayText := truncateText(assistantText.String(), maxDisplayBytes, maxDisplayLines)
+					fmt.Print("🤖 ")
+					fmt.Println(displayText)
+					lastAssistantText = assistantText.String()
+				}
+
+				// Extract usage from message.usage and merge into lastResult.Usage
+				if asstMsg.Message.Usage != nil {
+					if lastResult.Usage == nil {
+						lastResult.Usage = &GeminiUsage{}
+					}
+					// Merge usage information (keep maximum values to ensure completeness)
+					if asstMsg.Message.Usage.InputTokens > 0 {
+						lastResult.Usage.InputTokens += asstMsg.Message.Usage.InputTokens
+					}
+					if asstMsg.Message.Usage.OutputTokens > 0 {
+						lastResult.Usage.OutputTokens += asstMsg.Message.Usage.OutputTokens
+					}
+					if asstMsg.Message.Usage.TotalTokens > 0 {
+						lastResult.Usage.TotalTokens += asstMsg.Message.Usage.TotalTokens
+					}
+				}
+			} else {
+				log.Debugf("gemini-json: failed to parse assistant message: %v", err)
+			}
+		case "user":
+			// Log user messages at debug level (similar to Claude's user message handling)
+			var userMsg GeminiUserMessage
+			if err := json.Unmarshal([]byte(line), &userMsg); err == nil {
+				log.Debugf("gemini-json: user message (tool result): session_id=%s", userMsg.SessionID)
+			} else {
+				log.Debugf("gemini-json: failed to parse user message: %v", err)
+			}
+		default:
+			log.Debugf("gemini-json: unknown message type: %s", baseMsg.Type)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse gemini JSONL: %w", err)
+	}
+
+	// Calculate DurationAPIMS from elapsed time
+	if lastResult != nil {
+		elapsed := time.Since(startTime)
+		lastResult.DurationAPIMS = int(elapsed.Milliseconds())
+		lastResult.Result = lastAssistantText
+	}
+
+	return []byte(lastAssistantText), lastResult, nil
 }
