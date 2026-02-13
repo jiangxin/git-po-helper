@@ -466,6 +466,36 @@ func BuildAgentCommand(agent config.Agent, prompt, source, commit string) []stri
 		}
 	}
 
+	// For opencode command, add --format json parameter if output format is json
+	if len(cmd) > 0 && cmd[0] == "opencode" {
+		// Check if --format parameter already exists in the command
+		hasFormat := false
+		for i, arg := range cmd {
+			if arg == "--format" {
+				hasFormat = true
+				// Skip the next argument (the format value)
+				if i+1 < len(cmd) {
+					_ = cmd[i+1]
+				}
+				break
+			}
+		}
+
+		// Only add --format if it doesn't already exist
+		if !hasFormat {
+			outputFormat := normalizeOutputFormat(agent.Output)
+			if outputFormat == "" {
+				outputFormat = "default"
+			}
+
+			// Add --format json parameter for json format (opencode uses JSONL format)
+			if outputFormat == "json" {
+				cmd = append(cmd, "--format", "json")
+			}
+			// For "default" format, no additional parameter is needed
+		}
+	}
+
 	return cmd
 }
 
@@ -707,6 +737,84 @@ type CodexJSONOutput struct {
 	DurationAPIMS int         `json:"duration_api_ms"`
 	Result        string      `json:"result"`
 	ThreadID      string      `json:"thread_id"`
+}
+
+// OpenCodeUsage represents token usage information in OpenCode JSON output.
+type OpenCodeUsage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
+// OpenCodePart represents the part structure in OpenCode messages.
+type OpenCodePart struct {
+	ID        string             `json:"id"`
+	SessionID string             `json:"sessionID"`
+	MessageID string             `json:"messageID"`
+	Type      string             `json:"type"`
+	Text      string             `json:"text,omitempty"`
+	Tool      string             `json:"tool,omitempty"`
+	State     *OpenCodeToolState `json:"state,omitempty"`
+	Tokens    *OpenCodeTokens    `json:"tokens,omitempty"`
+}
+
+// OpenCodeTokens represents token usage information in OpenCode step_finish messages.
+type OpenCodeTokens struct {
+	Total     int `json:"total"`
+	Input     int `json:"input"`
+	Output    int `json:"output"`
+	Reasoning int `json:"reasoning"`
+	Cache     struct {
+		Read  int `json:"read"`
+		Write int `json:"write"`
+	} `json:"cache"`
+}
+
+// OpenCodeToolState represents the state information for tool_use messages.
+type OpenCodeToolState struct {
+	Status string `json:"status"`
+	Input  struct {
+		Command     string `json:"command,omitempty"`
+		FilePath    string `json:"filePath,omitempty"`
+		Description string `json:"description,omitempty"`
+	} `json:"input"`
+	Output string `json:"output"`
+}
+
+// OpenCodeStepStart represents a step_start message in OpenCode JSONL format.
+type OpenCodeStepStart struct {
+	Type      string       `json:"type"`
+	SessionID string       `json:"sessionID"`
+	Part      OpenCodePart `json:"part"`
+}
+
+// OpenCodeStepFinish represents a step_finish message in OpenCode JSONL format.
+type OpenCodeStepFinish struct {
+	Type      string       `json:"type"`
+	SessionID string       `json:"sessionID"`
+	Part      OpenCodePart `json:"part"`
+}
+
+// OpenCodeText represents a text message in OpenCode JSONL format.
+type OpenCodeText struct {
+	Type      string       `json:"type"`
+	SessionID string       `json:"sessionID"`
+	Part      OpenCodePart `json:"part"`
+}
+
+// OpenCodeToolUse represents a tool_use message in OpenCode JSONL format.
+type OpenCodeToolUse struct {
+	Type      string       `json:"type"`
+	SessionID string       `json:"sessionID"`
+	Part      OpenCodePart `json:"part"`
+}
+
+// OpenCodeJSONOutput represents the unified parsed information from OpenCode JSONL output.
+type OpenCodeJSONOutput struct {
+	NumTurns      int            `json:"num_turns"`
+	Usage         *OpenCodeUsage `json:"usage,omitempty"`
+	DurationAPIMS int            `json:"duration_api_ms"`
+	Result        string         `json:"result"`
+	SessionID     string         `json:"session_id"`
 }
 
 // ParseAgentOutput parses agent output based on the output format.
@@ -1010,6 +1118,28 @@ func PrintAgentDiagnostics(result interface{}) {
 			durationAPIMS = r.DurationAPIMS
 			hasInfo = true
 		}
+	case *OpenCodeJSONOutput:
+		if r == nil {
+			return
+		}
+		if r.NumTurns > 0 {
+			numTurns = r.NumTurns
+			hasInfo = true
+		}
+		if r.Usage != nil {
+			if r.Usage.InputTokens > 0 {
+				inputTokens = r.Usage.InputTokens
+				hasInfo = true
+			}
+			if r.Usage.OutputTokens > 0 {
+				outputTokens = r.Usage.OutputTokens
+				hasInfo = true
+			}
+		}
+		if r.DurationAPIMS > 0 {
+			durationAPIMS = r.DurationAPIMS
+			hasInfo = true
+		}
 	default:
 		return
 	}
@@ -1172,5 +1302,171 @@ func printCodexAgentMessage(item *CodexItem, resultBuilder *strings.Builder) {
 		fmt.Print("🤖 ")
 		fmt.Println(displayText)
 		// Note: resultBuilder is not used here, we only store the last message
+	}
+}
+
+// ParseOpenCodeJSONLRealtime parses OpenCode JSONL format in real-time, displaying messages as they arrive.
+// It reads from the provided reader line by line, parses each JSON object, and displays
+// step_start, text, tool_use, and step_finish messages in real-time.
+// Returns the final result and accumulated result text.
+func ParseOpenCodeJSONLRealtime(reader io.Reader) (content []byte, result *OpenCodeJSONOutput, err error) {
+	var resultBuilder strings.Builder
+	var lastResult *OpenCodeJSONOutput
+	var inStep bool
+	startTime := time.Now()
+	const maxToolOutputBytes = 2048 // 2KB limit for tool output
+
+	scanner := bufio.NewScanner(reader)
+	// Increase buffer size to handle long lines (1MB initial, 10MB max)
+	buf := make([]byte, 0, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024) // Max token size: 10MB
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		// Try to parse as JSON to determine message type
+		var baseMsg struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &baseMsg); err != nil {
+			// If line is not valid JSON, log at debug level only
+			log.Debugf("opencode-json: non-JSON lines, error: %s", err)
+			fmt.Print("❓ ")
+			fmt.Println(line)
+			continue
+		}
+
+		// Parse based on message type
+		switch baseMsg.Type {
+		case "step_start":
+			var stepMsg OpenCodeStepStart
+			if err := json.Unmarshal([]byte(line), &stepMsg); err == nil {
+				// Initialize result if needed
+				if lastResult == nil {
+					lastResult = &OpenCodeJSONOutput{}
+				}
+				lastResult.SessionID = stepMsg.SessionID
+				// Increment NumTurns when step starts
+				lastResult.NumTurns++
+				inStep = true
+				log.Debugf("opencode-json: received step_start (turn %d)", lastResult.NumTurns)
+			} else {
+				log.Debugf("opencode-json: failed to parse step_start message: %v", err)
+			}
+		case "step_finish":
+			var stepMsg OpenCodeStepFinish
+			if err := json.Unmarshal([]byte(line), &stepMsg); err == nil {
+				if lastResult == nil {
+					lastResult = &OpenCodeJSONOutput{}
+				}
+				// Extract token usage information
+				if stepMsg.Part.Tokens != nil {
+					if lastResult.Usage == nil {
+						lastResult.Usage = &OpenCodeUsage{}
+					}
+					// Use total tokens as input tokens, output tokens from the tokens structure
+					if stepMsg.Part.Tokens.Total > 0 {
+						// For opencode, we use total as a reference, but extract input/output separately
+						lastResult.Usage.InputTokens = stepMsg.Part.Tokens.Input
+						lastResult.Usage.OutputTokens = stepMsg.Part.Tokens.Output
+					}
+				}
+				// Calculate duration if not provided
+				elapsed := time.Since(startTime)
+				lastResult.DurationAPIMS = int(elapsed.Milliseconds())
+				inStep = false
+				log.Debugf("opencode-json: received step_finish (suppressed from output)")
+			} else {
+				log.Debugf("opencode-json: failed to parse step_finish message: %v", err)
+			}
+		case "text":
+			if !inStep {
+				log.Debugf("opencode-json: received text message outside of step (suppressed)")
+				continue
+			}
+			var textMsg OpenCodeText
+			if err := json.Unmarshal([]byte(line), &textMsg); err == nil {
+				printOpenCodeText(&textMsg, &resultBuilder)
+			} else {
+				log.Debugf("opencode-json: failed to parse text message: %v", err)
+			}
+		case "tool_use":
+			if !inStep {
+				log.Debugf("opencode-json: received tool_use message outside of step (suppressed)")
+				continue
+			}
+			var toolMsg OpenCodeToolUse
+			if err := json.Unmarshal([]byte(line), &toolMsg); err == nil {
+				printOpenCodeToolUse(&toolMsg, &resultBuilder, maxToolOutputBytes)
+			} else {
+				log.Debugf("opencode-json: failed to parse tool_use message: %v", err)
+			}
+		default:
+			// Unknown type, only display if in step
+			if inStep {
+				log.Debugf("opencode-json: unknown message type: %s", baseMsg.Type)
+				resultBuilder.WriteString(line)
+				resultBuilder.WriteString("\n")
+				fmt.Println(line)
+			} else {
+				log.Debugf("opencode-json: unknown message type outside of step: %s (suppressed)", baseMsg.Type)
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return []byte(resultBuilder.String()), lastResult, fmt.Errorf("failed to parse opencode JSONL: %w", err)
+	}
+
+	return []byte(resultBuilder.String()), lastResult, nil
+}
+
+// printOpenCodeText displays text message content.
+func printOpenCodeText(msg *OpenCodeText, resultBuilder *strings.Builder) {
+	if msg.Part.Text != "" {
+		// Truncate text to 4KB for display
+		displayText := truncateText(msg.Part.Text, maxDisplayBytes)
+		// Print agent marker with robot emoji at the beginning of agent output
+		fmt.Print("🤖 ")
+		fmt.Println(displayText)
+		resultBuilder.WriteString(msg.Part.Text)
+	}
+}
+
+// printOpenCodeToolUse displays tool use message content.
+func printOpenCodeToolUse(msg *OpenCodeToolUse, resultBuilder *strings.Builder, maxOutputBytes int) {
+	if msg.Part.State == nil {
+		return
+	}
+
+	// Display tool type and command
+	toolType := msg.Part.Tool
+	if toolType == "" {
+		toolType = "unknown"
+	}
+
+	command := ""
+	if msg.Part.State.Input.Command != "" {
+		command = msg.Part.State.Input.Command
+	} else if msg.Part.State.Input.FilePath != "" {
+		command = msg.Part.State.Input.FilePath
+	}
+
+	// Print tool header
+	if command != "" {
+		fmt.Printf("🔧 %s: %s\n", toolType, command)
+		resultBuilder.WriteString(fmt.Sprintf("%s: %s\n", toolType, command))
+	} else {
+		fmt.Printf("🔧 %s\n", toolType)
+		resultBuilder.WriteString(fmt.Sprintf("%s\n", toolType))
+	}
+
+	// Display output (truncated to maxOutputBytes)
+	if msg.Part.State.Output != "" {
+		outputText := truncateText(msg.Part.State.Output, maxOutputBytes)
+		fmt.Println(outputText)
+		resultBuilder.WriteString(msg.Part.State.Output)
 	}
 }

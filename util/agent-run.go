@@ -593,9 +593,11 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 	var stderr []byte
 	var jsonResult *ClaudeJSONOutput
 	var codexResult *CodexJSONOutput
+	var opencodeResult *OpenCodeJSONOutput
 
 	// Detect agent type
 	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
+	isOpencode := len(agentCmd) > 0 && agentCmd[0] == "opencode"
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -614,7 +616,15 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 			}
 			codexResult = finalResult
 			stdout = parsedStdout
+		} else if isOpencode {
+			parsedStdout, finalResult, err := ParseOpenCodeJSONLRealtime(stdoutReader)
+			if err != nil {
+				log.Warnf("failed to parse opencode JSONL: %v", err)
+			}
+			opencodeResult = finalResult
+			stdout = parsedStdout
 		} else {
+			// Parsing stream-json for Claude Code
 			parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
 			if err != nil {
 				log.Warnf("failed to parse stream JSON: %v", err)
@@ -661,7 +671,7 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 		log.Infof("agent command completed successfully")
 
 		// Parse output based on agent output format (only for claude)
-		if !isCodex {
+		if !isCodex && !isOpencode {
 			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
 			if err != nil {
 				log.Warnf("failed to parse agent output: %v, using raw output", err)
@@ -679,6 +689,12 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 		// Extract NumTurns from diagnostics
 		if codexResult.NumTurns > 0 {
 			result.NumTurns = codexResult.NumTurns
+		}
+	} else if opencodeResult != nil {
+		PrintAgentDiagnostics(opencodeResult)
+		// Extract NumTurns from diagnostics
+		if opencodeResult.NumTurns > 0 {
+			result.NumTurns = opencodeResult.NumTurns
 		}
 	} else if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
@@ -835,9 +851,11 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	var stderr []byte
 	var jsonResult *ClaudeJSONOutput
 	var codexResult *CodexJSONOutput
+	var opencodeResult *OpenCodeJSONOutput
 
 	// Detect agent type
 	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
+	isOpencode := len(agentCmd) > 0 && agentCmd[0] == "opencode"
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -855,6 +873,13 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 				log.Warnf("failed to parse codex JSONL: %v", err)
 			}
 			codexResult = finalResult
+			stdout = parsedStdout
+		} else if isOpencode {
+			parsedStdout, finalResult, err := ParseOpenCodeJSONLRealtime(stdoutReader)
+			if err != nil {
+				log.Warnf("failed to parse opencode JSONL: %v", err)
+			}
+			opencodeResult = finalResult
 			stdout = parsedStdout
 		} else {
 			parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
@@ -903,7 +928,7 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 		log.Infof("agent command completed successfully")
 
 		// Parse output based on agent output format (only for claude)
-		if !isCodex {
+		if !isCodex && !isOpencode {
 			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
 			if err != nil {
 				log.Warnf("failed to parse agent output: %v, using raw output", err)
@@ -921,6 +946,12 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 		// Extract NumTurns from diagnostics
 		if codexResult.NumTurns > 0 {
 			result.NumTurns = codexResult.NumTurns
+		}
+	} else if opencodeResult != nil {
+		PrintAgentDiagnostics(opencodeResult)
+		// Extract NumTurns from diagnostics
+		if opencodeResult.NumTurns > 0 {
+			result.NumTurns = opencodeResult.NumTurns
 		}
 	} else if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
@@ -1210,9 +1241,11 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	var stderr []byte
 	var jsonResult *ClaudeJSONOutput
 	var codexResult *CodexJSONOutput
+	var opencodeResult *OpenCodeJSONOutput
 
 	// Detect agent type
 	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
+	isOpencode := len(agentCmd) > 0 && agentCmd[0] == "opencode"
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -1230,6 +1263,13 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 				log.Warnf("failed to parse codex JSONL: %v", err)
 			}
 			codexResult = finalResult
+			stdout = parsedStdout
+		} else if isOpencode {
+			parsedStdout, finalResult, err := ParseOpenCodeJSONLRealtime(stdoutReader)
+			if err != nil {
+				log.Warnf("failed to parse opencode JSONL: %v", err)
+			}
+			opencodeResult = finalResult
 			stdout = parsedStdout
 		} else {
 			parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
@@ -1278,7 +1318,7 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 		log.Infof("agent command completed successfully")
 
 		// Parse output based on agent output format (only for claude)
-		if !isCodex {
+		if !isCodex && !isOpencode {
 			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
 			if err != nil {
 				log.Warnf("failed to parse agent output: %v, using raw output", err)
@@ -1296,6 +1336,12 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 		// Extract NumTurns from diagnostics
 		if codexResult.NumTurns > 0 {
 			result.NumTurns = codexResult.NumTurns
+		}
+	} else if opencodeResult != nil {
+		PrintAgentDiagnostics(opencodeResult)
+		// Extract NumTurns from diagnostics
+		if opencodeResult.NumTurns > 0 {
+			result.NumTurns = opencodeResult.NumTurns
 		}
 	} else if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
