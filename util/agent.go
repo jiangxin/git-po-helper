@@ -434,6 +434,32 @@ func BuildAgentCommand(agent config.Agent, prompt, source, commit string) []stri
 		}
 	}
 
+	// For codex command, add --json parameter if output format is json
+	if len(cmd) > 0 && cmd[0] == "codex" {
+		// Check if --json parameter already exists in the command
+		hasJSON := false
+		for _, arg := range cmd {
+			if arg == "--json" {
+				hasJSON = true
+				break
+			}
+		}
+
+		// Only add --json if it doesn't already exist
+		if !hasJSON {
+			outputFormat := normalizeOutputFormat(agent.Output)
+			if outputFormat == "" {
+				outputFormat = "default"
+			}
+
+			// Add --json parameter for json format (codex uses JSONL format)
+			if outputFormat == "json" {
+				cmd = append(cmd, "--json")
+			}
+			// For "default" format, no additional parameter is needed
+		}
+	}
+
 	return cmd
 }
 
@@ -634,6 +660,47 @@ type ClaudeAssistantMessage struct {
 	ParentToolUseID *string       `json:"parent_tool_use_id"`
 	SessionID       string        `json:"session_id"`
 	UUID            string        `json:"uuid"`
+}
+
+// CodexUsage represents token usage information in Codex JSON output.
+type CodexUsage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
+// CodexThreadStarted represents a thread.started message in Codex JSONL format.
+type CodexThreadStarted struct {
+	Type     string `json:"type"`
+	ThreadID string `json:"thread_id"`
+}
+
+// CodexItem represents an item in Codex item.completed messages.
+type CodexItem struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// CodexItemCompleted represents an item.completed message in Codex JSONL format.
+type CodexItemCompleted struct {
+	Type string    `json:"type"`
+	Item CodexItem `json:"item"`
+}
+
+// CodexTurnCompleted represents a turn.completed message in Codex JSONL format.
+type CodexTurnCompleted struct {
+	Type       string      `json:"type"`
+	Usage      *CodexUsage `json:"usage,omitempty"`
+	DurationMS int         `json:"duration_ms"`
+}
+
+// CodexJSONOutput represents the unified parsed information from Codex JSONL output.
+type CodexJSONOutput struct {
+	NumTurns      int         `json:"num_turns"`
+	Usage         *CodexUsage `json:"usage,omitempty"`
+	DurationAPIMS int         `json:"duration_api_ms"`
+	Result        string      `json:"result"`
+	ThreadID      string      `json:"thread_id"`
 }
 
 // ParseAgentOutput parses agent output based on the output format.
@@ -872,21 +939,63 @@ func printResultMessage(msg *ClaudeJSONOutput, resultBuilder *strings.Builder) {
 }
 
 // PrintAgentDiagnostics prints diagnostic information in a beautiful format.
-func PrintAgentDiagnostics(result *ClaudeJSONOutput) {
-	if result == nil {
+// It accepts either ClaudeJSONOutput or CodexJSONOutput.
+func PrintAgentDiagnostics(result interface{}) {
+	var numTurns int
+	var inputTokens, outputTokens int
+	var durationAPIMS int
+	hasInfo := false
+
+	// Extract information based on type
+	switch r := result.(type) {
+	case *ClaudeJSONOutput:
+		if r == nil {
+			return
+		}
+		if r.NumTurns > 0 {
+			numTurns = r.NumTurns
+			hasInfo = true
+		}
+		if r.Usage != nil {
+			if r.Usage.InputTokens > 0 {
+				inputTokens = r.Usage.InputTokens
+				hasInfo = true
+			}
+			if r.Usage.OutputTokens > 0 {
+				outputTokens = r.Usage.OutputTokens
+				hasInfo = true
+			}
+		}
+		if r.DurationAPIMS > 0 {
+			durationAPIMS = r.DurationAPIMS
+			hasInfo = true
+		}
+	case *CodexJSONOutput:
+		if r == nil {
+			return
+		}
+		if r.NumTurns > 0 {
+			numTurns = r.NumTurns
+			hasInfo = true
+		}
+		if r.Usage != nil {
+			if r.Usage.InputTokens > 0 {
+				inputTokens = r.Usage.InputTokens
+				hasInfo = true
+			}
+			if r.Usage.OutputTokens > 0 {
+				outputTokens = r.Usage.OutputTokens
+				hasInfo = true
+			}
+		}
+		if r.DurationAPIMS > 0 {
+			durationAPIMS = r.DurationAPIMS
+			hasInfo = true
+		}
+	default:
 		return
 	}
 
-	hasInfo := false
-	if result.NumTurns > 0 {
-		hasInfo = true
-	}
-	if result.Usage != nil && (result.Usage.InputTokens > 0 || result.Usage.OutputTokens > 0) {
-		hasInfo = true
-	}
-	if result.DurationAPIMS > 0 {
-		hasInfo = true
-	}
 	if !hasInfo {
 		return
 	}
@@ -894,20 +1003,150 @@ func PrintAgentDiagnostics(result *ClaudeJSONOutput) {
 	fmt.Println()
 	fmt.Println("📊 Agent Diagnostics")
 	fmt.Println("==========================================")
-	if result.NumTurns > 0 {
-		fmt.Printf("**Num turns:** %d\n", result.NumTurns)
+	if numTurns > 0 {
+		fmt.Printf("**Num turns:** %d\n", numTurns)
 	}
-	if result.Usage != nil {
-		if result.Usage.InputTokens > 0 {
-			fmt.Printf("**Input tokens:** %d\n", result.Usage.InputTokens)
-		}
-		if result.Usage.OutputTokens > 0 {
-			fmt.Printf("**Output tokens:** %d\n", result.Usage.OutputTokens)
-		}
+	if inputTokens > 0 {
+		fmt.Printf("**Input tokens:** %d\n", inputTokens)
 	}
-	if result.DurationAPIMS > 0 {
-		durationSec := float64(result.DurationAPIMS) / 1000.0
+	if outputTokens > 0 {
+		fmt.Printf("**Output tokens:** %d\n", outputTokens)
+	}
+	if durationAPIMS > 0 {
+		durationSec := float64(durationAPIMS) / 1000.0
 		fmt.Printf("**API duration:** %.2f s\n", durationSec)
 	}
 	fmt.Println("==========================================")
+}
+
+// ParseCodexJSONLRealtime parses Codex JSONL format in real-time, displaying messages as they arrive.
+// It reads from the provided reader line by line, parses each JSON object, and displays
+// thread.started, item.completed (agent_message), and turn.completed messages in real-time.
+// Returns the final result and accumulated result text.
+func ParseCodexJSONLRealtime(reader io.Reader) (content []byte, result *CodexJSONOutput, err error) {
+	var resultBuilder strings.Builder
+	var lastResult *CodexJSONOutput
+
+	scanner := bufio.NewScanner(reader)
+	// Increase buffer size to handle long lines (1MB initial, 10MB max)
+	buf := make([]byte, 0, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024) // Max token size: 10MB
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		// Try to parse as JSON to determine message type
+		var baseMsg struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &baseMsg); err != nil {
+			// If line is not valid JSON, treat it as plain text
+			log.Debugf("codex-json: non-JSON line: %s", line)
+			resultBuilder.WriteString(line)
+			resultBuilder.WriteString("\n")
+			fmt.Println(line)
+			continue
+		}
+
+		// Parse based on message type
+		switch baseMsg.Type {
+		case "thread.started":
+			var threadMsg CodexThreadStarted
+			if err := json.Unmarshal([]byte(line), &threadMsg); err == nil {
+				printCodexThreadStarted(&threadMsg)
+				// Initialize result if needed
+				if lastResult == nil {
+					lastResult = &CodexJSONOutput{}
+				}
+				lastResult.ThreadID = threadMsg.ThreadID
+			} else {
+				log.Debugf("codex-json: failed to parse thread.started message: %v", err)
+			}
+		case "item.completed":
+			var itemMsg CodexItemCompleted
+			if err := json.Unmarshal([]byte(line), &itemMsg); err == nil {
+				// Only display and count agent_message items
+				if itemMsg.Item.Type == "agent_message" {
+					// Increment NumTurns
+					if lastResult == nil {
+						lastResult = &CodexJSONOutput{}
+					}
+					lastResult.NumTurns++
+					// Display and accumulate message text
+					printCodexAgentMessage(&itemMsg.Item, &resultBuilder)
+				} else {
+					// Log other item types at debug level
+					log.Debugf("codex-json: received item.completed with type=%s (suppressed from output)", itemMsg.Item.Type)
+				}
+			} else {
+				log.Debugf("codex-json: failed to parse item.completed message: %v", err)
+			}
+		case "turn.completed":
+			var turnMsg CodexTurnCompleted
+			if err := json.Unmarshal([]byte(line), &turnMsg); err == nil {
+				// Merge usage information: prefer the result with more complete usage info
+				if lastResult == nil {
+					lastResult = &CodexJSONOutput{}
+				}
+				// Merge usage information if the new turn has it
+				if turnMsg.Usage != nil && (turnMsg.Usage.InputTokens > 0 || turnMsg.Usage.OutputTokens > 0) {
+					if lastResult.Usage == nil {
+						lastResult.Usage = turnMsg.Usage
+					} else {
+						// Use the values from the new turn if they are non-zero
+						if turnMsg.Usage.InputTokens > 0 {
+							lastResult.Usage.InputTokens = turnMsg.Usage.InputTokens
+						}
+						if turnMsg.Usage.OutputTokens > 0 {
+							lastResult.Usage.OutputTokens = turnMsg.Usage.OutputTokens
+						}
+					}
+				}
+				// Always update duration_api_ms with the latest value
+				if turnMsg.DurationMS > 0 {
+					lastResult.DurationAPIMS = turnMsg.DurationMS
+				}
+				// Log turn completion at debug level
+				log.Debugf("codex-json: received turn.completed (suppressed from output)")
+			} else {
+				log.Debugf("codex-json: failed to parse turn.completed message: %v", err)
+			}
+		default:
+			// Unknown type, log at debug level and output as-is
+			log.Debugf("codex-json: unknown message type: %s", baseMsg.Type)
+			resultBuilder.WriteString(line)
+			resultBuilder.WriteString("\n")
+			fmt.Println(line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return []byte(resultBuilder.String()), lastResult, fmt.Errorf("failed to parse codex JSONL: %w", err)
+	}
+
+	return []byte(resultBuilder.String()), lastResult, nil
+}
+
+// printCodexThreadStarted displays thread initialization information.
+func printCodexThreadStarted(msg *CodexThreadStarted) {
+	fmt.Println()
+	fmt.Println("🤖 Session Started")
+	fmt.Println("==========================================")
+	if msg.ThreadID != "" {
+		fmt.Printf("**Thread ID:** %s\n", msg.ThreadID)
+	}
+	fmt.Println("==========================================")
+	fmt.Println()
+}
+
+// printCodexAgentMessage displays agent message content.
+func printCodexAgentMessage(item *CodexItem, resultBuilder *strings.Builder) {
+	if item.Text != "" {
+		// Print agent marker with robot emoji at the beginning of agent output
+		fmt.Print("🤖 ")
+		fmt.Println(item.Text)
+		resultBuilder.WriteString(item.Text)
+	}
 }

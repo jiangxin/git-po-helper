@@ -592,6 +592,10 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 	var stdout []byte
 	var stderr []byte
 	var jsonResult *ClaudeJSONOutput
+	var codexResult *CodexJSONOutput
+
+	// Detect agent type
+	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -602,13 +606,22 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 		}
 		defer stdoutReader.Close()
 
-		// Parse stream in real-time
-		parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
-		if err != nil {
-			log.Warnf("failed to parse stream JSON: %v", err)
+		// Parse stream in real-time based on agent type
+		if isCodex {
+			parsedStdout, finalResult, err := ParseCodexJSONLRealtime(stdoutReader)
+			if err != nil {
+				log.Warnf("failed to parse codex JSONL: %v", err)
+			}
+			codexResult = finalResult
+			stdout = parsedStdout
+		} else {
+			parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
+			if err != nil {
+				log.Warnf("failed to parse stream JSON: %v", err)
+			}
+			jsonResult = finalResult
+			stdout = parsedStdout
 		}
-		jsonResult = finalResult
-		stdout = parsedStdout
 
 		// Wait for command to complete and get stderr
 		waitErr := cmdProcess.Wait()
@@ -647,19 +660,27 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 
-		// Parse output based on agent output format
-		parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
-		if err != nil {
-			log.Warnf("failed to parse agent output: %v, using raw output", err)
-			parsedStdout = stdout
-		} else {
-			stdout = parsedStdout
-			jsonResult = parsedResult
+		// Parse output based on agent output format (only for claude)
+		if !isCodex {
+			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
+			if err != nil {
+				log.Warnf("failed to parse agent output: %v, using raw output", err)
+				parsedStdout = stdout
+			} else {
+				stdout = parsedStdout
+				jsonResult = parsedResult
+			}
 		}
 	}
 
 	// Print diagnostics if available
-	if jsonResult != nil {
+	if codexResult != nil {
+		PrintAgentDiagnostics(codexResult)
+		// Extract NumTurns from diagnostics
+		if codexResult.NumTurns > 0 {
+			result.NumTurns = codexResult.NumTurns
+		}
+	} else if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
 		// Extract NumTurns from diagnostics
 		if jsonResult.NumTurns > 0 {
@@ -813,6 +834,10 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	var stdout []byte
 	var stderr []byte
 	var jsonResult *ClaudeJSONOutput
+	var codexResult *CodexJSONOutput
+
+	// Detect agent type
+	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -823,13 +848,22 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 		}
 		defer stdoutReader.Close()
 
-		// Parse stream in real-time
-		parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
-		if err != nil {
-			log.Warnf("failed to parse stream JSON: %v", err)
+		// Parse stream in real-time based on agent type
+		if isCodex {
+			parsedStdout, finalResult, err := ParseCodexJSONLRealtime(stdoutReader)
+			if err != nil {
+				log.Warnf("failed to parse codex JSONL: %v", err)
+			}
+			codexResult = finalResult
+			stdout = parsedStdout
+		} else {
+			parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
+			if err != nil {
+				log.Warnf("failed to parse stream JSON: %v", err)
+			}
+			jsonResult = finalResult
+			stdout = parsedStdout
 		}
-		jsonResult = finalResult
-		stdout = parsedStdout
 
 		// Wait for command to complete and get stderr
 		waitErr := cmdProcess.Wait()
@@ -868,19 +902,27 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 
-		// Parse output based on agent output format
-		parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
-		if err != nil {
-			log.Warnf("failed to parse agent output: %v, using raw output", err)
-			parsedStdout = stdout
-		} else {
-			stdout = parsedStdout
-			jsonResult = parsedResult
+		// Parse output based on agent output format (only for claude)
+		if !isCodex {
+			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
+			if err != nil {
+				log.Warnf("failed to parse agent output: %v, using raw output", err)
+				parsedStdout = stdout
+			} else {
+				stdout = parsedStdout
+				jsonResult = parsedResult
+			}
 		}
 	}
 
 	// Print diagnostics if available
-	if jsonResult != nil {
+	if codexResult != nil {
+		PrintAgentDiagnostics(codexResult)
+		// Extract NumTurns from diagnostics
+		if codexResult.NumTurns > 0 {
+			result.NumTurns = codexResult.NumTurns
+		}
+	} else if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
 		// Extract NumTurns from diagnostics
 		if jsonResult.NumTurns > 0 {
@@ -1167,6 +1209,10 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	var stdout []byte
 	var stderr []byte
 	var jsonResult *ClaudeJSONOutput
+	var codexResult *CodexJSONOutput
+
+	// Detect agent type
+	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -1177,13 +1223,22 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 		}
 		defer stdoutReader.Close()
 
-		// Parse stream in real-time
-		parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
-		if err != nil {
-			log.Warnf("failed to parse stream JSON: %v", err)
+		// Parse stream in real-time based on agent type
+		if isCodex {
+			parsedStdout, finalResult, err := ParseCodexJSONLRealtime(stdoutReader)
+			if err != nil {
+				log.Warnf("failed to parse codex JSONL: %v", err)
+			}
+			codexResult = finalResult
+			stdout = parsedStdout
+		} else {
+			parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
+			if err != nil {
+				log.Warnf("failed to parse stream JSON: %v", err)
+			}
+			jsonResult = finalResult
+			stdout = parsedStdout
 		}
-		jsonResult = finalResult
-		stdout = parsedStdout
 
 		// Wait for command to complete and get stderr
 		waitErr := cmdProcess.Wait()
@@ -1222,19 +1277,27 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 
-		// Parse output based on agent output format
-		parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
-		if err != nil {
-			log.Warnf("failed to parse agent output: %v, using raw output", err)
-			parsedStdout = stdout
-		} else {
-			stdout = parsedStdout
-			jsonResult = parsedResult
+		// Parse output based on agent output format (only for claude)
+		if !isCodex {
+			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
+			if err != nil {
+				log.Warnf("failed to parse agent output: %v, using raw output", err)
+				parsedStdout = stdout
+			} else {
+				stdout = parsedStdout
+				jsonResult = parsedResult
+			}
 		}
 	}
 
 	// Print diagnostics if available
-	if jsonResult != nil {
+	if codexResult != nil {
+		PrintAgentDiagnostics(codexResult)
+		// Extract NumTurns from diagnostics
+		if codexResult.NumTurns > 0 {
+			result.NumTurns = codexResult.NumTurns
+		}
+	} else if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
 		// Extract NumTurns from diagnostics
 		if jsonResult.NumTurns > 0 {
@@ -1971,7 +2034,11 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	var stdout []byte
 	var stderr []byte
 	var jsonResult *ClaudeJSONOutput
+	var codexResult *CodexJSONOutput
 	var originalStdout []byte
+
+	// Detect agent type
+	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -1987,13 +2054,22 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 		var stdoutBuf bytes.Buffer
 		teeReader := io.TeeReader(stdoutReader, &stdoutBuf)
 
-		// Parse stream in real-time
-		parsedStdout, finalResult, err := ParseStreamJSONRealtime(teeReader)
-		if err != nil {
-			log.Warnf("failed to parse stream JSON: %v", err)
+		// Parse stream in real-time based on agent type
+		if isCodex {
+			parsedStdout, finalResult, err := ParseCodexJSONLRealtime(teeReader)
+			if err != nil {
+				log.Warnf("failed to parse codex JSONL: %v", err)
+			}
+			codexResult = finalResult
+			stdout = parsedStdout
+		} else {
+			parsedStdout, finalResult, err := ParseStreamJSONRealtime(teeReader)
+			if err != nil {
+				log.Warnf("failed to parse stream JSON: %v", err)
+			}
+			jsonResult = finalResult
+			stdout = parsedStdout
 		}
-		jsonResult = finalResult
-		stdout = parsedStdout
 		originalStdout = stdoutBuf.Bytes()
 
 		// Wait for command to complete and get stderr
@@ -2035,19 +2111,27 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 
-		// Parse output based on agent output format
-		parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
-		if err != nil {
-			log.Warnf("failed to parse agent output: %v, using raw output", err)
-			parsedStdout = stdout
-		} else {
-			stdout = parsedStdout
-			jsonResult = parsedResult
+		// Parse output based on agent output format (only for claude)
+		if !isCodex {
+			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
+			if err != nil {
+				log.Warnf("failed to parse agent output: %v, using raw output", err)
+				parsedStdout = stdout
+			} else {
+				stdout = parsedStdout
+				jsonResult = parsedResult
+			}
 		}
 	}
 
 	// Print diagnostics if available
-	if jsonResult != nil {
+	if codexResult != nil {
+		PrintAgentDiagnostics(codexResult)
+		// Extract NumTurns from diagnostics
+		if codexResult.NumTurns > 0 {
+			result.NumTurns = codexResult.NumTurns
+		}
+	} else if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
 		// Extract NumTurns from diagnostics
 		if jsonResult.NumTurns > 0 {
