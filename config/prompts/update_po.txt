@@ -1,1 +1,1 @@
-Update `{source}` according to `po/README.md`.
+Update file "{source}" according to @po/README.md.

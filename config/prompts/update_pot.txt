@@ -1,1 +1,1 @@
-Update `po/git.pot` according to `po/README.md`.
+Update file "po/git.pot" according to @po/README.md.

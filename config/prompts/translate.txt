@@ -1,1 +1,1 @@
-Translate `{source}` according to `po/README.md`.
+Translate file "{source}" according to @po/README.md.
