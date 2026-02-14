@@ -46,6 +46,13 @@ updates files with the expected number of entries.`,
 		false,
 		"skip confirmation prompt (dangerous: may cause data loss)")
 
+	// Add --yes as an alias (hidden from help but functional)
+	v.cmd.PersistentFlags().BoolVar(&v.O.DangerouslyRemovePoDir,
+		"yes",
+		false,
+		"")
+	_ = v.cmd.PersistentFlags().MarkHidden("yes")
+
 	_ = viper.BindPFlag("agent-test--dangerously-remove-po-directory", v.cmd.PersistentFlags().Lookup("dangerously-remove-po-directory"))
 
 	// Add update-pot subcommand
