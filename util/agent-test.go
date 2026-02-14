@@ -294,6 +294,9 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 		runNum := i + 1
 		log.Infof("run %d/%d", runNum, runs)
 
+		// Start timing for this iteration
+		iterStartTime := time.Now()
+
 		// Clean po/ directory before each run to ensure a clean state
 		if err := CleanPoDirectory("po/git.pot"); err != nil {
 			log.Warnf("run %d: failed to clean po/ directory: %v", runNum, err)
@@ -302,6 +305,9 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 
 		// Reuse RunAgentUpdatePot for each run
 		agentResult, err := RunAgentUpdatePot(cfg, agentName, true)
+
+		// Calculate execution time for this iteration
+		iterExecutionTime := time.Since(iterStartTime)
 
 		// Convert AgentRunResult to RunResult
 		// agentResult is never nil (always returns a result structure)
@@ -320,7 +326,7 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 			ExpectedBefore:      cfg.AgentTest.PotEntriesBeforeUpdate,
 			ExpectedAfter:       cfg.AgentTest.PotEntriesAfterUpdate,
 			NumTurns:            agentResult.NumTurns,
-			ExecutionTime:       agentResult.ExecutionTime,
+			ExecutionTime:       iterExecutionTime,
 		}
 
 		// If there was an error, log it but continue (for agent-test, we want to collect all results)
@@ -407,6 +413,9 @@ func RunAgentTestUpdatePo(agentName, poFile string, runs int, cfg *config.AgentC
 		runNum := i + 1
 		log.Infof("run %d/%d", runNum, runs)
 
+		// Start timing for this iteration
+		iterStartTime := time.Now()
+
 		// Clean po/ directory before each run to ensure a clean state
 		if err := CleanPoDirectory(relPoFile, "po/git.pot"); err != nil {
 			log.Warnf("run %d: failed to clean po/ directory: %v", runNum, err)
@@ -415,6 +424,9 @@ func RunAgentTestUpdatePo(agentName, poFile string, runs int, cfg *config.AgentC
 
 		// Reuse RunAgentUpdatePo for each run
 		agentResult, err := RunAgentUpdatePo(cfg, agentName, poFile, true)
+
+		// Calculate execution time for this iteration
+		iterExecutionTime := time.Since(iterStartTime)
 
 		// Convert AgentRunResult to RunResult
 		// agentResult is never nil (always returns a result structure)
@@ -433,7 +445,7 @@ func RunAgentTestUpdatePo(agentName, poFile string, runs int, cfg *config.AgentC
 			ExpectedBefore:      cfg.AgentTest.PoEntriesBeforeUpdate,
 			ExpectedAfter:       cfg.AgentTest.PoEntriesAfterUpdate,
 			NumTurns:            agentResult.NumTurns,
-			ExecutionTime:       agentResult.ExecutionTime,
+			ExecutionTime:       iterExecutionTime,
 		}
 
 		// If there was an error, log it but continue (for agent-test, we want to collect all results)
@@ -530,10 +542,9 @@ func displayTestResults(results []RunResult, averageScore float64, totalRuns int
 			totalNumTurns += result.NumTurns
 			numTurnsCount++
 		}
-		if result.ExecutionTime > 0 {
-			executionTimes = append(executionTimes, result.ExecutionTime)
-			totalExecutionTime += result.ExecutionTime
-		}
+		// Always collect execution time (we measure it ourselves in the loop)
+		executionTimes = append(executionTimes, result.ExecutionTime)
+		totalExecutionTime += result.ExecutionTime
 	}
 
 	// Display summary statistics
@@ -801,6 +812,9 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 		runNum := i + 1
 		log.Infof("run %d/%d", runNum, runs)
 
+		// Start timing for this iteration
+		iterStartTime := time.Now()
+
 		if err := CleanPoDirectory(relPoFile); err != nil {
 			log.Warnf("run %d: failed to clean po/ directory: %v", runNum, err)
 			// Continue with the run even if cleanup fails, but log the warning
@@ -808,6 +822,9 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 
 		// Reuse RunAgentTranslate for each run
 		agentResult, err := RunAgentTranslate(cfg, agentName, poFile, true)
+
+		// Calculate execution time for this iteration
+		iterExecutionTime := time.Since(iterStartTime)
 
 		// Convert AgentRunResult to RunResult
 		// agentResult is never nil (always returns a result structure)
@@ -830,7 +847,7 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 			ExpectedBefore:      nil, // Not used for translate
 			ExpectedAfter:       nil, // Not used for translate
 			NumTurns:            agentResult.NumTurns,
-			ExecutionTime:       agentResult.ExecutionTime,
+			ExecutionTime:       iterExecutionTime,
 		}
 
 		// If there was an error, log it but continue (for agent-test, we want to collect all results)
@@ -888,6 +905,9 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 		runNum := i + 1
 		log.Infof("run %d/%d", runNum, runs)
 
+		// Start timing for this iteration
+		iterStartTime := time.Now()
+
 		if err := CleanPoDirectory(relPoFile); err != nil {
 			log.Warnf("run %d: failed to clean po/ directory: %v", runNum, err)
 			// Continue with the run even if cleanup fails, but log the warning
@@ -895,6 +915,9 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 
 		// Reuse RunAgentReview for each run
 		agentResult, err := RunAgentReview(cfg, agentName, poFile, commit, since, true)
+
+		// Calculate execution time for this iteration
+		iterExecutionTime := time.Since(iterStartTime)
 
 		// Convert AgentRunResult to RunResult
 		// agentResult is never nil (always returns a result structure)
@@ -916,7 +939,7 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 			ExpectedBefore:      nil, // Not used for review
 			ExpectedAfter:       nil, // Not used for review
 			NumTurns:            agentResult.NumTurns,
-			ExecutionTime:       agentResult.ExecutionTime,
+			ExecutionTime:       iterExecutionTime,
 		}
 
 		// Calculate score from review JSON if available
@@ -1028,10 +1051,9 @@ func displayTranslateTestResults(results []RunResult, averageScore float64, tota
 			totalNumTurns += result.NumTurns
 			numTurnsCount++
 		}
-		if result.ExecutionTime > 0 {
-			executionTimes = append(executionTimes, result.ExecutionTime)
-			totalExecutionTime += result.ExecutionTime
-		}
+		// Always collect execution time (we measure it ourselves in the loop)
+		executionTimes = append(executionTimes, result.ExecutionTime)
+		totalExecutionTime += result.ExecutionTime
 	}
 
 	// Display summary statistics
@@ -1178,10 +1200,9 @@ func displayReviewTestResults(results []RunResult, averageScore float64, totalRu
 			totalNumTurns += result.NumTurns
 			numTurnsCount++
 		}
-		if result.ExecutionTime > 0 {
-			executionTimes = append(executionTimes, result.ExecutionTime)
-			totalExecutionTime += result.ExecutionTime
-		}
+		// Always collect execution time (we measure it ourselves in the loop)
+		executionTimes = append(executionTimes, result.ExecutionTime)
+		totalExecutionTime += result.ExecutionTime
 	}
 
 	// Display summary statistics
