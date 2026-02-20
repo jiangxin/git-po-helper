@@ -1,4 +1,4 @@
-Review and improve the translation quality in file "{source}" according to @po/README.md.
+Review and improve the translation quality in file "{source}" according to @po/AGENTS.md.
 
 You need to review all translation entries in the file, identify issues, and directly modify the PO file to fix them. After reviewing, output a JSON summary of the issues found.
 

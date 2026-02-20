@@ -65,7 +65,7 @@ test_expect_success "setup" '
 test_expect_success "agent-test update-pot: basic test with default runs" '
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
-  update_pot: "update po/git.pot according to po/README.md"
+  update_pot: "update po/git.pot according to po/AGENTS.md"
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
@@ -90,7 +90,7 @@ EOF
 test_expect_success "agent-test update-pot: with --runs flag" '
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
-  update_pot: "update po/git.pot according to po/README.md"
+  update_pot: "update po/git.pot according to po/AGENTS.md"
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
@@ -118,7 +118,7 @@ test_expect_success "agent-test update-pot: with validation" '
 
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
-  update_pot: "update po/git.pot according to po/README.md"
+  update_pot: "update po/git.pot according to po/AGENTS.md"
 agent-test:
   runs: 2
   pot_entries_before_update: $ENTRY_COUNT
@@ -155,7 +155,7 @@ test_expect_success "agent-test update-pot: pre-validation failure" '
 
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
-  update_pot: "update po/git.pot according to po/README.md"
+  update_pot: "update po/git.pot according to po/AGENTS.md"
 agent-test:
   runs: 2
   pot_entries_before_update: $WRONG_COUNT
@@ -189,7 +189,7 @@ test_expect_success "agent-test update-pot: post-validation failure" '
 
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
-  update_pot: "update po/git.pot according to po/README.md"
+  update_pot: "update po/git.pot according to po/AGENTS.md"
 agent-test:
   runs: 2
   pot_entries_after_update: $WRONG_COUNT
@@ -223,7 +223,7 @@ EOF
 
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
-  update_pot: "update po/git.pot according to po/README.md"
+  update_pot: "update po/git.pot according to po/AGENTS.md"
 agent-test:
   runs: 2
 agents:
@@ -250,7 +250,7 @@ test_expect_success "agent-test update-po: basic test with default runs" '
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 default_lang_code: "zh_CN"
 prompt:
-  update_po: "update {source} according to po/README.md"
+  update_po: "update {source} according to po/AGENTS.md"
 agent-test:
   runs: 2
 agents:

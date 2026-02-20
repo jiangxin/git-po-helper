@@ -1,4 +1,4 @@
-Review the translation changes in file "{source}" since commit "{commit}" according to @po/README.md.
+Review the translation changes in file "{source}" since commit "{commit}" according to @po/AGENTS.md.
 
 You need to review all modified translation entries and output the review results in JSON format.
 

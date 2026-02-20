@@ -57,8 +57,8 @@ test_expect_success "setup" '
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 default_lang_code: "zh_CN"
 prompt:
-  review_since: "review changes of {source} since commit {commit} according to po/README.md"
-  review_commit: "review changes of commit {commit} according to po/README.md"
+  review_since: "review changes of {source} since commit {commit} according to po/AGENTS.md"
+  review_commit: "review changes of commit {commit} according to po/AGENTS.md"
 agents:
   mock:
     cmd: ["$PWD/mock-review-agent", "--prompt", "{prompt}"]
@@ -72,8 +72,8 @@ test_expect_success "agent-run review: success with default mode (local changes)
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 default_lang_code: "zh_CN"
 prompt:
-  review_since: "review changes of {source} since commit {commit} according to po/README.md"
-  review_commit: "review changes of commit {commit} according to po/README.md"
+  review_since: "review changes of {source} since commit {commit} according to po/AGENTS.md"
+  review_commit: "review changes of commit {commit} according to po/AGENTS.md"
 agents:
   mock:
     cmd: ["$PWD/mock-review-agent", "--prompt", "{prompt}"]
@@ -118,8 +118,8 @@ test_expect_success "agent-run review: success with --commit flag" '
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 default_lang_code: "zh_CN"
 prompt:
-  review_since: "review changes of {source} since commit {commit} according to po/README.md"
-  review_commit: "review changes of commit {commit} according to po/README.md"
+  review_since: "review changes of {source} since commit {commit} according to po/AGENTS.md"
+  review_commit: "review changes of commit {commit} according to po/AGENTS.md"
 agents:
   mock:
     cmd: ["$PWD/mock-review-agent", "--prompt", "{prompt}"]
@@ -166,8 +166,8 @@ EOF
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 default_lang_code: "zh_CN"
 prompt:
-  review_since: "review changes of {source} since commit {commit} according to po/README.md"
-  review_commit: "review changes of commit {commit} according to po/README.md"
+  review_since: "review changes of {source} since commit {commit} according to po/AGENTS.md"
+  review_commit: "review changes of commit {commit} according to po/AGENTS.md"
 agents:
   failing:
     cmd: ["$PWD/failing-review-agent"]
@@ -194,8 +194,8 @@ EOF
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 default_lang_code: "zh_CN"
 prompt:
-  review_since: "review changes of {source} since commit {commit} according to po/README.md"
-  review_commit: "review changes of commit {commit} according to po/README.md"
+  review_since: "review changes of {source} since commit {commit} according to po/AGENTS.md"
+  review_commit: "review changes of commit {commit} according to po/AGENTS.md"
 agents:
   invalid:
     cmd: ["$PWD/invalid-json-agent"]

@@ -63,7 +63,7 @@ test_expect_success "setup" '
 	# Create config file
 	cat >workdir/git-po-helper.yaml <<-\EOF &&
 prompt:
-  update_pot: "update po/git.pot according to po/README.md"
+  update_pot: "update po/git.pot according to po/AGENTS.md"
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
@@ -138,7 +138,7 @@ EOF
 test_expect_success "agent-run update-pot: success with single agent" '
 	cat >workdir/git-po-helper.yaml <<\EOF &&
 prompt:
-  update_pot: "update po/git.pot according to po/README.md"
+  update_pot: "update po/git.pot according to po/AGENTS.md"
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
@@ -162,7 +162,7 @@ EOF
 test_expect_success "agent-run update-pot: success with --agent flag" '
 	cat >workdir/git-po-helper.yaml <<-\EOF &&
 prompt:
-  update_pot: "update po/git.pot according to po/README.md"
+  update_pot: "update po/git.pot according to po/AGENTS.md"
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
@@ -193,7 +193,7 @@ test_expect_success "agent-run update-pot: with pre-validation" '
 
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
-  update_pot: "update po/git.pot according to po/README.md"
+  update_pot: "update po/git.pot according to po/AGENTS.md"
 agent-test:
   pot_entries_before_update: $ENTRY_COUNT
 agents:
@@ -223,7 +223,7 @@ EOF
 
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 prompt:
-  update_pot: "update po/git.pot according to po/README.md"
+  update_pot: "update po/git.pot according to po/AGENTS.md"
 agents:
   failing:
     cmd: ["$PWD/failing-agent"]
@@ -242,7 +242,7 @@ test_expect_success "agent-run update-po: success using default_lang_code" '
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 default_lang_code: "zh_CN"
 prompt:
-  update_po: "update {source} according to po/README.md"
+  update_po: "update {source} according to po/AGENTS.md"
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}", "{source}"]
