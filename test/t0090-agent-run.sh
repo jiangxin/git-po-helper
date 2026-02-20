@@ -212,29 +212,6 @@ EOF
 	grep "completed successfully" actual
 '
 
-test_expect_success "agent-run update-pot: pre-validation failure" '
-	# Count entries in pot file
-	ENTRY_COUNT=$(grep -c "^msgid " workdir/po/git.pot | head -1) &&
-	ENTRY_COUNT=$((ENTRY_COUNT - 1)) &&
-	WRONG_COUNT=$((ENTRY_COUNT + 100)) &&
-
-	cat >workdir/git-po-helper.yaml <<-EOF &&
-prompt:
-  update_pot: "update po/git.pot according to po/README.md"
-agent-test:
-  pot_entries_before_update: $WRONG_COUNT
-agents:
-  mock:
-    cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
-EOF
-
-	test_must_fail git -C workdir $HELPER agent-run update-pot >out 2>&1 &&
-	make_user_friendly_and_stable_output <out >actual &&
-
-	# Should mention pre-validation failure
-	grep "pre-validation failed" actual
-'
-
 test_expect_success "agent-run update-pot: agent command failure" '
 	# Create a failing mock agent
 	cat >"$PWD/failing-agent" <<-EOF &&

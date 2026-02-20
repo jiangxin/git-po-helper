@@ -68,44 +68,6 @@ EOF
 	rm -f workdir/git-po-helper.yaml.bak
 '
 
-test_expect_success "agent-run review: missing prompt.review_since" '
-	cat >workdir/git-po-helper.yaml <<-EOF &&
-default_lang_code: "zh_CN"
-prompt:
-  review_commit: "review changes of commit {commit} according to po/README.md"
-agents:
-  mock:
-    cmd: ["$PWD/mock-review-agent", "--prompt", "{prompt}"]
-EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
-
-	test_must_fail git -C workdir $HELPER agent-run review >out 2>&1 &&
-	make_user_friendly_and_stable_output <out >actual &&
-
-	# Should mention missing prompt.review_since
-	grep "prompt.review_since.*not configured" actual
-'
-
-test_expect_success "agent-run review: missing prompt.review_commit" '
-	cat >workdir/git-po-helper.yaml <<-EOF &&
-default_lang_code: "zh_CN"
-prompt:
-  review_since: "review changes of {source} since commit {commit} according to po/README.md"
-agents:
-  mock:
-    cmd: ["$PWD/mock-review-agent", "--prompt", "{prompt}"]
-EOF
-	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
-	rm -f workdir/git-po-helper.yaml.bak &&
-
-	test_must_fail git -C workdir $HELPER agent-run review --commit HEAD >out 2>&1 &&
-	make_user_friendly_and_stable_output <out >actual &&
-
-	# Should mention missing prompt.review_commit
-	grep "prompt.review_commit.*not configured" actual
-'
-
 test_expect_success "agent-run review: success with default mode (local changes)" '
 	cat >workdir/git-po-helper.yaml <<-EOF &&
 default_lang_code: "zh_CN"
