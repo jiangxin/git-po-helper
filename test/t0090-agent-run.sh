@@ -262,4 +262,53 @@ EOF
 	grep "Updated by mock agent" workdir/po/zh_CN.po
 '
 
+test_expect_success "agent-run update-pot: with --prompt override" '
+	cat >workdir/git-po-helper.yaml <<-EOF &&
+prompt:
+  update_pot: "config prompt for update pot"
+agents:
+  mock:
+    cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+EOF
+
+	# Remove previous mock agent comments
+	sed -i.bak "/Updated by mock agent/d" workdir/po/git.pot &&
+	rm -f workdir/po/git.pot.bak &&
+
+	git -C workdir $HELPER agent-run update-pot --prompt "override prompt from command line" >out 2>&1 &&
+	make_user_friendly_and_stable_output <out >actual &&
+
+	# Should complete successfully
+	grep "completed successfully" actual &&
+
+	# Verify the override prompt was used (check in pot file)
+	grep "override prompt from command line" workdir/po/git.pot
+'
+
+test_expect_success "agent-run update-po: with --prompt override" '
+	test -f workdir/po/zh_CN.po &&
+
+	cat >workdir/git-po-helper.yaml <<-EOF &&
+default_lang_code: "zh_CN"
+prompt:
+  update_po: "config prompt for update po"
+agents:
+  mock:
+    cmd: ["$PWD/mock-agent", "--prompt", "{prompt}", "{source}"]
+EOF
+
+	# Remove previous mock agent comments from zh_CN.po
+	sed -i.bak "/Updated by mock agent/d" workdir/po/zh_CN.po &&
+	rm -f workdir/po/zh_CN.po.bak &&
+
+	git -C workdir $HELPER agent-run update-po --prompt "override prompt for update-po" >out 2>&1 &&
+	make_user_friendly_and_stable_output <out >actual &&
+
+	# Should complete successfully
+	grep "completed successfully" actual &&
+
+	# Verify the override prompt was used
+	grep "override prompt for update-po" workdir/po/zh_CN.po
+'
+
 test_done

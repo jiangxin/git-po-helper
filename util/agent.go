@@ -16,6 +16,7 @@ import (
 	"github.com/git-l10n/git-po-helper/config"
 	"github.com/git-l10n/git-po-helper/repository"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -540,7 +541,21 @@ func GetPotFilePath() string {
 
 // GetPrompt returns the prompt for the specified action from configuration, or an error if not configured.
 // Supported actions: "update-pot", "update-po", "translate", "review"
+// If --prompt flag is provided via viper, it overrides the configuration value.
 func GetPrompt(cfg *config.AgentConfig, action string) (string, error) {
+	// Check if --prompt flag is provided via viper (from command line)
+	// Check both agent-run--prompt and agent-test--prompt
+	overridePrompt := viper.GetString("agent-run--prompt")
+	if overridePrompt == "" {
+		overridePrompt = viper.GetString("agent-test--prompt")
+	}
+
+	// If override prompt is provided, use it directly
+	if overridePrompt != "" {
+		log.Debugf("using override prompt from --prompt flag for action %s: %s", action, overridePrompt)
+		return overridePrompt, nil
+	}
+
 	var prompt string
 	var promptName string
 

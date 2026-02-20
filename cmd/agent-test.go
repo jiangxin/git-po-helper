@@ -15,6 +15,7 @@ type agentTestCommand struct {
 		DangerouslyRemovePoDir bool
 		Commit                 string
 		Since                  string
+		Prompt                 string
 	}
 }
 
@@ -54,6 +55,14 @@ updates files with the expected number of entries.`,
 	_ = v.cmd.PersistentFlags().MarkHidden("yes")
 
 	_ = viper.BindPFlag("agent-test--dangerously-remove-po-directory", v.cmd.PersistentFlags().Lookup("dangerously-remove-po-directory"))
+
+	// Add --prompt flag to root command
+	v.cmd.PersistentFlags().StringVar(&v.O.Prompt,
+		"prompt",
+		"",
+		"override prompt from configuration (if provided, overrides the prompt in git-po-helper.yaml)")
+
+	_ = viper.BindPFlag("agent-test--prompt", v.cmd.PersistentFlags().Lookup("prompt"))
 
 	// Add update-pot subcommand
 	updatePotCmd := &cobra.Command{

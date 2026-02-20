@@ -13,6 +13,7 @@ type agentRunCommand struct {
 		Agent  string
 		Commit string
 		Since  string
+		Prompt string
 	}
 }
 
@@ -31,6 +32,14 @@ automate various localization operations. The agent configuration is
 read from git-po-helper.yaml in the repository root or user home directory.`,
 		SilenceErrors: true,
 	}
+
+	// Add --prompt flag to root command
+	v.cmd.PersistentFlags().StringVar(&v.O.Prompt,
+		"prompt",
+		"",
+		"override prompt from configuration (if provided, overrides the prompt in git-po-helper.yaml)")
+
+	_ = viper.BindPFlag("agent-run--prompt", v.cmd.PersistentFlags().Lookup("prompt"))
 
 	// Add update-pot subcommand
 	updatePotCmd := &cobra.Command{
