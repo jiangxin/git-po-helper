@@ -568,7 +568,7 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 	}
 
 	// Get prompt from configuration
-	prompt, err := GetPrompt(cfg)
+	prompt, err := GetPrompt(cfg, "update-pot")
 	if err != nil {
 		return result, err
 	}
@@ -836,12 +836,10 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	}
 
 	// Get prompt for update-po from configuration
-	prompt := cfg.Prompt.UpdatePo
-	if prompt == "" {
-		log.Error("prompt.update_po is not configured")
-		return result, fmt.Errorf("prompt.update_po is not configured\nHint: Add 'prompt.update_po' to git-po-helper.yaml")
+	prompt, err := GetPrompt(cfg, "update-po")
+	if err != nil {
+		return result, err
 	}
-	log.Debugf("using update-po prompt: %s", prompt)
 
 	// Build agent command with placeholders replaced
 	workDir := repository.WorkDir()
@@ -1243,12 +1241,10 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	// decide whether to use this feature.
 	//
 	// Now, load the simple prompt for translate the file.
-	prompt := cfg.Prompt.Translate
-	if prompt == "" {
-		log.Error("prompt.translate is not configured")
-		return result, fmt.Errorf("prompt.translate is not configured\nHint: Add 'prompt.translate' to git-po-helper.yaml")
+	prompt, err := GetPrompt(cfg, "translate")
+	if err != nil {
+		return result, err
 	}
-	log.Debugf("using translate prompt: %s", prompt)
 
 	// Build agent command with placeholders replaced
 	workDir := repository.WorkDir()
@@ -2099,10 +2095,9 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	}
 
 	// Step 3: Get prompt.review and execute agent
-	prompt := cfg.Prompt.Review
-	if prompt == "" {
-		log.Error("prompt.review is not configured")
-		return result, fmt.Errorf("prompt.review is not configured\nHint: Add 'prompt.review' to git-po-helper.yaml")
+	prompt, err := GetPrompt(cfg, "review")
+	if err != nil {
+		return result, err
 	}
 
 	// Get relative path for source placeholder

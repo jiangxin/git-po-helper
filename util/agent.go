@@ -538,14 +538,34 @@ func GetPotFilePath() string {
 	return filepath.Join(workDir, PoDir, GitPot)
 }
 
-// GetPrompt returns the update_pot prompt from configuration, or an error if not configured.
-func GetPrompt(cfg *config.AgentConfig) (string, error) {
-	prompt := cfg.Prompt.UpdatePot
-	if prompt == "" {
-		log.Error("prompt.update_pot is not configured")
-		return "", fmt.Errorf("prompt.update_pot is not configured\nHint: Add 'prompt.update_pot' to git-po-helper.yaml")
+// GetPrompt returns the prompt for the specified action from configuration, or an error if not configured.
+// Supported actions: "update-pot", "update-po", "translate", "review"
+func GetPrompt(cfg *config.AgentConfig, action string) (string, error) {
+	var prompt string
+	var promptName string
+
+	switch action {
+	case "update-pot":
+		prompt = cfg.Prompt.UpdatePot
+		promptName = "prompt.update_pot"
+	case "update-po":
+		prompt = cfg.Prompt.UpdatePo
+		promptName = "prompt.update_po"
+	case "translate":
+		prompt = cfg.Prompt.Translate
+		promptName = "prompt.translate"
+	case "review":
+		prompt = cfg.Prompt.Review
+		promptName = "prompt.review"
+	default:
+		return "", fmt.Errorf("unknown action: %s\nHint: Supported actions are: update-pot, update-po, translate, review", action)
 	}
-	log.Debugf("using prompt: %s", prompt)
+
+	if prompt == "" {
+		log.Errorf("%s is not configured", promptName)
+		return "", fmt.Errorf("%s is not configured\nHint: Add '%s' to git-po-helper.yaml", promptName, promptName)
+	}
+	log.Debugf("using %s prompt: %s", action, prompt)
 	return prompt, nil
 }
 
