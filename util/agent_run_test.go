@@ -369,9 +369,9 @@ msgstr "正常字符串"
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Parse the PO content
-			entries, header, err := parsePoEntries([]byte(tt.poContent))
+			entries, header, err := ParsePoEntries([]byte(tt.poContent))
 			if err != nil {
-				t.Fatalf("parsePoEntries failed: %v", err)
+				t.Fatalf("ParsePoEntries failed: %v", err)
 			}
 
 			// Validate header (allow for minor differences, especially for empty file)
@@ -421,7 +421,7 @@ msgstr "正常字符串"
 				}
 
 				// Parse the written file again
-				writtenEntries, writtenHeader, err := parsePoEntries(writtenData)
+				writtenEntries, writtenHeader, err := ParsePoEntries(writtenData)
 				if err != nil {
 					t.Fatalf("failed to parse written file: %v", err)
 				}
@@ -525,7 +525,7 @@ func TestParsePoEntriesRoundTrip(t *testing.T) {
 		t.Fatalf("failed to read original PO file: %v", err)
 	}
 
-	originalEntries, originalHeader, err := parsePoEntries(originalData)
+	originalEntries, originalHeader, err := ParsePoEntries(originalData)
 	if err != nil {
 		t.Fatalf("failed to parse original PO file: %v", err)
 	}
@@ -547,7 +547,7 @@ func TestParsePoEntriesRoundTrip(t *testing.T) {
 		t.Fatalf("failed to read written PO file: %v", err)
 	}
 
-	writtenEntries, writtenHeader, err := parsePoEntries(writtenData)
+	writtenEntries, writtenHeader, err := ParsePoEntries(writtenData)
 	if err != nil {
 		t.Fatalf("failed to parse written PO file: %v", err)
 	}
@@ -637,7 +637,7 @@ func TestParsePoEntriesRoundTrip(t *testing.T) {
 		t.Fatalf("failed to read second written PO file: %v", err)
 	}
 
-	secondReadEntries, secondReadHeader, err := parsePoEntries(secondReadData)
+	secondReadEntries, secondReadHeader, err := ParsePoEntries(secondReadData)
 	if err != nil {
 		t.Fatalf("failed to parse second written PO file: %v", err)
 	}
