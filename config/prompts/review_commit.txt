@@ -5,7 +5,6 @@ You need to review all modified translation entries in the specified commit and 
 ## Output Format
 
 Output a JSON object with the following structure:
-- "total_entries": Total number of translation entries reviewed
 - "issues": Array of review issues, each containing:
   - "msgid": Original message ID
   - "msgstr": Translated message string
@@ -45,7 +44,6 @@ Output a JSON object with the following structure:
 ## Example Output
 
 {
-  "total_entries": 2592,
   "issues": [
     {
       "msgid": "commit",
@@ -76,5 +74,4 @@ Output a JSON object with the following structure:
 1. Review all modified translation entries in commit "{commit}"
 2. Identify issues with terminology, consistency, style, and correctness
 3. Output only the JSON object, no additional text before or after
-4. Include all entries reviewed in total_entries count
-5. Only include entries with issues in the issues array (perfect entries with score 3 should not be included)
+4. Only include entries with issues in the issues array (perfect entries with score 3 should not be included)

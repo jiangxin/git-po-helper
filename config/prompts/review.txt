@@ -20,7 +20,6 @@ You need to review all translation entries in the file, identify issues, and dir
 ## Output Format
 
 After modifying the PO file, output a JSON object with the following structure:
-- "total_entries": Total number of translation entries reviewed
 - "issues": Array of review issues, each containing:
   - "msgid": Original message ID
   - "msgstr": Translated message string (original, before your fix)
@@ -60,7 +59,6 @@ After modifying the PO file, output a JSON object with the following structure:
 ## Example Output
 
 {
-  "total_entries": 2592,
   "issues": [
     {
       "msgid": "commit",
@@ -90,6 +88,5 @@ After modifying the PO file, output a JSON object with the following structure:
 
 1. **First, read and modify the PO file {source} directly** - fix all issues you find
 2. **Then, output only the JSON object** - no additional text before or after
-3. Include all entries reviewed in total_entries count
-4. Only include entries with issues in the issues array (perfect entries with score 3 should not be included)
-5. The "suggestion" field should contain the improved translation (which you've already applied to the file)
+3. Only include entries with issues in the issues array (perfect entries with score 3 should not be included)
+4. The "suggestion" field should contain the improved translation (which you've already applied to the file)

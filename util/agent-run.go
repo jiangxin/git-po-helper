@@ -2,6 +2,7 @@
 package util
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -74,9 +75,17 @@ type ReviewJSONResult struct {
 // For each reported issue, the score is reduced by (3 - issue.Score).
 // The final score is normalized to 0-100.
 func CalculateReviewScore(review *ReviewJSONResult) (int, error) {
+	// If total_entries is 0, we can't calculate a meaningful score
+	// This might happen if the calculation hasn't been performed yet
 	if review.TotalEntries <= 0 {
-		log.Debugf("calculate score failed: total_entries=%d (must be > 0)", review.TotalEntries)
-		return 0, fmt.Errorf("invalid review result: total_entries must be greater than 0")
+		// If there are no entries, and no issues, we can consider it as perfect
+		if len(review.Issues) == 0 {
+			log.Debugf("no entries and no issues, returning perfect score of 100")
+			return 100, nil
+		}
+		// If there are issues but no entries, this is an inconsistent state
+		log.Debugf("calculate score failed: total_entries=%d but has %d issues", review.TotalEntries, len(review.Issues))
+		return 0, fmt.Errorf("invalid review result: total_entries must be greater than 0, got %d", review.TotalEntries)
 	}
 
 	totalPossible := review.TotalEntries * 3
@@ -188,11 +197,9 @@ func ParseReviewJSON(jsonData []byte) (*ReviewJSONResult, error) {
 
 	log.Debugf("JSON parsed successfully: total_entries=%d, issues_count=%d", review.TotalEntries, len(review.Issues))
 
-	// Validate total_entries
-	if review.TotalEntries <= 0 {
-		log.Debugf("validation failed: total_entries=%d (must be > 0)", review.TotalEntries)
-		return nil, fmt.Errorf("invalid review result: total_entries must be greater than 0, got %d", review.TotalEntries)
-	}
+	// Note: We allow total_entries to be 0 here because it will be recalculated later
+	// from the actual reviewInputPath file to ensure accuracy.
+	// The validation of total_entries > 0 will happen after recalculation if needed.
 
 	// Validate issues array
 	if review.Issues == nil {
@@ -2297,6 +2304,19 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	}
 	log.Debugf("parsed review JSON: total_entries=%d, issues=%d", reviewJSON.TotalEntries, len(reviewJSON.Issues))
 
+	// Recalculate total_entries from reviewInputPath file to ensure accuracy
+	totalEntries, err := countMsgidEntries(reviewInputPath)
+	if err != nil {
+		log.Errorf("failed to count msgid entries in review input file: %v", err)
+	} else {
+		if totalEntries > 0 {
+			// Subtract 1 to account for the header entry
+			totalEntries -= 1
+		}
+		log.Debugf("updating total_entries from %d to %d based on actual msgid count in %s", reviewJSON.TotalEntries, totalEntries, reviewInputPath)
+		reviewJSON.TotalEntries = totalEntries
+	}
+
 	// Save JSON to file
 	log.Infof("saving review JSON to file")
 	jsonPath, err := SaveReviewJSON(poFile, reviewJSON)
@@ -2402,4 +2422,29 @@ func CmdAgentRunReview(agentName, poFile, commit, since string) error {
 
 	log.Infof("agent-run review completed successfully")
 	return nil
+}
+
+// countMsgidEntries counts the number of msgid entries in a PO file by counting lines that start with "msgid "
+func countMsgidEntries(filePath string) (int, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to open file %s: %w", filePath, err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	count := 0
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "msgid ") {
+			count++
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return 0, fmt.Errorf("error reading file %s: %w", filePath, err)
+	}
+
+	return count, nil
 }
