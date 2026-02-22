@@ -1,8 +1,11 @@
-// Package util provides PO file parsing utilities.
+// Package util provides PO file parsing and gettext-related utilities.
 package util
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"strconv"
 	"strings"
 )
 
@@ -264,4 +267,169 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 	}
 
 	return entries, headerLines, nil
+}
+
+// ParseEntryRange parses a range specification like "3,5,9-13", "-5", or "50-" into a set of entry indices.
+// Entry 0 is the header entry. Returns indices in ascending order, deduplicated.
+// Valid indices are 0 (header, always included) and 1 to maxEntry.
+// Range formats:
+//   - N-M: entries N through M
+//   - -N: entries 1 through N (omit start)
+//   - N-: entries N through last (omit end)
+func ParseEntryRange(spec string, maxEntry int) ([]int, error) {
+	if spec == "" {
+		return nil, fmt.Errorf("empty entry range specification")
+	}
+
+	seen := make(map[int]bool)
+
+	parts := strings.Split(spec, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		if strings.Contains(part, "-") {
+			// Range: N-M, -N (1 to N), or N- (N to last)
+			rangeParts := strings.SplitN(part, "-", 2)
+			if len(rangeParts) != 2 {
+				return nil, fmt.Errorf("invalid range: %s", part)
+			}
+			startStr := strings.TrimSpace(rangeParts[0])
+			endStr := strings.TrimSpace(rangeParts[1])
+
+			var start, end int
+			if startStr == "" {
+				// -N: from 1 to N
+				if endStr == "" {
+					return nil, fmt.Errorf("invalid range: %s", part)
+				}
+				var err error
+				end, err = strconv.Atoi(endStr)
+				if err != nil {
+					return nil, fmt.Errorf("invalid range end: %s", endStr)
+				}
+				start = 1
+			} else if endStr == "" {
+				// N-: from N to last entry
+				var err error
+				start, err = strconv.Atoi(startStr)
+				if err != nil {
+					return nil, fmt.Errorf("invalid range start: %s", startStr)
+				}
+				end = maxEntry
+			} else {
+				// N-M: from N to M
+				var err error
+				start, err = strconv.Atoi(startStr)
+				if err != nil {
+					return nil, fmt.Errorf("invalid range start: %s", startStr)
+				}
+				end, err = strconv.Atoi(endStr)
+				if err != nil {
+					return nil, fmt.Errorf("invalid range end: %s", endStr)
+				}
+				if start > end {
+					return nil, fmt.Errorf("invalid range: start %d > end %d", start, end)
+				}
+			}
+			for i := start; i <= end; i++ {
+				if i >= 0 && i <= maxEntry {
+					seen[i] = true
+				}
+			}
+		} else {
+			// Single number
+			n, err := strconv.Atoi(part)
+			if err != nil {
+				return nil, fmt.Errorf("invalid entry number: %s", part)
+			}
+			if n >= 0 && n <= maxEntry {
+				seen[n] = true
+			}
+		}
+	}
+
+	// Build result in ascending order (0, 1, 2, ...)
+	var result []int
+	for i := 0; i <= maxEntry; i++ {
+		if seen[i] {
+			result = append(result, i)
+		}
+	}
+	return result, nil
+}
+
+// MsgSelect reads a PO/POT file, selects entries by the given range specification,
+// and writes the result to w. Entry 0 (header) is always included.
+// Range spec format: comma-separated numbers or ranges, e.g. "3,5,9-13".
+func MsgSelect(poFile, rangeSpec string, w io.Writer) error {
+	data, err := os.ReadFile(poFile)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", poFile, err)
+	}
+
+	entries, header, err := ParsePoEntries(data)
+	if err != nil {
+		return fmt.Errorf("failed to parse %s: %w", poFile, err)
+	}
+
+	// Entry 0 = header, entry 1..N = entries[0..N-1]
+	maxEntry := len(entries)
+	indices, err := ParseEntryRange(rangeSpec, maxEntry)
+	if err != nil {
+		return fmt.Errorf("invalid range %q: %w", rangeSpec, err)
+	}
+
+	// Always ensure entry 0 (header) is included
+	hasHeader := false
+	for _, i := range indices {
+		if i == 0 {
+			hasHeader = true
+			break
+		}
+	}
+	if !hasHeader {
+		// Prepend 0 to indices
+		indices = append([]int{0}, indices...)
+	}
+
+	// Write header
+	for _, line := range header {
+		if _, err := io.WriteString(w, line); err != nil {
+			return err
+		}
+		if !strings.HasSuffix(line, "\n") {
+			if _, err := io.WriteString(w, "\n"); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := io.WriteString(w, "\n"); err != nil {
+		return err
+	}
+
+	// Write selected entries (index 0 = header already written, index 1+ = entries[i-1])
+	for _, idx := range indices {
+		if idx == 0 {
+			continue // Header already written
+		}
+		entry := entries[idx-1]
+		for _, line := range entry.RawLines {
+			if _, err := io.WriteString(w, line); err != nil {
+				return err
+			}
+			if !strings.HasSuffix(line, "\n") {
+				if _, err := io.WriteString(w, "\n"); err != nil {
+					return err
+				}
+			}
+		}
+		if _, err := io.WriteString(w, "\n"); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
