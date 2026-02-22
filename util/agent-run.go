@@ -1521,20 +1521,40 @@ func CmdAgentRunTranslate(agentName, poFile string) error {
 // PrepareReviewData prepares data for review by creating orig.po, new.po, and review-input.po files.
 // It gets the original file from git, sorts both files by msgid, and extracts differences.
 // Returns paths to orig.po, new.po, and review-input.po files.
-func PrepareReviewData(poFile, commit, since string) (origPath, newPath, reviewInputPath string, err error) {
-	workDir := repository.WorkDir()
-	poFileName := filepath.Base(poFile)
-	langCode := strings.TrimSuffix(poFileName, ".po")
+func PrepareReviewData(poFile, commit, since, outputFile string) error {
+	var (
+		err        error
+		workDir    = repository.WorkDir()
+		poFileName = filepath.Base(poFile)
+		langCode   = strings.TrimSuffix(poFileName, ".po")
+		poDir      = filepath.Join(workDir, PoDir)
+	)
 	if langCode == "" || langCode == poFileName {
-		return "", "", "", fmt.Errorf("invalid PO file path: %s (expected format: po/XX.po)", poFile)
+		return fmt.Errorf("invalid PO file path: %s (expected format: po/XX.po)", poFile)
 	}
 
-	poDir := filepath.Join(workDir, PoDir)
-	origPath = filepath.Join(poDir, fmt.Sprintf("%s-orig.po", langCode))
-	newPath = filepath.Join(poDir, fmt.Sprintf("%s-new.po", langCode))
-	reviewInputPath = filepath.Join(poDir, fmt.Sprintf("%s-review-input.po", langCode))
+	// Use temp files for orig and new; they are deleted when the function returns
+	origFile, err := os.CreateTemp("", fmt.Sprintf("%s-orig-*.po", langCode))
+	if err != nil {
+		return fmt.Errorf("failed to create temp orig file: %w", err)
+	}
+	origPath := origFile.Name()
+	origFile.Close()
 
-	log.Debugf("preparing review data: orig=%s, new=%s, review-input=%s", origPath, newPath, reviewInputPath)
+	newFile, err := os.CreateTemp("", fmt.Sprintf("%s-new-*.po", langCode))
+	if err != nil {
+		os.Remove(origPath)
+		return fmt.Errorf("failed to create temp new file: %w", err)
+	}
+	newPath := newFile.Name()
+	newFile.Close()
+
+	defer func() {
+		os.Remove(origPath)
+		os.Remove(newPath)
+	}()
+
+	log.Debugf("preparing review data: orig=%s, new=%s, review-input=%s", origPath, newPath, outputFile)
 
 	// Determine the base commit for comparison and the new file source
 	var baseCommit string
@@ -1569,7 +1589,7 @@ func PrepareReviewData(poFile, commit, since string) (origPath, newPath, reviewI
 	// Convert absolute path to relative path for git show command
 	poFileRel, err := filepath.Rel(workDir, poFile)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to convert PO file path to relative: %w", err)
+		return fmt.Errorf("failed to convert PO file path to relative: %w", err)
 	}
 	// Normalize to use forward slashes (git uses forward slashes in paths)
 	poFileRel = filepath.ToSlash(poFileRel)
@@ -1583,22 +1603,22 @@ func PrepareReviewData(poFile, commit, since string) (origPath, newPath, reviewI
 			// If file doesn't exist in that commit, create empty file
 			log.Infof("file %s not found in commit %s, using empty file as original", poFileRel, baseCommit)
 			if err := os.WriteFile(origPath, []byte{}, 0644); err != nil {
-				return "", "", "", fmt.Errorf("failed to create empty orig file: %w", err)
+				return fmt.Errorf("failed to create empty orig file: %w", err)
 			}
 		} else {
 			// For other errors, return them
-			return "", "", "", fmt.Errorf("failed to get original file from commit %s: %w", baseCommit, err)
+			return fmt.Errorf("failed to get original file from commit %s: %w", baseCommit, err)
 		}
 	} else {
 		// Copy tmpfile to orig.po
 		origData, err := os.ReadFile(origFileRevision.Tmpfile)
 		if err != nil {
 			os.Remove(origFileRevision.Tmpfile)
-			return "", "", "", fmt.Errorf("failed to read orig tmpfile: %w", err)
+			return fmt.Errorf("failed to read orig tmpfile: %w", err)
 		}
 		if err := os.WriteFile(origPath, origData, 0644); err != nil {
 			os.Remove(origFileRevision.Tmpfile)
-			return "", "", "", fmt.Errorf("failed to write orig file: %w", err)
+			return fmt.Errorf("failed to write orig file: %w", err)
 		}
 		os.Remove(origFileRevision.Tmpfile)
 	}
@@ -1613,16 +1633,16 @@ func PrepareReviewData(poFile, commit, since string) (origPath, newPath, reviewI
 			File:     poFileRel,
 		}
 		if err := checkoutTmpfile(&newFileRevision); err != nil {
-			return "", "", "", fmt.Errorf("failed to get new file from commit %s: %w", newFileSource, err)
+			return fmt.Errorf("failed to get new file from commit %s: %w", newFileSource, err)
 		}
 		newData, err := os.ReadFile(newFileRevision.Tmpfile)
 		if err != nil {
 			os.Remove(newFileRevision.Tmpfile)
-			return "", "", "", fmt.Errorf("failed to read new tmpfile: %w", err)
+			return fmt.Errorf("failed to read new tmpfile: %w", err)
 		}
 		if err := os.WriteFile(newPath, newData, 0644); err != nil {
 			os.Remove(newFileRevision.Tmpfile)
-			return "", "", "", fmt.Errorf("failed to write new file: %w", err)
+			return fmt.Errorf("failed to write new file: %w", err)
 		}
 		os.Remove(newFileRevision.Tmpfile)
 	} else {
@@ -1630,10 +1650,10 @@ func PrepareReviewData(poFile, commit, since string) (origPath, newPath, reviewI
 		log.Debugf("copying current file to new.po")
 		newData, err := os.ReadFile(poFile)
 		if err != nil {
-			return "", "", "", fmt.Errorf("failed to read current PO file: %w", err)
+			return fmt.Errorf("failed to read current PO file: %w", err)
 		}
 		if err := os.WriteFile(newPath, newData, 0644); err != nil {
-			return "", "", "", fmt.Errorf("failed to write new file: %w", err)
+			return fmt.Errorf("failed to write new file: %w", err)
 		}
 	}
 
@@ -1646,33 +1666,15 @@ func PrepareReviewData(poFile, commit, since string) (origPath, newPath, reviewI
 		os.Remove(newSortedPath)
 	}()
 
-	// Sort orig file
-	cmd := exec.Command("msgcat", "--sort-output", origPath, "-o", origSortedPath)
-	cmd.Dir = workDir
-	if err := cmd.Run(); err != nil {
-		// If msgcat fails (e.g., empty file), just copy the file
-		log.Debugf("msgcat sort failed for orig, copying as-is: %v", err)
-		if err := copyFile(origPath, origSortedPath); err != nil {
-			return "", "", "", fmt.Errorf("failed to copy orig file: %w", err)
-		}
-	}
-
-	// Sort new file
-	cmd = exec.Command("msgcat", "--sort-output", newPath, "-o", newSortedPath)
-	cmd.Dir = workDir
-	if err := cmd.Run(); err != nil {
-		return "", "", "", fmt.Errorf("failed to sort new file: %w", err)
-	}
-
 	// Extract differences: use msgcmp to find entries that are different or new
 	// We'll use a simpler approach: extract entries from new that don't match orig
 	log.Debugf("extracting differences to review-input.po")
-	if err := extractReviewInput(origSortedPath, newSortedPath, reviewInputPath); err != nil {
-		return "", "", "", fmt.Errorf("failed to extract review input: %w", err)
+	if err := extractReviewInput(origPath, newPath, outputFile); err != nil {
+		return fmt.Errorf("failed to extract review input: %w", err)
 	}
 
-	log.Infof("review data prepared: review-input=%s", reviewInputPath)
-	return origPath, newPath, reviewInputPath, nil
+	log.Infof("review data prepared: review-input=%s", outputFile)
+	return nil
 }
 
 // copyFile copies a file from src to dst.
@@ -1790,7 +1792,12 @@ func writeReviewInputPo(outputPath string, header []string, entries []*PoEntry) 
 		content.WriteString("\n")
 	}
 
-	return os.WriteFile(outputPath, []byte(content.String()), 0644)
+	data := []byte(content.String())
+	if outputPath == "-" || outputPath == "" {
+		_, err := os.Stdout.Write(data)
+		return err
+	}
+	return os.WriteFile(outputPath, data, 0644)
 }
 
 // RunAgentReview executes a single agent-run review operation with the new workflow:
@@ -1842,26 +1849,20 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 		return result, fmt.Errorf("PO file does not exist: %s\nHint: Ensure the PO file exists before running review", poFile)
 	}
 
-	// Step 1: Prepare review data
-	log.Infof("preparing review data")
-	origPath, newPath, reviewInputPath, err := PrepareReviewData(poFile, commit, since)
-	if err != nil {
-		return result, fmt.Errorf("failed to prepare review data: %w", err)
-	}
-	defer func() {
-		// Clean up temporary files
-		os.Remove(origPath)
-		os.Remove(newPath)
-	}()
-
-	// Step 2: Copy review-input.po to review-output.po
 	workDir := repository.WorkDir()
 	poFileName := filepath.Base(poFile)
 	langCode := strings.TrimSuffix(poFileName, ".po")
 	poDir := filepath.Join(workDir, PoDir)
-	reviewOutputPath := filepath.Join(poDir, fmt.Sprintf("%s-review-output.po", langCode))
-	reviewedPath := filepath.Join(poDir, fmt.Sprintf("%s-reviewed.po", langCode))
 
+	// Step 1: Prepare review data
+	log.Infof("preparing review data")
+	reviewInputPath := filepath.Join(poDir, fmt.Sprintf("%s-review-input.po", langCode))
+	if err := PrepareReviewData(poFile, commit, since, reviewInputPath); err != nil {
+		return result, fmt.Errorf("failed to prepare review data: %w", err)
+	}
+
+	// Step 2: Copy review-input.po to review-output.po
+	reviewOutputPath := filepath.Join(poDir, fmt.Sprintf("%s-review-output.po", langCode))
 	log.Debugf("copying review-input.po to review-output.po")
 	if err := copyFile(reviewInputPath, reviewOutputPath); err != nil {
 		return result, fmt.Errorf("failed to copy review-input to review-output: %w", err)
@@ -2017,24 +2018,6 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 		log.Debugf("agent command stderr: %s", string(stderr))
 	}
 
-	// Step 4: Merge review-output.po with new.po using msgcat --use-first
-	log.Infof("merging review-output.po with new.po using msgcat")
-	cmd := exec.Command("msgcat", "--use-first", reviewOutputPath, newPath, "-o", reviewedPath)
-	cmd.Dir = workDir
-	// Capture stderr to show error details
-	var stderrBuf strings.Builder
-	cmd.Stderr = &stderrBuf
-	if err := cmd.Run(); err != nil {
-		stderrStr := stderrBuf.String()
-		if stderrStr != "" {
-			log.Errorf("failed to merge files with msgcat: %v\nstderr: %s", err, stderrStr)
-			return result, fmt.Errorf("failed to merge review-output.po with new.po: %w\nstderr: %s\nHint: Check that msgcat is available and files are valid", err, stderrStr)
-		}
-		log.Errorf("failed to merge files with msgcat: %v", err)
-		return result, fmt.Errorf("failed to merge review-output.po with new.po: %w\nHint: Check that msgcat is available and files are valid", err)
-	}
-	log.Debugf("merged file saved to: %s", reviewedPath)
-
 	// Extract JSON from agent output
 	log.Infof("extracting JSON from agent output")
 	log.Debugf("agent stdout length: %d bytes", len(stdout))
@@ -2105,10 +2088,10 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	}
 	result.ReviewScore = reviewScore
 	result.Score = reviewScore
-	result.ReviewedFilePath = reviewedPath
+	result.ReviewedFilePath = reviewOutputPath
 
 	log.Infof("review completed successfully (score: %d/100, total entries: %d, issues: %d, reviewed file: %s)",
-		reviewScore, reviewJSON.TotalEntries, len(reviewJSON.Issues), reviewedPath)
+		reviewScore, reviewJSON.TotalEntries, len(reviewJSON.Issues), reviewOutputPath)
 
 	// Record execution time
 	result.ExecutionTime = time.Since(startTime)
