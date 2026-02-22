@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -159,16 +158,6 @@ func PoFileDiffStat(src string, dest string) bool {
 		fmt.Println("\tNothing changed.")
 	}
 
-	if filepath.Base(dest) == GitPot {
-		gitDescribe := ""
-		if out, err := exec.Command("git", "describe", "--always").Output(); err == nil {
-			gitDescribe = strings.TrimSpace(string(out))
-		}
-		fmt.Printf("l10n: git.pot: vN.N.N round N (%s)\n", diffStat)
-		fmt.Println("")
-		fmt.Printf("Generate po/git.pot from %s for git vN.N.N l10n round N.\n", gitDescribe)
-	} else {
-		fmt.Printf("\t%s\n", diffStat)
-	}
+	fmt.Println(diffStat)
 	return true
 }
