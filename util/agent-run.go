@@ -230,6 +230,19 @@ func ParseReviewJSON(jsonData []byte) (*ReviewJSONResult, error) {
 	return &review, nil
 }
 
+// getRelativePath converts an absolute path to a path relative to the repository root.
+// If conversion fails, returns the original absolute path as fallback.
+func getRelativePath(absPath string) string {
+	if absPath == "" {
+		return ""
+	}
+	relPath, err := filepath.Rel(repository.WorkDir(), absPath)
+	if err != nil {
+		return absPath // fallback to absolute path
+	}
+	return relPath
+}
+
 // SaveReviewJSON saves review JSON result to file.
 // It determines the output path from the PO file path:
 // po/XX.po -> po/XX-reviewed.json (where XX is the language code).
@@ -2410,10 +2423,10 @@ func CmdAgentRunReview(agentName, poFile, commit, since string) error {
 		}
 
 		if result.ReviewJSONPath != "" {
-			fmt.Printf("\n  JSON saved to: %s\n", result.ReviewJSONPath)
+			fmt.Printf("\n  JSON saved to: %s\n", getRelativePath(result.ReviewJSONPath))
 		}
 		if result.ReviewedFilePath != "" {
-			fmt.Printf("  Reviewed file: %s\n", result.ReviewedFilePath)
+			fmt.Printf("  Reviewed file: %s\n", getRelativePath(result.ReviewedFilePath))
 		}
 	}
 
