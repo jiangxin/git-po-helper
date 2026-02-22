@@ -2397,30 +2397,33 @@ func CmdAgentRunReview(agentName, poFile, commit, since string) error {
 
 		// Count issues by severity
 		criticalCount := 0
+		majorCount := 0
 		minorCount := 0
-		perfectCount := 0
 		for _, issue := range result.ReviewJSON.Issues {
-			if issue.Score == 0 {
+			switch issue.Score {
+			case 0:
 				criticalCount++
-			} else if issue.Score == 2 {
+			case 1:
+				majorCount++
+			case 2:
 				minorCount++
-			} else if issue.Score == 3 {
-				perfectCount++
 			}
 		}
 
+		fmt.Printf("\n  Issue breakdown:\n")
 		if len(result.ReviewJSON.Issues) > 0 {
-			fmt.Printf("\n  Issue breakdown:\n")
 			if criticalCount > 0 {
-				fmt.Printf("    Critical (must fix): %d\n", criticalCount)
+				fmt.Printf("    Critical (must fix immediately): %d\n", criticalCount)
+			}
+			if majorCount > 0 {
+				fmt.Printf("    Major (should fix): %d\n", majorCount)
 			}
 			if minorCount > 0 {
-				fmt.Printf("    Minor (needs adjustment): %d\n", minorCount)
-			}
-			if perfectCount > 0 {
-				fmt.Printf("    Perfect entries: %d\n", perfectCount)
+				fmt.Printf("    Minor (recommended to improve): %d\n", minorCount)
 			}
 		}
+		fmt.Printf("    Perfect entries: %d\n",
+			result.ReviewJSON.TotalEntries-criticalCount-minorCount)
 
 		if result.ReviewJSONPath != "" {
 			fmt.Printf("\n  JSON saved to: %s\n", getRelativePath(result.ReviewJSONPath))
