@@ -62,8 +62,8 @@ func checkoutTmpfile(f *FileRevision) error {
 	return nil
 }
 
-// DiffFileRevision implements diff on two files with specific revision.
-func DiffFileRevision(src, dest FileRevision) bool {
+// PoFileRevisionDiffStat implements diff on two files with specific revision.
+func PoFileRevisionDiffStat(src, dest FileRevision) bool {
 	var (
 		srcFile  string
 		destFile string
@@ -92,11 +92,11 @@ func DiffFileRevision(src, dest FileRevision) bool {
 	} else {
 		destFile = dest.File
 	}
-	return DiffFiles(srcFile, destFile)
+	return PoFileDiffStat(srcFile, destFile)
 }
 
-// DiffFiles implements diff on two files.
-func DiffFiles(src string, dest string) bool {
+// PoFileDiffStat implements diff on two files.
+func PoFileDiffStat(src string, dest string) bool {
 	var (
 		add int32
 		del int32
