@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattn/go-isatty"
 	"gopkg.in/yaml.v3"
 
 	"github.com/git-l10n/git-po-helper/config"
@@ -1519,59 +1518,6 @@ func CmdAgentRunTranslate(agentName, poFile string) error {
 	return nil
 }
 
-// getChangedPoFiles returns the list of changed po/XX.po files between two git versions.
-// For commit mode (commit != ""): uses git diff-tree -r --name-only <baseCommit> <commit> -- po/
-// For since/default mode: uses git diff -r --name-only <baseCommit> -- po/
-// Returns only .po files (not .pot) under po/ directory.
-func getChangedPoFiles(commit, since string) ([]string, error) {
-	workDir := repository.WorkDir()
-	var baseCommit string
-	var cmd *exec.Cmd
-
-	if commit != "" {
-		// Commit mode: compare parent of commit with commit
-		revParseCmd := exec.Command("git", "rev-parse", commit+"^")
-		revParseCmd.Dir = workDir
-		output, err := revParseCmd.Output()
-		if err != nil {
-			baseCommit = "4b825dc642cb6eb9a060e54bf8d69288fbee4904" // Empty tree
-		} else {
-			baseCommit = strings.TrimSpace(string(output))
-		}
-		cmd = exec.Command("git", "diff-tree", "-r", "--name-only", baseCommit, commit, "--", PoDir)
-		log.Debugf("getting changed po files: git diff-tree -r --name-only %s %s -- %s", baseCommit, commit, PoDir)
-	} else if since != "" {
-		// Since mode: compare since commit with working tree
-		baseCommit = since
-		cmd = exec.Command("git", "diff", "-r", "--name-only", baseCommit, "--", PoDir)
-		log.Debugf("getting changed po files: git diff -r --name-only %s -- %s", baseCommit, PoDir)
-	} else {
-		// Default mode: compare HEAD with working tree
-		baseCommit = "HEAD"
-		cmd = exec.Command("git", "diff", "-r", "--name-only", baseCommit, "--", PoDir)
-		log.Debugf("getting changed po files: git diff -r --name-only %s -- %s", baseCommit, PoDir)
-	}
-
-	cmd.Dir = workDir
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get changed po files: %w", err)
-	}
-
-	// Filter to only .po files (not .pot)
-	var poFiles []string
-	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if strings.HasSuffix(line, ".po") {
-			poFiles = append(poFiles, line)
-		}
-	}
-	return poFiles, nil
-}
-
 // PrepareReviewData prepares data for review by creating orig.po, new.po, and review-input.po files.
 // It gets the original file from git, sorts both files by msgid, and extracts differences.
 // Returns paths to orig.po, new.po, and review-input.po files.
@@ -1872,55 +1818,14 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	log.Debugf("using agent: %s", agentKey)
 
 	// Resolve poFile when not specified: use git diff to find changed po files
-	poFileArg := poFile
-	changedPoFiles, err := getChangedPoFiles(commit, since)
+	changedPoFiles, err := GetChangedPoFiles(commit, since)
 	if err != nil {
 		return result, fmt.Errorf("failed to get changed po files: %w", err)
 	}
 
-	if poFileArg == "" {
-		// No poFile specified: select from changed files
-		switch len(changedPoFiles) {
-		case 0:
-			return result, fmt.Errorf("no changed po files found between git versions\nHint: Specify po/XX.po explicitly or ensure there are changes in po/ directory")
-		case 1:
-			poFile = changedPoFiles[0]
-			log.Infof("auto-selected po file: %s", poFile)
-		default:
-			// Multiple files: interactive mode asks user, non-interactive errors
-			if isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd()) {
-				fmt.Printf("Multiple changed po files found:\n")
-				for i, f := range changedPoFiles {
-					fmt.Printf("  [%d] %s\n", i+1, f)
-				}
-				answer := GetUserInput(fmt.Sprintf("Select file (1-%d): ", len(changedPoFiles)), "1")
-				var idx int
-				if _, err := fmt.Sscanf(answer, "%d", &idx); err != nil || idx < 1 || idx > len(changedPoFiles) {
-					return result, fmt.Errorf("invalid selection: %s", answer)
-				}
-				poFile = changedPoFiles[idx-1]
-				log.Infof("user selected po file: %s", poFile)
-			} else {
-				return result, fmt.Errorf("multiple changed po files found (%s), specify one explicitly in non-interactive mode\nHint: Run with po/XX.po argument", strings.Join(changedPoFiles, ", "))
-			}
-		}
-	} else {
-		// poFile specified: verify it appears in changed files
-		poFileRel := filepath.ToSlash(poFileArg)
-		if !strings.HasPrefix(poFileRel, PoDir+"/") {
-			poFileRel = PoDir + "/" + filepath.Base(poFileArg)
-		}
-		found := false
-		for _, f := range changedPoFiles {
-			if filepath.ToSlash(f) == poFileRel {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return result, fmt.Errorf("po file %s is not in the changed files: %s\nHint: The specified file has no changes between the compared git versions", poFileArg, strings.Join(changedPoFiles, ", "))
-		}
-		poFile = poFileArg
+	poFile, err = ResolvePoFile(poFile, changedPoFiles)
+	if err != nil {
+		return result, err
 	}
 
 	// Determine PO file path (convert to absolute)
