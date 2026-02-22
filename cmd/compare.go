@@ -7,35 +7,41 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type diffCommand struct {
+type compareCommand struct {
 	cmd *cobra.Command
 	O   struct {
 		Revisions []string
+		Stat      bool
 	}
 }
 
-func (v *diffCommand) Command() *cobra.Command {
+func (v *compareCommand) Command() *cobra.Command {
 	if v.cmd != nil {
 		return v.cmd
 	}
 
 	v.cmd = &cobra.Command{
-		Use:           "diff [-r revision [-r revision]] [[<src>] <target>]",
+		Use:           "compare --stat [-r revision [-r revision]] [[<src>] <target>]",
 		Short:         "Show changes between two l10n files",
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return v.Execute(args)
 		},
 	}
+	v.cmd.Flags().BoolVar(&v.O.Stat, "stat", false, "show diff statistics")
 	v.cmd.Flags().StringArrayVarP(&v.O.Revisions, "revision",
 		"r",
 		nil,
-		"revision to compare( default HEAD)")
+		"revision to compare (default HEAD)")
 
 	return v.cmd
 }
 
-func (v diffCommand) Execute(args []string) error {
+func (v compareCommand) Execute(args []string) error {
+	if !v.O.Stat {
+		return newUserError("compare command requires \"--stat\" parameter")
+	}
+
 	var (
 		src, dest util.FileRevision
 	)
@@ -89,8 +95,8 @@ func (v diffCommand) Execute(args []string) error {
 	return nil
 }
 
-var diffCmd = diffCommand{}
+var compareCmd = compareCommand{}
 
 func init() {
-	rootCmd.AddCommand(diffCmd.Command())
+	rootCmd.AddCommand(compareCmd.Command())
 }
