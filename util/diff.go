@@ -21,8 +21,9 @@ type FileRevision struct {
 }
 
 // Example output:
-//     git.pot:NNN: this message is used but not defined in /tmp/git.po.XXXX
-//     /tmp/git.po.XXXX:NNN: warning: this message is not used
+//
+//	git.pot:NNN: this message is used but not defined in /tmp/git.po.XXXX
+//	/tmp/git.po.XXXX:NNN: warning: this message is not used
 var (
 	reNewEntry = regexp.MustCompile(`:([0-9]*): this message is used but not defined in`)
 	reDelEntry = regexp.MustCompile(`:([0-9]*): warning: this message is not used`)
