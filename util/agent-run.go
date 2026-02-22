@@ -1584,7 +1584,7 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	// Step 1: Prepare review data
 	log.Infof("preparing review data")
 	reviewInputPath := filepath.Join(poDir, fmt.Sprintf("%s-review-input.po", langCode))
-	if err := PrepareReviewData(poFile, commit, since, reviewInputPath); err != nil {
+	if err := PrepareReviewData0(poFile, commit, since, reviewInputPath); err != nil {
 		return result, fmt.Errorf("failed to prepare review data: %w", err)
 	}
 

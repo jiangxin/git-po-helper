@@ -29,12 +29,25 @@ var (
 )
 
 func checkoutTmpfile(f *FileRevision) error {
-	if f.Revision == "" {
-		return nil
+	if f.Tmpfile == "" {
+		tmpfile, err := os.CreateTemp("", "*--"+filepath.Base(f.File))
+		if err != nil {
+			return fmt.Errorf("fail to create tmpfile: %s", err)
+		}
+		f.Tmpfile = tmpfile.Name()
+		tmpfile.Close()
 	}
-	tmpfile, err := os.CreateTemp("", "*--"+filepath.Base(f.File))
-	if err != nil {
-		return fmt.Errorf("fail to create tmpfile: %s", err)
+	if f.Revision == "" {
+		// Read file from f.File and write to f.Tmpfile
+		data, err := os.ReadFile(f.File)
+		if err != nil {
+			return fmt.Errorf("fail to read file: %w", err)
+		}
+		if err := os.WriteFile(f.Tmpfile, data, 0644); err != nil {
+			return fmt.Errorf("fail to write tmpfile: %w", err)
+		}
+		log.Debugf("read file %s from %s and write to %s", f.File, f.Revision, f.Tmpfile)
+		return nil
 	}
 	cmd := exec.Command("git",
 		"show",
@@ -47,16 +60,17 @@ func checkoutTmpfile(f *FileRevision) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("fail to start git-show command: %s", err)
 	}
-	if _, err := io.Copy(tmpfile, out); err != nil {
-		return fmt.Errorf("fail to write tmpfile: %s", err)
+	data, err := io.ReadAll(out)
+	out.Close()
+	if err != nil {
+		return fmt.Errorf("fail to read git-show output: %w", err)
 	}
 	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("fail to wait git-show command: %s", err)
 	}
-	if err := tmpfile.Close(); err != nil {
-		return fmt.Errorf("fail to close tmpfile: %s", err)
+	if err := os.WriteFile(f.Tmpfile, data, 0644); err != nil {
+		return fmt.Errorf("fail to write tmpfile: %w", err)
 	}
-	f.Tmpfile = tmpfile.Name()
 	log.Debugf(`creating "%s" file using command: %s`, f.Tmpfile, cmd.String())
 	return nil
 }

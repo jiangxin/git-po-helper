@@ -12,147 +12,135 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// PrepareReviewData prepares data for review by creating orig.po, new.po, and review-input.po files.
-// It gets the original file from git, sorts both files by msgid, and extracts differences.
-func PrepareReviewData(poFile, commit, since, outputFile string) error {
-	var (
-		err        error
-		workDir    = repository.WorkDir()
-		poFileName = filepath.Base(poFile)
-		langCode   = strings.TrimSuffix(poFileName, ".po")
-	)
-	if langCode == "" || langCode == poFileName {
-		return fmt.Errorf("invalid PO file path: %s (expected format: po/XX.po)", poFile)
-	}
-
-	// Use temp files for orig and new; they are deleted when the function returns
-	origFile, err := os.CreateTemp("", fmt.Sprintf("%s-orig-*.po", langCode))
-	if err != nil {
-		return fmt.Errorf("failed to create temp orig file: %w", err)
-	}
-	origPath := origFile.Name()
-	origFile.Close()
-
-	newFile, err := os.CreateTemp("", fmt.Sprintf("%s-new-*.po", langCode))
-	if err != nil {
-		os.Remove(origPath)
-		return fmt.Errorf("failed to create temp new file: %w", err)
-	}
-	newPath := newFile.Name()
-	newFile.Close()
-
-	defer func() {
-		os.Remove(origPath)
-		os.Remove(newPath)
-	}()
-
-	log.Debugf("preparing review data: orig=%s, new=%s, review-input=%s", origPath, newPath, outputFile)
-
-	// Determine the base commit for comparison and the new file source
-	var baseCommit string
-	var newFileSource string
+// ParseCommitSince parses commit and since parameters into baseCommit and newFileSource.
+// - commit: orig is parent of commit, new is the specified commit
+// - since: orig is since commit, new is current file (empty string)
+// - neither: orig is HEAD, new is current file (empty string)
+func ParseCommitSince(workDir, commit, since string) (baseCommit, newFileSource string) {
 	if commit != "" {
-		// Commit mode: orig is parent commit, new is the specified commit
 		cmd := exec.Command("git", "rev-parse", commit+"^")
 		cmd.Dir = workDir
 		output, err := cmd.Output()
 		if err != nil {
-			// If commit has no parent (root commit), use empty tree
-			baseCommit = "4b825dc642cb6eb9a060e54bf8d69288fbee4904" // Empty tree
+			baseCommit = "4b825dc642cb6eb9a060e54bf8d69288fbee4904" // Empty tree for root commit
 		} else {
 			baseCommit = strings.TrimSpace(string(output))
 		}
-		newFileSource = commit
 		log.Infof("commit mode: orig from %s, new from %s", baseCommit, commit)
-	} else if since != "" {
-		// Since mode: orig is since commit, new is current file
-		baseCommit = since
-		newFileSource = "" // Use current file
-		log.Infof("since mode: orig from %s, new from current file", since)
-	} else {
-		// Default mode: orig is HEAD, new is current file
-		baseCommit = "HEAD"
-		newFileSource = "" // Use current file
-		log.Infof("default mode: orig from HEAD, new from current file")
+		return baseCommit, commit
 	}
+	if since != "" {
+		log.Infof("since mode: orig from %s, new from current file", since)
+		return since, ""
+	}
+	log.Infof("default mode: orig from HEAD, new from current file")
+	return "HEAD", ""
+}
+
+// PrepareReviewData0 prepares data for review by creating orig.po, new.po, and review-input.po files.
+// It gets the original file from git, sorts both files by msgid, and extracts differences.
+func PrepareReviewData0(poFile, commit, since, outputFile string) error {
+	workDir := repository.WorkDir()
+	srcCommit, targetCommit := ParseCommitSince(workDir, commit, since)
+	return PrepareReviewData(srcCommit, poFile, targetCommit, poFile, outputFile)
+}
+
+func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string) error {
+	var (
+		err                    error
+		workDir                = repository.WorkDir()
+		relOldFile, relNewFile string
+	)
+
+	// Use temp files for orig and new; they are deleted when the function returns
+	oldTmpFile, err := os.CreateTemp("", "review-old-*.po")
+	if err != nil {
+		return fmt.Errorf("failed to create temp old file: %w", err)
+	}
+	oldTmpFile.Close()
+	defer func() {
+		os.Remove(oldTmpFile.Name())
+	}()
+
+	newTmpFile, err := os.CreateTemp("", "review-new-*.po")
+	if err != nil {
+		return fmt.Errorf("failed to create temp new file: %w", err)
+	}
+	newTmpFile.Close()
+	defer func() {
+		os.Remove(newTmpFile.Name())
+	}()
+
+	log.Debugf("preparing review data: orig=%s, new=%s, review-input=%s",
+		oldTmpFile.Name(), newTmpFile.Name(), outputFile)
 
 	// Get original file from git
-	log.Infof("getting original file from commit: %s", baseCommit)
+	log.Infof("getting old file from commit: %s", oldCommit)
 	// Convert absolute path to relative path for git show command
-	poFileRel, err := filepath.Rel(workDir, poFile)
-	if err != nil {
-		return fmt.Errorf("failed to convert PO file path to relative: %w", err)
+	if filepath.IsAbs(oldFile) {
+		relOldFile, err = filepath.Rel(workDir, oldFile)
+		if err != nil {
+			return fmt.Errorf("failed to convert PO file path to relative: %w", err)
+		}
+	} else {
+		relOldFile = oldFile
 	}
 	// Normalize to use forward slashes (git uses forward slashes in paths)
-	poFileRel = filepath.ToSlash(poFileRel)
-	origFileRevision := FileRevision{
-		Revision: baseCommit,
-		File:     poFileRel,
+	relOldFile = filepath.ToSlash(relOldFile)
+	oldFileRevision := FileRevision{
+		Revision: oldCommit,
+		File:     relOldFile,
+		Tmpfile:  oldTmpFile.Name(),
 	}
-	if err := checkoutTmpfile(&origFileRevision); err != nil {
+	if err := checkoutTmpfile(&oldFileRevision); err != nil {
 		// Check if error is because file doesn't exist in the commit
 		if strings.Contains(err.Error(), "does not exist in") {
 			// If file doesn't exist in that commit, create empty file
-			log.Infof("file %s not found in commit %s, using empty file as original", poFileRel, baseCommit)
-			if err := os.WriteFile(origPath, []byte{}, 0644); err != nil {
+			log.Infof("file %s not found in commit %s, using empty file as original", relOldFile, oldCommit)
+			if err := os.WriteFile(oldFileRevision.Tmpfile, []byte{}, 0644); err != nil {
 				return fmt.Errorf("failed to create empty orig file: %w", err)
 			}
 		} else {
 			// For other errors, return them
-			return fmt.Errorf("failed to get original file from commit %s: %w", baseCommit, err)
-		}
-	} else {
-		// Copy tmpfile to orig.po
-		origData, err := os.ReadFile(origFileRevision.Tmpfile)
-		defer func() {
-			os.Remove(origFileRevision.Tmpfile)
-		}()
-		if err != nil {
-			return fmt.Errorf("failed to read orig tmpfile: %w", err)
-		}
-		if err := os.WriteFile(origPath, origData, 0644); err != nil {
-			return fmt.Errorf("failed to write orig file: %w", err)
+			return fmt.Errorf("failed to get original file from commit %s: %w", oldCommit, err)
 		}
 	}
 
-	// Get new file (either from git commit or current file)
-	if newFileSource != "" {
-		// Get file from specified commit
-		log.Debugf("getting new file from commit: %s", newFileSource)
-		// Use the same relative path for git show command
-		newFileRevision := FileRevision{
-			Revision: newFileSource,
-			File:     poFileRel,
-		}
-		if err := checkoutTmpfile(&newFileRevision); err != nil {
-			return fmt.Errorf("failed to get new file from commit %s: %w", newFileSource, err)
-		}
-		defer func() {
-			os.Remove(newFileRevision.Tmpfile)
-		}()
-		newData, err := os.ReadFile(newFileRevision.Tmpfile)
+	log.Infof("getting new file from commit: %s", newCommit)
+	// Convert absolute path to relative path for git show command
+	if filepath.IsAbs(newFile) {
+		relNewFile, err = filepath.Rel(workDir, newFile)
 		if err != nil {
-			return fmt.Errorf("failed to read new tmpfile: %w", err)
-		}
-		if err := os.WriteFile(newPath, newData, 0644); err != nil {
-			return fmt.Errorf("failed to write new file: %w", err)
+			return fmt.Errorf("failed to convert PO file path to relative: %w", err)
 		}
 	} else {
-		// Copy current file to new.po
-		log.Debugf("copying current file to new.po")
-		newData, err := os.ReadFile(poFile)
-		if err != nil {
-			return fmt.Errorf("failed to read current PO file: %w", err)
-		}
-		if err := os.WriteFile(newPath, newData, 0644); err != nil {
-			return fmt.Errorf("failed to write new file: %w", err)
+		relNewFile = newFile
+	}
+	// Normalize to use forward slashes (git uses forward slashes in paths)
+	relNewFile = filepath.ToSlash(relNewFile)
+	newFileRevision := FileRevision{
+		Revision: newCommit,
+		File:     relNewFile,
+		Tmpfile:  newTmpFile.Name(),
+	}
+	if err := checkoutTmpfile(&newFileRevision); err != nil {
+		// Check if error is because file doesn't exist in the commit
+		if strings.Contains(err.Error(), "does not exist in") {
+			// If file doesn't exist in that commit, create empty file
+			log.Infof("file %s not found in commit %s, using empty file as original", relNewFile, newCommit)
+			if err := os.WriteFile(newFileRevision.Tmpfile, []byte{}, 0644); err != nil {
+				return fmt.Errorf("failed to create empty new file: %w", err)
+			}
+		} else {
+			// For other errors, return them
+			return fmt.Errorf("failed to get new file from commit %s: %w", newCommit, err)
 		}
 	}
 
 	// Extract differences: use msgcmp to find entries that are different or new
 	// We'll use a simpler approach: extract entries from new that don't match orig
 	log.Debugf("extracting differences to review-input.po")
-	if err := extractReviewInput(origPath, newPath, outputFile); err != nil {
+	if err := extractReviewInput(oldFileRevision.Tmpfile, newFileRevision.Tmpfile, outputFile); err != nil {
 		return fmt.Errorf("failed to extract review input: %w", err)
 	}
 

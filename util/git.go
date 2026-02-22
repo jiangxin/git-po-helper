@@ -15,32 +15,37 @@ import (
 // For since/default mode: uses git diff -r --name-only <baseCommit> -- po/
 // Returns only .po files (not .pot) under po/ directory.
 func GetChangedPoFiles(commit, since string) ([]string, error) {
-	workDir := repository.WorkDir()
-	var baseCommit string
-	var cmd *exec.Cmd
+	var rev1, rev2 string
 
 	if commit != "" {
-		// Commit mode: compare parent of commit with commit
-		revParseCmd := exec.Command("git", "rev-parse", commit+"^")
-		revParseCmd.Dir = workDir
-		output, err := revParseCmd.Output()
-		if err != nil {
-			baseCommit = "4b825dc642cb6eb9a060e54bf8d69288fbee4904" // Empty tree
-		} else {
-			baseCommit = strings.TrimSpace(string(output))
-		}
-		cmd = exec.Command("git", "diff-tree", "-r", "--name-only", baseCommit, commit, "--", PoDir)
-		log.Debugf("getting changed po files: git diff-tree -r --name-only %s %s -- %s", baseCommit, commit, PoDir)
+		rev1 = commit + "~"
+		rev2 = commit
 	} else if since != "" {
+		rev1 = since
+		rev2 = ""
+	} else {
+		rev1 = "HEAD"
+		rev2 = "" // working tree
+	}
+	return GetChangedPoFilesRange(rev1, rev2)
+}
+
+func GetChangedPoFilesRange(rev1, rev2 string) ([]string, error) {
+	var (
+		cmd     *exec.Cmd
+		workDir = repository.WorkDir()
+	)
+
+	if rev1 != "" && rev2 != "" {
+		cmd = exec.Command("git", "diff-tree", "-r", "--name-only", rev1, rev2, "--", PoDir)
+		log.Debugf("getting changed po files: git diff-tree -r --name-only %s %s -- %s", rev1, rev2, PoDir)
+	} else if rev1 != "" && rev2 == "" {
 		// Since mode: compare since commit with working tree
-		baseCommit = since
-		cmd = exec.Command("git", "diff", "-r", "--name-only", baseCommit, "--", PoDir)
-		log.Debugf("getting changed po files: git diff -r --name-only %s -- %s", baseCommit, PoDir)
+		cmd = exec.Command("git", "diff", "-r", "--name-only", rev1, "--", PoDir)
+		log.Debugf("getting changed po files: git diff -r --name-only %s -- %s", rev1, PoDir)
 	} else {
 		// Default mode: compare HEAD with working tree
-		baseCommit = "HEAD"
-		cmd = exec.Command("git", "diff", "-r", "--name-only", baseCommit, "--", PoDir)
-		log.Debugf("getting changed po files: git diff -r --name-only %s -- %s", baseCommit, PoDir)
+		return nil, fmt.Errorf("rev1 is nil for GetChangedPoFilesRange")
 	}
 
 	cmd.Dir = workDir
