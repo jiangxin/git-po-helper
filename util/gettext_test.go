@@ -8,6 +8,29 @@ import (
 	"testing"
 )
 
+func TestStrDeQuote(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{`"hello"`, "hello"},
+		{`""`, ""},
+		{`"a"`, "a"},
+		{`"hello`, `"hello`},
+		{`hello"`, `hello"`},
+		{`hello`, "hello"},
+		{`""hello""`, `"hello"`},
+		{"", ""},
+		{`"`, `"`},
+	}
+	for _, tt := range tests {
+		got := strDeQuote(tt.in)
+		if got != tt.want {
+			t.Errorf("strDeQuote(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestParseEntryRange(t *testing.T) {
 	tests := []struct {
 		spec     string

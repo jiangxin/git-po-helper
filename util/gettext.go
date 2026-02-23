@@ -19,6 +19,15 @@ type PoEntry struct {
 	RawLines     []string // Original lines for the entry
 }
 
+// strDeQuote removes one quote character from each end of s if both ends have a quote.
+// Returns s unchanged otherwise.
+func strDeQuote(s string) string {
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
 // ParsePoEntries parses PO file entries and returns entries and header.
 // The header includes comments, the empty msgid/msgstr block, and any continuation lines.
 // Entries are 1-based for content (header entry with empty msgid is not included).
@@ -41,7 +50,8 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 		// Check for header (empty msgid entry)
 		if inHeader && strings.HasPrefix(trimmed, "msgid ") {
 			value := strings.TrimPrefix(trimmed, "msgid ")
-			value = strings.Trim(value, `"`)
+			value = strings.TrimSpace(value)
+			value = strDeQuote(value)
 			if value == "" {
 				// This is the header entry
 				inHeader = true
@@ -55,7 +65,8 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 		// Check for header msgstr (empty msgstr after empty msgid)
 		if inHeader && strings.HasPrefix(trimmed, "msgstr ") {
 			value := strings.TrimPrefix(trimmed, "msgstr ")
-			value = strings.Trim(value, `"`)
+			value = strings.TrimSpace(value)
+			value = strDeQuote(value)
 			if msgidValue.Len() == 0 && value == "" {
 				// This is the header msgstr line
 				headerLines = append(headerLines, line)
@@ -92,7 +103,8 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			// Check if this is a new msgid entry - end of header
 			if strings.HasPrefix(trimmed, "msgid ") {
 				value := strings.TrimPrefix(trimmed, "msgid ")
-				value = strings.Trim(value, `"`)
+				value = strings.TrimSpace(value)
+				value = strDeQuote(value)
 				if value != "" {
 					// This is a real entry, not header
 					inHeader = false
@@ -156,14 +168,16 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			currentPluralIndex = -1
 
 			value := strings.TrimPrefix(trimmed, "msgid ")
-			value = strings.Trim(value, `"`)
+			value = strings.TrimSpace(value)
+			value = strDeQuote(value)
 			msgidValue.WriteString(value)
 			entryLines = append(entryLines, line)
 		} else if strings.HasPrefix(trimmed, "msgid_plural ") {
 			inMsgid = false
 			inMsgidPlural = true
 			value := strings.TrimPrefix(trimmed, "msgid_plural ")
-			value = strings.Trim(value, `"`)
+			value = strings.TrimSpace(value)
+			value = strDeQuote(value)
 			msgidPluralValue.WriteString(value)
 			entryLines = append(entryLines, line)
 		} else if strings.HasPrefix(trimmed, "msgstr[") {
@@ -182,7 +196,8 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			}
 			currentPluralIndex = idx
 			value := strings.TrimPrefix(trimmed, fmt.Sprintf("msgstr[%d] ", idx))
-			value = strings.Trim(value, `"`)
+			value = strings.TrimSpace(value)
+			value = strDeQuote(value)
 			msgstrPluralValues[idx].WriteString(value)
 			entryLines = append(entryLines, line)
 		} else if strings.HasPrefix(trimmed, "msgstr ") {
@@ -190,12 +205,13 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			inMsgidPlural = false
 			inMsgstr = true
 			value := strings.TrimPrefix(trimmed, "msgstr ")
-			value = strings.Trim(value, `"`)
+			value = strings.TrimSpace(value)
+			value = strDeQuote(value)
 			msgstrValue.WriteString(value)
 			entryLines = append(entryLines, line)
 		} else if strings.HasPrefix(trimmed, `"`) && (inMsgid || inMsgstr || inMsgidPlural) {
 			// Continuation line
-			value := strings.Trim(trimmed, `"`)
+			value := strDeQuote(trimmed)
 			if inMsgid {
 				msgidValue.WriteString(value)
 			} else if inMsgidPlural {
