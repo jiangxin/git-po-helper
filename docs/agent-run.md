@@ -26,8 +26,7 @@ prompt:
   update_pot: "update po/git.pot according to po/README.md"
   update_po: "update {source} according to po/README.md"
   translate: "translate {source} according to po/README.md"
-  review_since: "review changes of {source} since commit {commit} according to po/README.md"
-  review_commit: "review changes of commit {commit} according to po/README.md"
+  review: "review and improve {source} according to po/README.md"
 agent-test:
   runs: 5
   pot_entries_before_update: null
@@ -50,8 +49,7 @@ agents:
 - `prompt.update_pot`: Prompt for updating the POT file
 - `prompt.update_po`: Prompt for updating a PO file (uses `{source}` placeholder)
 - `prompt.translate`: Prompt for translating a PO file (uses `{source}` placeholder)
-- `prompt.review_since`: Prompt for reviewing changes since a commit (uses `{source}` and `{commit}` placeholders)
-- `prompt.review_commit`: Prompt for reviewing a specific commit (uses `{source}` and `{commit}` placeholders)
+- `prompt.review`: Prompt for reviewing translations in a PO file (uses `{source}` placeholder)
 
 #### Agent Test Configuration
 
@@ -169,8 +167,8 @@ git-po-helper agent-run review [--agent <agent-name>] [--commit <commit>] [--sin
 
 **Options:**
 - `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
-- `--commit <commit>`: Review changes in the specified commit (uses `prompt.review_commit`)
-- `--since <commit>`: Review changes since the specified commit (uses `prompt.review_since`)
+- `--commit <commit>`: Review changes in the specified commit
+- `--since <commit>`: Review changes since the specified commit
 - `po/XX.po`: Optional PO file path; if omitted, `default_lang_code` is used (e.g., `zh_CN` → `po/zh_CN.po`)
 
 **Note:** Exactly one of `--commit` or `--since` may be specified. If neither is provided, the command defaults to reviewing local changes (since HEAD).
@@ -197,10 +195,7 @@ git-po-helper agent-run review --agent claude po/zh_CN.po
 1. Loads configuration from `git-po-helper.yaml`
 2. Determines target PO file from CLI argument or `default_lang_code`
 3. Selects an agent (auto-selects if only one, or uses `--agent` flag)
-4. Determines review mode:
-   - If `--commit` is provided: Uses `prompt.review_commit` with `{commit}` placeholder
-   - If `--since` is provided: Uses `prompt.review_since` with `{source}` and `{commit}` placeholders
-   - Otherwise: Defaults to `--since HEAD` mode (local changes)
+4. Determines review mode from `--range`, `--commit`, or `--since` (uses `prompt.review` with `{source}` placeholder)
 5. Executes the agent command with the appropriate prompt template
 6. Extracts JSON from agent output
 7. Parses and validates the review JSON structure
@@ -360,8 +355,8 @@ git-po-helper agent-test review [--agent <agent-name>] [--runs <n>] [--commit <c
 **Options:**
 - `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
 - `--runs <n>`: Number of test runs (default: 5, or from config file)
-- `--commit <commit>`: Review changes in the specified commit (uses `prompt.review_commit`)
-- `--since <commit>`: Review changes since the specified commit (uses `prompt.review_since`)
+- `--commit <commit>`: Review changes in the specified commit
+- `--since <commit>`: Review changes since the specified commit
 - `po/XX.po`: Optional PO file path; if omitted, `default_lang_code` is used (e.g., `zh_CN` → `po/zh_CN.po`)
 
 **Note:** Exactly one of `--commit` or `--since` may be specified. If neither is provided, the command defaults to reviewing local changes (since HEAD).

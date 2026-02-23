@@ -72,8 +72,7 @@ prompt:
   update_pot: "update po/git.pot according to po/README.md"
   update_po: "update {source} according to po/README.md"
   translate: "translate {source} according to po/README.md"
-  review_since: "review changes of {source} since commit {commit} according to po/README.md"
-  review_commit: "review changes of commit {commit} according to po/README.md"
+  review: "review and improve {source} according to po/README.md"
 agent-test:
   runs: 5
   pot_entries_before_update: null
@@ -126,9 +125,7 @@ agents:
    - **Since mode** (`--since <commit>`): Review changes since a specific commit
 
 4. **Prompt Template**:
-   - For `--commit`: Use `prompt.review_commit` with `{commit}` placeholder
-   - For `--since`: Use `prompt.review_since` with `{source}` and `{commit}` placeholders
-   - For local changes: Use `prompt.review_since` with `{source}` and `{commit}` as HEAD
+   - Use `prompt.review` with `{source}` placeholder
 
 5. **Review Validation**: No automatic validation for review operations. The agent should provide feedback/suggestions, but the operation is considered successful if the agent command completes without error.
 
@@ -266,8 +263,7 @@ Error Handling:
    - If `--since` provided: review changes since that commit
    - Otherwise: review local changes (using HEAD as reference)
 5. Get prompt based on review mode:
-   - `--commit`: Use `prompt.review_commit`
-   - `--since` or local: Use `prompt.review_since`
+   - Use `prompt.review` with `{source}` placeholder
 6. Replace placeholders in agent command:
    - `{prompt}` → prompt text
    - `{source}` → PO file path

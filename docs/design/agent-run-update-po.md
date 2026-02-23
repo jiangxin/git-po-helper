@@ -32,8 +32,7 @@ prompt:
   update_pot: "update po/git.pot according to po/README.md"
   update_po: "update {source} according to po/README.md"
   translate: "translate {source} according to po/README.md"
-  review_since: "review changes of {source} since commit {commit} according to po/README.md"
-  review_commit: "review changes of commit {commit} according to po/README.md"
+  review: "review and improve {source} according to po/README.md"
 agent-test:
   runs: 5
   pot_entries_before_update: null
@@ -170,8 +169,7 @@ type PromptConfig struct {
     UpdatePot    string `yaml:"update_pot"`
     UpdatePo     string `yaml:"update_po"`
     Translate    string `yaml:"translate"`
-    ReviewSince  string `yaml:"review_since"`
-    ReviewCommit string `yaml:"review_commit"`
+    Review string `yaml:"review"`
 }
 
 type AgentTestConfig struct {

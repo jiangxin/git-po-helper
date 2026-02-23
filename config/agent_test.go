@@ -277,23 +277,14 @@ func TestGetDefaultConfig(t *testing.T) {
 	if !strings.Contains(config.Prompt.Translate, "{source}") {
 		t.Fatalf("Translate should contain '{source}', got '%s'", config.Prompt.Translate)
 	}
-	if config.Prompt.ReviewSince == "" {
-		t.Fatal("ReviewSince should not be empty")
+	if config.Prompt.Review == "" {
+		t.Fatal("Review should not be empty")
 	}
-	if !strings.Contains(config.Prompt.ReviewSince, "{source}") || !strings.Contains(config.Prompt.ReviewSince, "{commit}") {
-		t.Fatalf("ReviewSince should contain '{source}' and '{commit}', got '%s'", config.Prompt.ReviewSince)
+	if !strings.Contains(config.Prompt.Review, "{source}") {
+		t.Fatalf("Review should contain '{source}', got '%s'", config.Prompt.Review)
 	}
-	if !strings.Contains(config.Prompt.ReviewSince, "JSON") {
-		t.Fatalf("ReviewSince should contain 'JSON' (extended prompt), got '%s'", config.Prompt.ReviewSince)
-	}
-	if config.Prompt.ReviewCommit == "" {
-		t.Fatal("ReviewCommit should not be empty")
-	}
-	if !strings.Contains(config.Prompt.ReviewCommit, "{commit}") {
-		t.Fatalf("ReviewCommit should contain '{commit}', got '%s'", config.Prompt.ReviewCommit)
-	}
-	if !strings.Contains(config.Prompt.ReviewCommit, "JSON") {
-		t.Fatalf("ReviewCommit should contain 'JSON' (extended prompt), got '%s'", config.Prompt.ReviewCommit)
+	if !strings.Contains(config.Prompt.Review, "JSON") {
+		t.Fatalf("Review should contain 'JSON' (extended prompt), got '%s'", config.Prompt.Review)
 	}
 
 	// Check agent-test defaults

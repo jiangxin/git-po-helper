@@ -24,11 +24,8 @@ prompt:
   # Prompt for translating a PO file
   translate: "translate {source} according to po/README.md"
 
-  # Prompt for reviewing changes since a commit
-  review_since: "review changes of {source} since commit {commit} according to po/README.md"
-
-  # Prompt for reviewing a specific commit
-  review_commit: "review changes of commit {commit} according to po/README.md"
+  # Prompt for reviewing translations in a PO file
+  review: "review and improve {source} according to po/README.md"
 
 # Agent test configuration
 agent-test:

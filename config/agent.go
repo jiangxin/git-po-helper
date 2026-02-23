@@ -23,12 +23,6 @@ var promptUpdatePo string
 //go:embed prompts/translate.txt
 var promptTranslate string
 
-//go:embed prompts/review_since.txt
-var promptReviewSince string
-
-//go:embed prompts/review_commit.txt
-var promptReviewCommit string
-
 //go:embed prompts/review.txt
 var promptReview string
 
@@ -42,12 +36,10 @@ type AgentConfig struct {
 
 // PromptConfig holds prompt templates for different operations.
 type PromptConfig struct {
-	UpdatePot    string `yaml:"update_pot"`
-	UpdatePo     string `yaml:"update_po"`
-	Translate    string `yaml:"translate"`
-	ReviewSince  string `yaml:"review_since"`
-	ReviewCommit string `yaml:"review_commit"`
-	Review       string `yaml:"review"`
+	UpdatePot string `yaml:"update_pot"`
+	UpdatePo  string `yaml:"update_po"`
+	Translate string `yaml:"translate"`
+	Review    string `yaml:"review"`
 }
 
 // AgentTestConfig holds configuration for agent-test command.
@@ -128,12 +120,10 @@ func getDefaultConfig() *AgentConfig {
 	return &AgentConfig{
 		DefaultLangCode: systemLocale,
 		Prompt: PromptConfig{
-			UpdatePot:    loadEmbeddedPrompt(promptUpdatePot),
-			UpdatePo:     loadEmbeddedPrompt(promptUpdatePo),
-			Translate:    loadEmbeddedPrompt(promptTranslate),
-			ReviewSince:  loadEmbeddedPrompt(promptReviewSince),
-			ReviewCommit: loadEmbeddedPrompt(promptReviewCommit),
-			Review:       loadEmbeddedPrompt(promptReview),
+			UpdatePot: loadEmbeddedPrompt(promptUpdatePot),
+			UpdatePo:  loadEmbeddedPrompt(promptUpdatePo),
+			Translate: loadEmbeddedPrompt(promptTranslate),
+			Review:    loadEmbeddedPrompt(promptReview),
 		},
 		AgentTest: AgentTestConfig{
 			Runs: &defaultRuns,
@@ -250,12 +240,6 @@ func applyDefaults(cfg *AgentConfig) {
 	if cfg.Prompt.Translate == "" {
 		cfg.Prompt.Translate = defaultConfig.Prompt.Translate
 	}
-	if cfg.Prompt.ReviewSince == "" {
-		cfg.Prompt.ReviewSince = defaultConfig.Prompt.ReviewSince
-	}
-	if cfg.Prompt.ReviewCommit == "" {
-		cfg.Prompt.ReviewCommit = defaultConfig.Prompt.ReviewCommit
-	}
 	if cfg.Prompt.Review == "" {
 		cfg.Prompt.Review = defaultConfig.Prompt.Review
 	}
@@ -324,12 +308,6 @@ func mergeConfigs(baseConfig, repoConfig *AgentConfig) *AgentConfig {
 		}
 		if repoConfig.Prompt.Translate != "" {
 			result.Prompt.Translate = repoConfig.Prompt.Translate
-		}
-		if repoConfig.Prompt.ReviewSince != "" {
-			result.Prompt.ReviewSince = repoConfig.Prompt.ReviewSince
-		}
-		if repoConfig.Prompt.ReviewCommit != "" {
-			result.Prompt.ReviewCommit = repoConfig.Prompt.ReviewCommit
 		}
 		if repoConfig.Prompt.Review != "" {
 			result.Prompt.Review = repoConfig.Prompt.Review

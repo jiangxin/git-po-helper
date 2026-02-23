@@ -33,8 +33,7 @@ prompt:
   update_pot: "update po/git.pot according to po/README.md"
   update_po: "update {source} according to po/README.md"
   translate: "translate {source} according to po/README.md"
-  review_since: "review changes of {source} since commit {commit} according to po/README.md"
-  review_commit: "review changes of commit {commit} according to po/README.md"
+  review: "review and improve {source} according to po/README.md"
 agent-test:
   runs: 5
 agents:
@@ -49,9 +48,7 @@ agents:
 1. **Agent Selection**: If only one agent is configured, `--agent` flag is optional. If multiple agents exist, `--agent` is required.
 
 2. **Review Mode Selection**:
-   - If `--commit <commit>` is provided: Use `prompt.review_commit` with `{commit}` placeholder replaced
-   - If `--since <commit>` is provided: Use `prompt.review_since` with `{source}` and `{commit}` placeholders replaced
-   - If neither is provided: Default to `--since HEAD` logic, using `prompt.review_since` with `{commit}` as "HEAD" and `{source}` as "po/XX.po"
+   - Use `prompt.review` with `{source}` placeholder (review mode determined by `--range`, `--commit`, or `--since`)
 
 3. **Prompt Template**: The prompt from configuration is used, with placeholders replaced:
    - `{prompt}` → the actual prompt text
@@ -143,8 +140,7 @@ type PromptConfig struct {
     UpdatePot    string `yaml:"update_pot"`
     UpdatePo     string `yaml:"update_po"`
     Translate    string `yaml:"translate"`
-    ReviewSince  string `yaml:"review_since"`
-    ReviewCommit string `yaml:"review_commit"`
+    Review string `yaml:"review"`
 }
 
 type AgentTestConfig struct {
@@ -159,7 +155,7 @@ type Agent struct {
 **Configuration Loading**:
 - Use existing `config.LoadAgentConfig()` function
 - Search for `git-po-helper.yaml` in repository root
-- Validate required fields (at least one agent, prompt.review_since, prompt.review_commit)
+- Validate required fields (at least one agent, prompt.review)
 - Merge CLI arguments with config (CLI takes precedence)
 
 ### 2.3 Command Implementation
@@ -181,8 +177,7 @@ type Agent struct {
    - If `--since <commit>` provided: Use since mode
    - Otherwise: Default to `--since HEAD` (local changes)
 5. Get prompt based on review mode:
-   - Commit mode: Use `prompt.review_commit`, replace `{commit}` with commit ID
-   - Since mode: Use `prompt.review_since`, replace `{source}` with "po/XX.po" and `{commit}` with commit ID
+   - Use `prompt.review` with `{source}` placeholder
 6. Replace placeholders in agent command:
    - `{prompt}` → prompt text
    - `{source}` → PO file path (e.g., "po/XX.po")
