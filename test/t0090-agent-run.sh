@@ -67,6 +67,7 @@ prompt:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 	# Replace $PWD with actual path in config
 	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
@@ -104,8 +105,10 @@ prompt:
 agents:
   agent1:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
   agent2:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
 	rm -f workdir/git-po-helper.yaml.bak &&
@@ -124,6 +127,7 @@ prompt:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
 	rm -f workdir/git-po-helper.yaml.bak &&
@@ -142,6 +146,7 @@ prompt:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
 	rm -f workdir/git-po-helper.yaml.bak &&
@@ -166,8 +171,10 @@ prompt:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
   mock2:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 	sed -i.bak "s|\$PWD|$PWD|g" workdir/git-po-helper.yaml &&
 	rm -f workdir/git-po-helper.yaml.bak &&
@@ -199,6 +206,7 @@ agent-test:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 
 	# Remove previous mock agent comment
@@ -227,6 +235,7 @@ prompt:
 agents:
   failing:
     cmd: ["$PWD/failing-agent"]
+    kind: echo
 EOF
 
 	test_must_fail git -C workdir $HELPER agent-run update-pot >out 2>&1 &&
@@ -246,6 +255,7 @@ prompt:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}", "{source}"]
+    kind: echo
 EOF
 
 	# Remove previous mock agent comments from zh_CN.po
@@ -269,6 +279,7 @@ prompt:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 
 	# Remove previous mock agent comments
@@ -295,6 +306,7 @@ prompt:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}", "{source}"]
+    kind: echo
 EOF
 
 	# Remove previous mock agent comments from zh_CN.po

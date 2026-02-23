@@ -363,58 +363,96 @@ func normalizeOutputFormat(format string) string {
 
 // SelectAgent selects an agent from the configuration based on the provided agent name.
 // If agentName is empty, it auto-selects an agent (only works if exactly one agent is configured).
-// Returns the selected agent, its key, and an error if selection fails.
-func SelectAgent(cfg *config.AgentConfig, agentName string) (config.Agent, string, error) {
+// Returns the selected agent and an error if selection fails.
+// Validates that agent.Kind is one of the known types (claude, gemini, codex, opencode, echo).
+func SelectAgent(cfg *config.AgentConfig, agentName string) (config.Agent, error) {
+	var agent config.Agent
+
 	if agentName != "" {
 		// Use specified agent
 		log.Debugf("using specified agent: %s", agentName)
-		agent, ok := cfg.Agents[agentName]
+		a, ok := cfg.Agents[agentName]
 		if !ok {
 			agentList := make([]string, 0, len(cfg.Agents))
 			for k := range cfg.Agents {
 				agentList = append(agentList, k)
 			}
 			log.Errorf("agent '%s' not found in configuration. Available agents: %v", agentName, agentList)
-			return config.Agent{}, "", fmt.Errorf("agent '%s' not found in configuration\nAvailable agents: %s\nHint: Check git-po-helper.yaml for configured agents", agentName, strings.Join(agentList, ", "))
+			return config.Agent{}, fmt.Errorf("agent '%s' not found in configuration\nAvailable agents: %s\nHint: Check git-po-helper.yaml for configured agents", agentName, strings.Join(agentList, ", "))
 		}
-		return agent, agentName, nil
-	}
-
-	// Auto-select agent
-	log.Debugf("auto-selecting agent from configuration")
-	if len(cfg.Agents) == 0 {
-		log.Error("no agents configured")
-		return config.Agent{}, "", fmt.Errorf("no agents configured\nHint: Add at least one agent to git-po-helper.yaml in the 'agents' section")
-	}
-	if len(cfg.Agents) > 1 {
-		agentList := make([]string, 0, len(cfg.Agents))
-		for k := range cfg.Agents {
-			agentList = append(agentList, k)
+		agent = a
+	} else {
+		// Auto-select agent
+		log.Debugf("auto-selecting agent from configuration")
+		if len(cfg.Agents) == 0 {
+			log.Error("no agents configured")
+			return config.Agent{}, fmt.Errorf("no agents configured\nHint: Add at least one agent to git-po-helper.yaml in the 'agents' section")
 		}
-		log.Errorf("multiple agents configured (%s), --agent flag required", strings.Join(agentList, ", "))
-		return config.Agent{}, "", fmt.Errorf("multiple agents configured (%s), please specify --agent\nHint: Use --agent flag to select one of the available agents", strings.Join(agentList, ", "))
+		if len(cfg.Agents) > 1 {
+			agentList := make([]string, 0, len(cfg.Agents))
+			for k := range cfg.Agents {
+				agentList = append(agentList, k)
+			}
+			log.Errorf("multiple agents configured (%s), --agent flag required", strings.Join(agentList, ", "))
+			return config.Agent{}, fmt.Errorf("multiple agents configured (%s), please specify --agent\nHint: Use --agent flag to select one of the available agents", strings.Join(agentList, ", "))
+		}
+		for k, v := range cfg.Agents {
+			agent, agentName = v, k
+			break
+		}
 	}
 
-	// Only one agent, use it
-	for k, v := range cfg.Agents {
-		return v, k, nil
+	// Set agent.Kind initial value when empty: try agentName then command name
+	if agent.Kind == "" {
+		// Try agentName (config key) converted to lowercase
+		if lower := strings.ToLower(agentName); config.KnownAgentKinds[lower] {
+			agent.Kind = lower
+		} else {
+			// Try first command argument (command name): use basename for paths
+			if len(agent.Cmd) > 0 {
+				base := strings.ToLower(filepath.Base(agent.Cmd[0]))
+				if config.KnownAgentKinds[base] {
+					agent.Kind = base
+				}
+			}
+		}
+		if agent.Kind == "" {
+			return config.Agent{}, fmt.Errorf(
+				"agent '%s' has unknown kind (cmd=%v)\n"+
+					"Hint: Add 'kind' field (claude, gemini, codex, opencode, echo, qwen) to agent in git-po-helper.yaml",
+				agentName, agent.Cmd)
+		}
 	}
 
-	// This should never happen, but handle it gracefully
-	return config.Agent{}, "", fmt.Errorf("unexpected error: no agent selected")
+	// Validate agent.Kind is a known type
+	if !config.KnownAgentKinds[agent.Kind] {
+		return config.Agent{}, fmt.Errorf(
+			"agent '%s' has unknown kind '%s' (must be one of: claude, gemini, codex, opencode, echo, qwen)\n"+
+				"Hint: Set 'kind' to a valid value in git-po-helper.yaml", agentName, agent.Kind)
+	}
+
+	return agent, nil
 }
 
 // BuildAgentCommand builds an agent command by replacing placeholders in the agent's command template.
 // It replaces {prompt}, {source}, and {commit} placeholders with actual values.
-// For claude command, it also adds --output-format parameter based on agent.Output configuration.
+// For claude/codex/opencode/gemini commands, it adds stream-json parameters based on agent.Output.
+// Uses agent.Kind for type-safe detection (Kind must be validated by SelectAgent).
 func BuildAgentCommand(agent config.Agent, prompt, source, commit string) []string {
 	cmd := make([]string, len(agent.Cmd))
 	for i, arg := range agent.Cmd {
 		cmd[i] = ReplacePlaceholders(arg, prompt, source, commit)
 	}
 
+	// Use agent.Kind for type detection (validated by SelectAgent)
+	kind := agent.Kind
+	isClaude := kind == config.AgentKindClaude
+	isCodex := kind == config.AgentKindCodex
+	isOpencode := kind == config.AgentKindOpencode
+	isGemini := kind == config.AgentKindGemini || kind == config.AgentKindQwen
+
 	// For claude command, add --output-format parameter if output format is specified
-	if len(cmd) > 0 && cmd[0] == "claude" {
+	if isClaude {
 		// Check if --output-format parameter already exists in the command
 		hasOutputFormat := false
 		for i, arg := range cmd {
@@ -444,7 +482,7 @@ func BuildAgentCommand(agent config.Agent, prompt, source, commit string) []stri
 	}
 
 	// For codex command, add --json parameter if output format is json
-	if len(cmd) > 0 && cmd[0] == "codex" {
+	if isCodex {
 		// Check if --json parameter already exists in the command
 		hasJSON := false
 		for _, arg := range cmd {
@@ -470,7 +508,7 @@ func BuildAgentCommand(agent config.Agent, prompt, source, commit string) []stri
 	}
 
 	// For opencode command, add --format json parameter if output format is json
-	if len(cmd) > 0 && cmd[0] == "opencode" {
+	if isOpencode {
 		// Check if --format parameter already exists in the command
 		hasFormat := false
 		for i, arg := range cmd {
@@ -501,7 +539,7 @@ func BuildAgentCommand(agent config.Agent, prompt, source, commit string) []stri
 
 	// For gemini/qwen command, add --output-format stream-json parameter if output format is json
 	// (Applicable to Claude Code and Gemini-CLI)
-	if len(cmd) > 0 && (cmd[0] == "gemini" || cmd[0] == "qwen") {
+	if isGemini {
 		// Check if --output-format or -o parameter already exists in the command
 		hasOutputFormat := false
 		for i, arg := range cmd {
@@ -1026,6 +1064,7 @@ func parseStreamJSON(output []byte) (content []byte, result *ClaudeJSONOutput, e
 func ParseStreamJSONRealtime(reader io.Reader) (content []byte, result *ClaudeJSONOutput, err error) {
 	var resultBuilder strings.Builder
 	var lastResult *ClaudeJSONOutput
+	var turnCount int
 
 	scanner := bufio.NewScanner(reader)
 	// Increase buffer size to handle long lines (1MB initial, 10MB max)
@@ -1062,6 +1101,8 @@ func ParseStreamJSONRealtime(reader io.Reader) (content []byte, result *ClaudeJS
 		case "assistant":
 			var asstMsg ClaudeAssistantMessage
 			if err := json.Unmarshal([]byte(line), &asstMsg); err == nil {
+				turnCount++
+				log.Debugf("stream-json: turn %d", turnCount)
 				printAssistantMessage(&asstMsg, &resultBuilder)
 			} else {
 				log.Debugf("stream-json: failed to parse assistant message: %v", err)
@@ -1191,6 +1232,8 @@ func printAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.B
 			fmt.Print("🤖 ")
 			fmt.Println(displayText)
 			resultBuilder.WriteString(content.Text)
+		} else {
+			log.Debugf("stream-json: assistant message: content type: %s", content.Type)
 		}
 	}
 }
@@ -1398,6 +1441,7 @@ func ParseCodexJSONLRealtime(reader io.Reader) (content []byte, result *CodexJSO
 						lastResult = &CodexJSONOutput{}
 					}
 					lastResult.NumTurns++
+					log.Debugf("codex-json: turn %d", lastResult.NumTurns)
 					// Display message text
 					printCodexAgentMessage(&itemMsg.Item, nil)
 					// Store the last agent message (replace, don't accumulate)
@@ -1526,7 +1570,7 @@ func ParseOpenCodeJSONLRealtime(reader io.Reader) (content []byte, result *OpenC
 				// Increment NumTurns when step starts
 				lastResult.NumTurns++
 				inStep = true
-				log.Debugf("opencode-json: received step_start (turn %d)", lastResult.NumTurns)
+				log.Debugf("opencode-json: turn %d", lastResult.NumTurns)
 			} else {
 				log.Debugf("opencode-json: failed to parse step_start message: %v", err)
 			}
@@ -1728,12 +1772,16 @@ func ParseGeminiJSONLRealtime(reader io.Reader) (content []byte, result *GeminiJ
 					}
 				}
 				lastResult.NumTurns++
+				log.Debugf("gemini-json: turn %d", lastResult.NumTurns)
 
 				// Extract text from message.content (type="text")
 				var assistantText strings.Builder
 				for _, content := range asstMsg.Message.Content {
 					if content.Type == "text" && content.Text != "" {
 						assistantText.WriteString(content.Text)
+					} else {
+						log.Debugf("gemini-json: turn %d: content type: %s",
+							lastResult.NumTurns, content.Type)
 					}
 				}
 

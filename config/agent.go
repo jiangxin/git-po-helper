@@ -53,9 +53,30 @@ type AgentTestConfig struct {
 	PoFuzzyEntriesAfterUpdate *int `yaml:"po_fuzzy_entries_after_update"`
 }
 
+// KnownAgentKinds defines the valid agent kinds. Kind must be one of these for type-safe detection.
+const (
+	AgentKindClaude   = "claude"
+	AgentKindGemini   = "gemini"
+	AgentKindCodex    = "codex"
+	AgentKindOpencode = "opencode"
+	AgentKindEcho     = "echo" // Test agent, no stream-json
+	AgentKindQwen     = "qwen" // Alias for gemini-compatible CLI
+)
+
+// KnownAgentKinds is the set of valid agent kinds for validation.
+var KnownAgentKinds = map[string]bool{
+	AgentKindClaude:   true,
+	AgentKindGemini:   true,
+	AgentKindCodex:    true,
+	AgentKindOpencode: true,
+	AgentKindEcho:     true,
+	AgentKindQwen:     true,
+}
+
 // Agent holds configuration for a single agent.
 type Agent struct {
 	Cmd    []string `yaml:"cmd"`
+	Kind   string   `yaml:"kind"`   // Agent kind: "claude", "gemini", "codex", or "opencode"
 	Output string   `yaml:"output"` // Output format: "default", "json", or "stream_json"
 }
 
@@ -131,22 +152,27 @@ func getDefaultConfig() *AgentConfig {
 		Agents: map[string]Agent{
 			"claude": {
 				Cmd:    []string{"claude", "--dangerously-skip-permissions", "-p", "{prompt}"},
+				Kind:   AgentKindClaude,
 				Output: "json",
 			},
 			"codex": {
 				Cmd:    []string{"codex", "exec", "--yolo", "{prompt}"},
+				Kind:   AgentKindCodex,
 				Output: "json",
 			},
 			"opencode": {
 				Cmd:    []string{"opencode", "run", "--thinking", "{prompt}"},
+				Kind:   AgentKindOpencode,
 				Output: "json",
 			},
 			"gemini": {
 				Cmd:    []string{"gemini", "--yolo", "{prompt}"},
+				Kind:   AgentKindGemini,
 				Output: "json",
 			},
 			"echo": {
-				Cmd: []string{"echo", "{prompt}"},
+				Cmd:  []string{"echo", "{prompt}"},
+				Kind: AgentKindEcho,
 			},
 		},
 	}
@@ -254,8 +280,19 @@ func applyDefaults(cfg *AgentConfig) {
 	if len(cfg.Agents) == 0 {
 		cfg.Agents = map[string]Agent{
 			"test": {
-				Cmd: []string{"echo", "{prompt}"},
+				Cmd:  []string{"echo", "{prompt}"},
+				Kind: AgentKindEcho,
 			},
+		}
+	}
+
+	// Apply default Kind for agents that don't have it (backward compatibility)
+	for key, agent := range cfg.Agents {
+		if agent.Kind == "" {
+			if defaultAgent, ok := defaultConfig.Agents[key]; ok {
+				agent.Kind = defaultAgent.Kind
+				cfg.Agents[key] = agent
+			}
 		}
 	}
 }
@@ -356,6 +393,12 @@ func (c *AgentConfig) Validate() error {
 	for name, agent := range c.Agents {
 		if len(agent.Cmd) == 0 {
 			return fmt.Errorf("agent '%s' has empty command", name)
+		}
+		if agent.Kind == "" {
+			return fmt.Errorf("agent '%s' has empty kind (must be one of: claude, gemini, codex, opencode, echo, qwen)", name)
+		}
+		if !KnownAgentKinds[agent.Kind] {
+			return fmt.Errorf("agent '%s' has unknown kind '%s' (must be one of: claude, gemini, codex, opencode, echo, qwen)", name, agent.Kind)
 		}
 	}
 

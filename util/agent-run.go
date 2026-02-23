@@ -547,13 +547,13 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 	}
 
 	// Determine agent to use
-	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
+	selectedAgent, err := SelectAgent(cfg, agentName)
 	if err != nil {
 		result.AgentError = err.Error()
 		return result, err
 	}
 
-	log.Debugf("using agent: %s", agentKey)
+	log.Debugf("using agent: %s (%s)", agentName, selectedAgent.Kind)
 
 	// Get POT file path
 	potFile := GetPotFilePath()
@@ -606,7 +606,7 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 
 	// Execute agent command
 	workDir := repository.WorkDir()
-	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
+	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json", strings.Join(agentCmd, " "))
 	result.AgentExecuted = true
 
 	var stdout []byte
@@ -616,10 +616,11 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 	var opencodeResult *OpenCodeJSONOutput
 	var geminiResult *GeminiJSONOutput
 
-	// Detect agent type
-	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
-	isOpencode := len(agentCmd) > 0 && agentCmd[0] == "opencode"
-	isGemini := len(agentCmd) > 0 && (agentCmd[0] == "gemini" || agentCmd[0] == "qwen")
+	// Detect agent type by Kind (validated by SelectAgent)
+	kind := selectedAgent.Kind
+	isCodex := kind == config.AgentKindCodex
+	isOpencode := kind == config.AgentKindOpencode
+	isGemini := kind == config.AgentKindGemini || kind == config.AgentKindQwen
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -811,13 +812,13 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	}
 
 	// Determine agent to use
-	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
+	selectedAgent, err := SelectAgent(cfg, agentName)
 	if err != nil {
 		result.AgentError = err.Error()
 		return result, err
 	}
 
-	log.Debugf("using agent: %s", agentKey)
+	log.Debugf("using agent: %s (%s)", agentName, selectedAgent.Kind)
 
 	// Determine PO file path
 	poFile, err = GetPoFileAbsPath(cfg, poFile)
@@ -878,7 +879,7 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	outputFormat = normalizeOutputFormat(outputFormat)
 
 	// Execute agent command
-	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
+	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json", strings.Join(agentCmd, " "))
 	result.AgentExecuted = true
 
 	var stdout []byte
@@ -888,10 +889,11 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	var opencodeResult *OpenCodeJSONOutput
 	var geminiResult *GeminiJSONOutput
 
-	// Detect agent type
-	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
-	isOpencode := len(agentCmd) > 0 && agentCmd[0] == "opencode"
-	isGemini := len(agentCmd) > 0 && (agentCmd[0] == "gemini" || agentCmd[0] == "qwen")
+	// Detect agent type by Kind (validated by SelectAgent)
+	kind := selectedAgent.Kind
+	isCodex := kind == config.AgentKindCodex
+	isOpencode := kind == config.AgentKindOpencode
+	isGemini := kind == config.AgentKindGemini || kind == config.AgentKindQwen
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -1196,13 +1198,13 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	}
 
 	// Determine agent to use
-	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
+	selectedAgent, err := SelectAgent(cfg, agentName)
 	if err != nil {
 		result.AgentError = err.Error()
 		return result, err
 	}
 
-	log.Debugf("using agent: %s", agentKey)
+	log.Debugf("using agent: %s (%s)", agentName, selectedAgent.Kind)
 
 	// Determine PO file path
 	poFile, err = GetPoFileAbsPath(cfg, poFile)
@@ -1283,7 +1285,7 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	outputFormat = normalizeOutputFormat(outputFormat)
 
 	// Execute agent command
-	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
+	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json", strings.Join(agentCmd, " "))
 	result.AgentExecuted = true
 
 	var stdout []byte
@@ -1293,10 +1295,11 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	var opencodeResult *OpenCodeJSONOutput
 	var geminiResult *GeminiJSONOutput
 
-	// Detect agent type
-	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
-	isOpencode := len(agentCmd) > 0 && agentCmd[0] == "opencode"
-	isGemini := len(agentCmd) > 0 && (agentCmd[0] == "gemini" || agentCmd[0] == "qwen")
+	// Detect agent type by Kind (validated by SelectAgent)
+	kind := selectedAgent.Kind
+	isCodex := kind == config.AgentKindCodex
+	isOpencode := kind == config.AgentKindOpencode
+	isGemini := kind == config.AgentKindGemini || kind == config.AgentKindQwen
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -1547,13 +1550,13 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 	}
 
 	// Determine agent to use
-	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
+	selectedAgent, err := SelectAgent(cfg, agentName)
 	if err != nil {
 		result.AgentError = err.Error()
 		return result, err
 	}
 
-	log.Debugf("using agent: %s", agentKey)
+	log.Debugf("using agent: %s (%s)", agentName, selectedAgent.Kind)
 
 	// Determine PO file path (convert to absolute) - use newFile as the file being reviewed
 	poFile, err := GetPoFileAbsPath(cfg, target.NewFile)
@@ -1605,17 +1608,22 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 	outputFormat = normalizeOutputFormat(outputFormat)
 
 	// Execute agent command
-	log.Infof("executing agent command: %s", strings.Join(agentCmd, " "))
+	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json", strings.Join(agentCmd, " "))
 	result.AgentExecuted = true
 
 	var stdout []byte
 	var stderr []byte
 	var jsonResult *ClaudeJSONOutput
 	var codexResult *CodexJSONOutput
+	var opencodeResult *OpenCodeJSONOutput
+	var geminiResult *GeminiJSONOutput
 	var originalStdout []byte
 
-	// Detect agent type
-	isCodex := len(agentCmd) > 0 && agentCmd[0] == "codex"
+	// Detect agent type by Kind (validated by SelectAgent)
+	kind := selectedAgent.Kind
+	isCodex := kind == config.AgentKindCodex
+	isOpencode := kind == config.AgentKindOpencode
+	isGemini := kind == config.AgentKindGemini || kind == config.AgentKindQwen
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -1639,7 +1647,22 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 			}
 			codexResult = finalResult
 			stdout = parsedStdout
+		} else if isOpencode {
+			parsedStdout, finalResult, err := ParseOpenCodeJSONLRealtime(teeReader)
+			if err != nil {
+				log.Warnf("failed to parse opencode JSONL: %v", err)
+			}
+			opencodeResult = finalResult
+			stdout = parsedStdout
+		} else if isGemini {
+			parsedStdout, finalResult, err := ParseGeminiJSONLRealtime(teeReader)
+			if err != nil {
+				log.Warnf("failed to parse gemini JSONL: %v", err)
+			}
+			geminiResult = finalResult
+			stdout = parsedStdout
 		} else {
+			// Parsing stream-json for Claude Code
 			parsedStdout, finalResult, err := ParseStreamJSONRealtime(teeReader)
 			if err != nil {
 				log.Warnf("failed to parse stream JSON: %v", err)
@@ -1689,7 +1712,7 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 		log.Infof("agent command completed successfully")
 
 		// Parse output based on agent output format (only for claude)
-		if !isCodex {
+		if !isCodex && !isOpencode {
 			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
 			if err != nil {
 				log.Warnf("failed to parse agent output: %v, using raw output", err)
@@ -1701,16 +1724,24 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 		}
 	}
 
-	// Print diagnostics if available
+	// Print diagnostics if available (including NumTurns for process display)
 	if codexResult != nil {
 		PrintAgentDiagnostics(codexResult)
-		// Extract NumTurns from diagnostics
 		if codexResult.NumTurns > 0 {
 			result.NumTurns = codexResult.NumTurns
 		}
+	} else if opencodeResult != nil {
+		PrintAgentDiagnostics(opencodeResult)
+		if opencodeResult.NumTurns > 0 {
+			result.NumTurns = opencodeResult.NumTurns
+		}
+	} else if geminiResult != nil {
+		PrintAgentDiagnostics(geminiResult)
+		if geminiResult.NumTurns > 0 {
+			result.NumTurns = geminiResult.NumTurns
+		}
 	} else if jsonResult != nil {
 		PrintAgentDiagnostics(jsonResult)
-		// Extract NumTurns from diagnostics
 		if jsonResult.NumTurns > 0 {
 			result.NumTurns = jsonResult.NumTurns
 		}
@@ -1885,6 +1916,9 @@ func CmdAgentRunReview(agentName string, target *CompareTarget) error {
 	}
 
 	fmt.Printf("\nSummary:\n")
+	if result.NumTurns > 0 {
+		fmt.Printf("  Turns: %d\n", result.NumTurns)
+	}
 	fmt.Printf("  Execution time: %s\n", elapsed.Round(time.Millisecond))
 
 	log.Infof("agent-run review completed successfully")

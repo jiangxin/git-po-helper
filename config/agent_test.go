@@ -122,7 +122,8 @@ func TestAgentConfig_Validate(t *testing.T) {
 				},
 				Agents: map[string]Agent{
 					"claude": {
-						Cmd: []string{"claude", "-p", "{prompt}"},
+						Cmd:  []string{"claude", "-p", "{prompt}"},
+						Kind: AgentKindClaude,
 					},
 				},
 			},
@@ -147,7 +148,8 @@ func TestAgentConfig_Validate(t *testing.T) {
 				},
 				Agents: map[string]Agent{
 					"claude": {
-						Cmd: []string{},
+						Cmd:  []string{},
+						Kind: AgentKindClaude,
 					},
 				},
 			},
@@ -162,12 +164,45 @@ func TestAgentConfig_Validate(t *testing.T) {
 				},
 				Agents: map[string]Agent{
 					"claude": {
-						Cmd: []string{"claude", "-p", "{prompt}"},
+						Cmd:  []string{"claude", "-p", "{prompt}"},
+						Kind: AgentKindClaude,
 					},
 				},
 			},
 			wantErr: true,
 			errMsg:  "prompt.update_pot is required",
+		},
+		{
+			name: "unknown agent kind",
+			config: &AgentConfig{
+				Prompt: PromptConfig{
+					UpdatePot: "update pot",
+				},
+				Agents: map[string]Agent{
+					"custom": {
+						Cmd:  []string{"custom", "{prompt}"},
+						Kind: "unknown",
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "agent 'custom' has unknown kind 'unknown' (must be one of: claude, gemini, codex, opencode, echo, qwen)",
+		},
+		{
+			name: "empty agent kind",
+			config: &AgentConfig{
+				Prompt: PromptConfig{
+					UpdatePot: "update pot",
+				},
+				Agents: map[string]Agent{
+					"custom": {
+						Cmd:  []string{"custom", "{prompt}"},
+						Kind: "",
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "agent 'custom' has empty kind (must be one of: claude, gemini, codex, opencode, echo, qwen)",
 		},
 	}
 
@@ -199,10 +234,12 @@ func TestMergeConfigs(t *testing.T) {
 		},
 		Agents: map[string]Agent{
 			"claude": {
-				Cmd: []string{"claude", "-p", "{prompt}"},
+				Cmd:  []string{"claude", "-p", "{prompt}"},
+				Kind: AgentKindClaude,
 			},
 			"gemini": {
-				Cmd: []string{"gemini", "--prompt", "{prompt}"},
+				Cmd:  []string{"gemini", "--prompt", "{prompt}"},
+				Kind: AgentKindGemini,
 			},
 		},
 	}
@@ -214,7 +251,8 @@ func TestMergeConfigs(t *testing.T) {
 		},
 		Agents: map[string]Agent{
 			"claude": {
-				Cmd: []string{"claude", "--new-flag", "{prompt}"},
+				Cmd:  []string{"claude", "--new-flag", "{prompt}"},
+				Kind: AgentKindClaude,
 			},
 		},
 	}
@@ -429,7 +467,8 @@ func TestApplyDefaults(t *testing.T) {
 		},
 		Agents: map[string]Agent{
 			"custom": {
-				Cmd: []string{"custom", "cmd"},
+				Cmd:  []string{"custom", "cmd"},
+				Kind: AgentKindEcho,
 			},
 		},
 	}
@@ -469,6 +508,7 @@ agent-test:
   runs: 10
 agents:
   custom-agent:
+    kind: echo
     cmd: ["custom", "agent", "{prompt}"]
 `
 
@@ -528,7 +568,8 @@ func TestApplyDefaults_ConfigAgentsOverrideDefaultTest(t *testing.T) {
 	config := &AgentConfig{
 		Agents: map[string]Agent{
 			"claude": {
-				Cmd: []string{"claude", "-p", "{prompt}"},
+				Cmd:  []string{"claude", "-p", "{prompt}"},
+				Kind: AgentKindClaude,
 			},
 		},
 	}

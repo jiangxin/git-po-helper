@@ -787,7 +787,7 @@ func CmdAgentTestTranslate(agentName, poFile string, runs int, skipConfirmation 
 // Returns scores for each run, average score, and error.
 func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.AgentConfig) ([]RunResult, float64, error) {
 	// Determine the agent to use (for saving results)
-	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
+	selectedAgent, err := SelectAgent(cfg, agentName)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -857,7 +857,7 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 		}
 
 		// Save translation results to output directory (ignore errors)
-		if err := SaveTranslateResults(agentKey, runNum, poFile, nil, nil); err != nil {
+		if err := SaveTranslateResults(agentName, runNum, poFile, nil, nil); err != nil {
 			log.Warnf("run %d: failed to save translation results: %v", runNum, err)
 			// Continue even if saving results fails
 		}
@@ -879,7 +879,7 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 // and accumulates scores. Returns scores for each run, average score, and error.
 func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, runs int) ([]RunResult, float64, error) {
 	// Determine the agent to use (for saving results)
-	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
+	selectedAgent, err := SelectAgent(cfg, agentName)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -973,7 +973,7 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 		if reviewedFile == "" {
 			reviewedFile = poFile
 		}
-		if err := SaveReviewResults(agentKey, runNum, reviewedFile, agentResult.ReviewJSONPath, agentResult.AgentStdout, agentResult.AgentStderr); err != nil {
+		if err := SaveReviewResults(agentName, runNum, reviewedFile, agentResult.ReviewJSONPath, agentResult.AgentStdout, agentResult.AgentStderr); err != nil {
 			log.Warnf("run %d: failed to save review results: %v", runNum, err)
 			// Continue even if saving results fails
 		}

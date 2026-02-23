@@ -69,6 +69,7 @@ prompt:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 
 	# Remove any previous mock agent comments
@@ -94,6 +95,7 @@ prompt:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 
 	# Remove any previous mock agent comments
@@ -126,6 +128,7 @@ agent-test:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 
 	# Remove any previous mock agent comments
@@ -162,6 +165,7 @@ agent-test:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 
 	# Remove any previous mock agent comments
@@ -196,6 +200,7 @@ agent-test:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 
 	# Remove any previous mock agent comments
@@ -229,6 +234,7 @@ agent-test:
 agents:
   failing:
     cmd: ["$PWD/failing-agent"]
+    kind: echo
 EOF
 
 	git -C workdir $HELPER agent-test --dangerously-remove-po-directory update-pot >out 2>&1 &&
@@ -256,6 +262,7 @@ agent-test:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}", "{source}"]
+    kind: echo
 EOF
 
 	# Remove any previous mock agent comments from zh_CN.po
@@ -283,6 +290,7 @@ agent-test:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}"]
+    kind: echo
 EOF
 
 	# Remove any previous mock agent comments
@@ -315,6 +323,7 @@ agent-test:
 agents:
   mock:
     cmd: ["$PWD/mock-agent", "--prompt", "{prompt}", "{source}"]
+    kind: echo
 EOF
 
 	# Remove any previous mock agent comments from zh_CN.po
