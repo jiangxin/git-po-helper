@@ -535,6 +535,47 @@ func GetPoFileRelPath(cfg *config.AgentConfig, poFile string) (string, error) {
 	return relPath, nil
 }
 
+// parseStreamByKind parses agent stream output based on kind, returns stdout and unified result.
+func parseStreamByKind(kind string, reader io.Reader) (stdout []byte, streamResult AgentStreamResult, err error) {
+	switch kind {
+	case config.AgentKindCodex:
+		parsed, res, e := ParseCodexJSONLRealtime(reader)
+		if e != nil {
+			log.Warnf("failed to parse codex JSONL: %v", e)
+		}
+		return parsed, res, e
+	case config.AgentKindOpencode:
+		parsed, res, e := ParseOpenCodeJSONLRealtime(reader)
+		if e != nil {
+			log.Warnf("failed to parse opencode JSONL: %v", e)
+		}
+		return parsed, res, e
+	case config.AgentKindGemini, config.AgentKindQwen:
+		parsed, res, e := ParseGeminiJSONLRealtime(reader)
+		if e != nil {
+			log.Warnf("failed to parse gemini JSONL: %v", e)
+		}
+		return parsed, res, e
+	default:
+		parsed, res, e := ParseClaudeStreamJSONRealtime(reader)
+		if e != nil {
+			log.Warnf("failed to parse stream JSON: %v", e)
+		}
+		return parsed, res, e
+	}
+}
+
+// applyAgentDiagnostics prints diagnostics and extracts NumTurns from streamResult.
+func applyAgentDiagnostics(result *AgentRunResult, streamResult AgentStreamResult) {
+	if streamResult == nil {
+		return
+	}
+	PrintAgentDiagnostics(streamResult)
+	if n := streamResult.GetNumTurns(); n > 0 {
+		result.NumTurns = n
+	}
+}
+
 // RunAgentUpdatePot executes a single agent-run update-pot operation.
 // It performs pre-validation, executes the agent command, performs post-validation,
 // and validates POT file syntax. Returns a result structure with detailed information.
@@ -611,16 +652,11 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 
 	var stdout []byte
 	var stderr []byte
-	var jsonResult *ClaudeJSONOutput
-	var codexResult *CodexJSONOutput
-	var opencodeResult *OpenCodeJSONOutput
-	var geminiResult *GeminiJSONOutput
+	var streamResult AgentStreamResult
 
-	// Detect agent type by Kind (validated by SelectAgent)
 	kind := selectedAgent.Kind
 	isCodex := kind == config.AgentKindCodex
 	isOpencode := kind == config.AgentKindOpencode
-	isGemini := kind == config.AgentKindGemini || kind == config.AgentKindQwen
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -631,40 +667,8 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 		}
 		defer stdoutReader.Close()
 
-		// Parse stream in real-time based on agent type
-		if isCodex {
-			parsedStdout, finalResult, err := ParseCodexJSONLRealtime(stdoutReader)
-			if err != nil {
-				log.Warnf("failed to parse codex JSONL: %v", err)
-			}
-			codexResult = finalResult
-			stdout = parsedStdout
-		} else if isOpencode {
-			parsedStdout, finalResult, err := ParseOpenCodeJSONLRealtime(stdoutReader)
-			if err != nil {
-				log.Warnf("failed to parse opencode JSONL: %v", err)
-			}
-			opencodeResult = finalResult
-			stdout = parsedStdout
-		} else if isGemini {
-			// Parsing stream-json for Gemini-CLI
-			parsedStdout, finalResult, err := ParseGeminiJSONLRealtime(stdoutReader)
-			if err != nil {
-				log.Warnf("failed to parse gemini JSONL: %v", err)
-			}
-			geminiResult = finalResult
-			stdout = parsedStdout
-		} else {
-			// Parsing stream-json for Claude Code
-			parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
-			if err != nil {
-				log.Warnf("failed to parse stream JSON: %v", err)
-			}
-			jsonResult = finalResult
-			stdout = parsedStdout
-		}
+		stdout, streamResult, _ = parseStreamByKind(kind, stdoutReader)
 
-		// Wait for command to complete and get stderr
 		waitErr := cmdProcess.Wait()
 		stderr = stderrBuf.Bytes()
 
@@ -679,29 +683,22 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 	} else {
-		// Use regular execution for other formats
 		var err error
 		stdout, stderr, err = ExecuteAgentCommand(agentCmd, workDir)
 		if err != nil {
-			// Log stderr if available (debug level to avoid leaking sensitive details at normal verbosity)
 			if len(stderr) > 0 {
 				log.Debugf("agent command stderr: %s", string(stderr))
 			}
-			// Log stdout if available (might contain useful info even on error)
 			if len(stdout) > 0 {
 				log.Debugf("agent command stdout: %s", string(stdout))
 			}
-
-			// Store a summarized error message without embedding full stderr
 			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", err)
-
 			log.Errorf("agent command execution failed: %v", err)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 		}
 		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 
-		// Parse output based on agent output format (only for claude)
 		if !isCodex && !isOpencode {
 			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
 			if err != nil {
@@ -709,37 +706,12 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 				parsedStdout = stdout
 			} else {
 				stdout = parsedStdout
-				jsonResult = parsedResult
+				streamResult = parsedResult
 			}
 		}
 	}
 
-	// Print diagnostics if available
-	if codexResult != nil {
-		PrintAgentDiagnostics(codexResult)
-		// Extract NumTurns from diagnostics
-		if codexResult.NumTurns > 0 {
-			result.NumTurns = codexResult.NumTurns
-		}
-	} else if opencodeResult != nil {
-		PrintAgentDiagnostics(opencodeResult)
-		// Extract NumTurns from diagnostics
-		if opencodeResult.NumTurns > 0 {
-			result.NumTurns = opencodeResult.NumTurns
-		}
-	} else if geminiResult != nil {
-		PrintAgentDiagnostics(geminiResult)
-		// Extract NumTurns from diagnostics
-		if geminiResult.NumTurns > 0 {
-			result.NumTurns = geminiResult.NumTurns
-		}
-	} else if jsonResult != nil {
-		PrintAgentDiagnostics(jsonResult)
-		// Extract NumTurns from diagnostics
-		if jsonResult.NumTurns > 0 {
-			result.NumTurns = jsonResult.NumTurns
-		}
-	}
+	applyAgentDiagnostics(result, streamResult)
 
 	// Log output if verbose
 	if len(stdout) > 0 {
@@ -884,16 +856,11 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 
 	var stdout []byte
 	var stderr []byte
-	var jsonResult *ClaudeJSONOutput
-	var codexResult *CodexJSONOutput
-	var opencodeResult *OpenCodeJSONOutput
-	var geminiResult *GeminiJSONOutput
+	var streamResult AgentStreamResult
 
-	// Detect agent type by Kind (validated by SelectAgent)
 	kind := selectedAgent.Kind
 	isCodex := kind == config.AgentKindCodex
 	isOpencode := kind == config.AgentKindOpencode
-	isGemini := kind == config.AgentKindGemini || kind == config.AgentKindQwen
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -904,40 +871,8 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 		}
 		defer stdoutReader.Close()
 
-		// Parse stream in real-time based on agent type
-		if isCodex {
-			parsedStdout, finalResult, err := ParseCodexJSONLRealtime(stdoutReader)
-			if err != nil {
-				log.Warnf("failed to parse codex JSONL: %v", err)
-			}
-			codexResult = finalResult
-			stdout = parsedStdout
-		} else if isOpencode {
-			parsedStdout, finalResult, err := ParseOpenCodeJSONLRealtime(stdoutReader)
-			if err != nil {
-				log.Warnf("failed to parse opencode JSONL: %v", err)
-			}
-			opencodeResult = finalResult
-			stdout = parsedStdout
-		} else if isGemini {
-			// Parsing stream-json for Gemini-CLI
-			parsedStdout, finalResult, err := ParseGeminiJSONLRealtime(stdoutReader)
-			if err != nil {
-				log.Warnf("failed to parse gemini JSONL: %v", err)
-			}
-			geminiResult = finalResult
-			stdout = parsedStdout
-		} else {
-			// Parsing stream-json for Claude Code
-			parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
-			if err != nil {
-				log.Warnf("failed to parse stream JSON: %v", err)
-			}
-			jsonResult = finalResult
-			stdout = parsedStdout
-		}
+		stdout, streamResult, _ = parseStreamByKind(kind, stdoutReader)
 
-		// Wait for command to complete and get stderr
 		waitErr := cmdProcess.Wait()
 		stderr = stderrBuf.Bytes()
 
@@ -952,29 +887,22 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 	} else {
-		// Use regular execution for other formats
 		var err error
 		stdout, stderr, err = ExecuteAgentCommand(agentCmd, workDir)
 		if err != nil {
-			// Log stderr if available (debug level to avoid leaking sensitive details at normal verbosity)
 			if len(stderr) > 0 {
 				log.Debugf("agent command stderr: %s", string(stderr))
 			}
-			// Log stdout if available (might contain useful info even on error)
 			if len(stdout) > 0 {
 				log.Debugf("agent command stdout: %s", string(stdout))
 			}
-
-			// Store a summarized error message without embedding full stderr
 			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", err)
-
 			log.Errorf("agent command execution failed: %v", err)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 		}
 		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 
-		// Parse output based on agent output format (only for claude)
 		if !isCodex && !isOpencode {
 			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
 			if err != nil {
@@ -982,37 +910,12 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 				parsedStdout = stdout
 			} else {
 				stdout = parsedStdout
-				jsonResult = parsedResult
+				streamResult = parsedResult
 			}
 		}
 	}
 
-	// Print diagnostics if available
-	if codexResult != nil {
-		PrintAgentDiagnostics(codexResult)
-		// Extract NumTurns from diagnostics
-		if codexResult.NumTurns > 0 {
-			result.NumTurns = codexResult.NumTurns
-		}
-	} else if opencodeResult != nil {
-		PrintAgentDiagnostics(opencodeResult)
-		// Extract NumTurns from diagnostics
-		if opencodeResult.NumTurns > 0 {
-			result.NumTurns = opencodeResult.NumTurns
-		}
-	} else if geminiResult != nil {
-		PrintAgentDiagnostics(geminiResult)
-		// Extract NumTurns from diagnostics
-		if geminiResult.NumTurns > 0 {
-			result.NumTurns = geminiResult.NumTurns
-		}
-	} else if jsonResult != nil {
-		PrintAgentDiagnostics(jsonResult)
-		// Extract NumTurns from diagnostics
-		if jsonResult.NumTurns > 0 {
-			result.NumTurns = jsonResult.NumTurns
-		}
-	}
+	applyAgentDiagnostics(result, streamResult)
 
 	// Log output if verbose
 	if len(stdout) > 0 {
@@ -1290,16 +1193,11 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 
 	var stdout []byte
 	var stderr []byte
-	var jsonResult *ClaudeJSONOutput
-	var codexResult *CodexJSONOutput
-	var opencodeResult *OpenCodeJSONOutput
-	var geminiResult *GeminiJSONOutput
+	var streamResult AgentStreamResult
 
-	// Detect agent type by Kind (validated by SelectAgent)
 	kind := selectedAgent.Kind
 	isCodex := kind == config.AgentKindCodex
 	isOpencode := kind == config.AgentKindOpencode
-	isGemini := kind == config.AgentKindGemini || kind == config.AgentKindQwen
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -1310,40 +1208,8 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 		}
 		defer stdoutReader.Close()
 
-		// Parse stream in real-time based on agent type
-		if isCodex {
-			parsedStdout, finalResult, err := ParseCodexJSONLRealtime(stdoutReader)
-			if err != nil {
-				log.Warnf("failed to parse codex JSONL: %v", err)
-			}
-			codexResult = finalResult
-			stdout = parsedStdout
-		} else if isOpencode {
-			parsedStdout, finalResult, err := ParseOpenCodeJSONLRealtime(stdoutReader)
-			if err != nil {
-				log.Warnf("failed to parse opencode JSONL: %v", err)
-			}
-			opencodeResult = finalResult
-			stdout = parsedStdout
-		} else if isGemini {
-			// Parsing stream-json for Gemini-CLI
-			parsedStdout, finalResult, err := ParseGeminiJSONLRealtime(stdoutReader)
-			if err != nil {
-				log.Warnf("failed to parse gemini JSONL: %v", err)
-			}
-			geminiResult = finalResult
-			stdout = parsedStdout
-		} else {
-			// Parsing stream-json for Claude Code
-			parsedStdout, finalResult, err := ParseStreamJSONRealtime(stdoutReader)
-			if err != nil {
-				log.Warnf("failed to parse stream JSON: %v", err)
-			}
-			jsonResult = finalResult
-			stdout = parsedStdout
-		}
+		stdout, streamResult, _ = parseStreamByKind(kind, stdoutReader)
 
-		// Wait for command to complete and get stderr
 		waitErr := cmdProcess.Wait()
 		stderr = stderrBuf.Bytes()
 
@@ -1358,29 +1224,22 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 	} else {
-		// Use regular execution for other formats
 		var err error
 		stdout, stderr, err = ExecuteAgentCommand(agentCmd, workDir)
 		if err != nil {
-			// Log stderr if available (debug level to avoid leaking sensitive details at normal verbosity)
 			if len(stderr) > 0 {
 				log.Debugf("agent command stderr: %s", string(stderr))
 			}
-			// Log stdout if available (might contain useful info even on error)
 			if len(stdout) > 0 {
 				log.Debugf("agent command stdout: %s", string(stdout))
 			}
-
-			// Store a summarized error message without embedding full stderr
 			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", err)
-
 			log.Errorf("agent command execution failed: %v", err)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 		}
 		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 
-		// Parse output based on agent output format (only for claude)
 		if !isCodex && !isOpencode {
 			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
 			if err != nil {
@@ -1388,37 +1247,12 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 				parsedStdout = stdout
 			} else {
 				stdout = parsedStdout
-				jsonResult = parsedResult
+				streamResult = parsedResult
 			}
 		}
 	}
 
-	// Print diagnostics if available
-	if codexResult != nil {
-		PrintAgentDiagnostics(codexResult)
-		// Extract NumTurns from diagnostics
-		if codexResult.NumTurns > 0 {
-			result.NumTurns = codexResult.NumTurns
-		}
-	} else if opencodeResult != nil {
-		PrintAgentDiagnostics(opencodeResult)
-		// Extract NumTurns from diagnostics
-		if opencodeResult.NumTurns > 0 {
-			result.NumTurns = opencodeResult.NumTurns
-		}
-	} else if geminiResult != nil {
-		PrintAgentDiagnostics(geminiResult)
-		// Extract NumTurns from diagnostics
-		if geminiResult.NumTurns > 0 {
-			result.NumTurns = geminiResult.NumTurns
-		}
-	} else if jsonResult != nil {
-		PrintAgentDiagnostics(jsonResult)
-		// Extract NumTurns from diagnostics
-		if jsonResult.NumTurns > 0 {
-			result.NumTurns = jsonResult.NumTurns
-		}
-	}
+	applyAgentDiagnostics(result, streamResult)
 
 	// Log output if verbose
 	if len(stdout) > 0 {
@@ -1613,17 +1447,12 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 
 	var stdout []byte
 	var stderr []byte
-	var jsonResult *ClaudeJSONOutput
-	var codexResult *CodexJSONOutput
-	var opencodeResult *OpenCodeJSONOutput
-	var geminiResult *GeminiJSONOutput
+	var streamResult AgentStreamResult
 	var originalStdout []byte
 
-	// Detect agent type by Kind (validated by SelectAgent)
 	kind := selectedAgent.Kind
 	isCodex := kind == config.AgentKindCodex
 	isOpencode := kind == config.AgentKindOpencode
-	isGemini := kind == config.AgentKindGemini || kind == config.AgentKindQwen
 
 	// Use streaming execution for json format (treated as stream-json)
 	if outputFormat == "json" {
@@ -1634,45 +1463,13 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 		}
 		defer stdoutReader.Close()
 
-		// For review, we need to capture the original stream for JSON extraction
-		// Read all output into a buffer while also parsing in real-time
+		// For review, capture the original stream for JSON extraction
 		var stdoutBuf bytes.Buffer
 		teeReader := io.TeeReader(stdoutReader, &stdoutBuf)
 
-		// Parse stream in real-time based on agent type
-		if isCodex {
-			parsedStdout, finalResult, err := ParseCodexJSONLRealtime(teeReader)
-			if err != nil {
-				log.Warnf("failed to parse codex JSONL: %v", err)
-			}
-			codexResult = finalResult
-			stdout = parsedStdout
-		} else if isOpencode {
-			parsedStdout, finalResult, err := ParseOpenCodeJSONLRealtime(teeReader)
-			if err != nil {
-				log.Warnf("failed to parse opencode JSONL: %v", err)
-			}
-			opencodeResult = finalResult
-			stdout = parsedStdout
-		} else if isGemini {
-			parsedStdout, finalResult, err := ParseGeminiJSONLRealtime(teeReader)
-			if err != nil {
-				log.Warnf("failed to parse gemini JSONL: %v", err)
-			}
-			geminiResult = finalResult
-			stdout = parsedStdout
-		} else {
-			// Parsing stream-json for Claude Code
-			parsedStdout, finalResult, err := ParseStreamJSONRealtime(teeReader)
-			if err != nil {
-				log.Warnf("failed to parse stream JSON: %v", err)
-			}
-			jsonResult = finalResult
-			stdout = parsedStdout
-		}
+		stdout, streamResult, _ = parseStreamByKind(kind, teeReader)
 		originalStdout = stdoutBuf.Bytes()
 
-		// Wait for command to complete and get stderr
 		waitErr := cmdProcess.Wait()
 		stderr = stderrBuf.Bytes()
 
@@ -1687,7 +1484,6 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 	} else {
-		// Use regular execution for other formats
 		var err error
 		stdout, stderr, err = ExecuteAgentCommand(agentCmd, workDir)
 		originalStdout = stdout
@@ -1695,15 +1491,12 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 		result.AgentStderr = stderr
 
 		if err != nil {
-			// Log stderr if available
 			if len(stderr) > 0 {
 				log.Debugf("agent command stderr: %s", string(stderr))
 			}
-			// Log stdout if available
 			if len(stdout) > 0 {
 				log.Debugf("agent command stdout: %s", string(stdout))
 			}
-
 			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", err)
 			log.Errorf("agent command execution failed: %v", err)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
@@ -1711,7 +1504,6 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 
-		// Parse output based on agent output format (only for claude)
 		if !isCodex && !isOpencode {
 			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
 			if err != nil {
@@ -1719,33 +1511,12 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 				parsedStdout = stdout
 			} else {
 				stdout = parsedStdout
-				jsonResult = parsedResult
+				streamResult = parsedResult
 			}
 		}
 	}
 
-	// Print diagnostics if available (including NumTurns for process display)
-	if codexResult != nil {
-		PrintAgentDiagnostics(codexResult)
-		if codexResult.NumTurns > 0 {
-			result.NumTurns = codexResult.NumTurns
-		}
-	} else if opencodeResult != nil {
-		PrintAgentDiagnostics(opencodeResult)
-		if opencodeResult.NumTurns > 0 {
-			result.NumTurns = opencodeResult.NumTurns
-		}
-	} else if geminiResult != nil {
-		PrintAgentDiagnostics(geminiResult)
-		if geminiResult.NumTurns > 0 {
-			result.NumTurns = geminiResult.NumTurns
-		}
-	} else if jsonResult != nil {
-		PrintAgentDiagnostics(jsonResult)
-		if jsonResult.NumTurns > 0 {
-			result.NumTurns = jsonResult.NumTurns
-		}
-	}
+	applyAgentDiagnostics(result, streamResult)
 
 	// For review, save the original stdout (before parsing) for JSON extraction
 	result.AgentStdout = originalStdout

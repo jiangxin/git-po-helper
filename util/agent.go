@@ -996,6 +996,44 @@ type GeminiJSONOutput struct {
 	SessionID     string       `json:"session_id"`
 }
 
+// AgentStreamResult is the common interface for agent stream parsing results.
+// Implemented by *CodexJSONOutput, *OpenCodeJSONOutput, *GeminiJSONOutput, *ClaudeJSONOutput.
+type AgentStreamResult interface {
+	GetNumTurns() int
+}
+
+// GetNumTurns implements AgentStreamResult for ClaudeJSONOutput.
+func (r *ClaudeJSONOutput) GetNumTurns() int {
+	if r == nil {
+		return 0
+	}
+	return r.NumTurns
+}
+
+// GetNumTurns implements AgentStreamResult for CodexJSONOutput.
+func (r *CodexJSONOutput) GetNumTurns() int {
+	if r == nil {
+		return 0
+	}
+	return r.NumTurns
+}
+
+// GetNumTurns implements AgentStreamResult for OpenCodeJSONOutput.
+func (r *OpenCodeJSONOutput) GetNumTurns() int {
+	if r == nil {
+		return 0
+	}
+	return r.NumTurns
+}
+
+// GetNumTurns implements AgentStreamResult for GeminiJSONOutput.
+func (r *GeminiJSONOutput) GetNumTurns() int {
+	if r == nil {
+		return 0
+	}
+	return r.NumTurns
+}
+
 // ParseAgentOutput parses agent output based on the output format.
 // Returns the actual content (result text) and the parsed JSON result.
 // For claude, json format is treated as stream-json (JSONL format).
@@ -1057,11 +1095,11 @@ func parseStreamJSON(output []byte) (content []byte, result *ClaudeJSONOutput, e
 	return []byte(resultBuilder.String()), lastResult, nil
 }
 
-// ParseStreamJSONRealtime parses stream JSON format in real-time, displaying messages as they arrive.
+// ParseClaudeStreamJSONRealtime parses stream JSON format in real-time, displaying messages as they arrive.
 // It reads from the provided reader line by line, parses each JSON object, and displays
 // system, assistant, and result messages in real-time.
 // Returns the final result message and accumulated result text.
-func ParseStreamJSONRealtime(reader io.Reader) (content []byte, result *ClaudeJSONOutput, err error) {
+func ParseClaudeStreamJSONRealtime(reader io.Reader) (content []byte, result *ClaudeJSONOutput, err error) {
 	var resultBuilder strings.Builder
 	var lastResult *ClaudeJSONOutput
 	var turnCount int
