@@ -49,9 +49,9 @@ msgstr "你好"
 	os.Stdout = w
 	defer func() { os.Stdout = oldStdout }()
 
-	got := PoFileDiffStat(srcPath, destPath)
-	if !got {
-		t.Errorf("PoFileDiffStat returned false, want true")
+	err := PoFileDiffStat(srcPath, destPath)
+	if err != nil {
+		t.Errorf("PoFileDiffStat returned error: %v", err)
 	}
 
 	w.Close()
@@ -59,8 +59,8 @@ msgstr "你好"
 	buf.ReadFrom(r)
 	output := buf.String()
 
-	if !strings.Contains(output, "Diff between") {
-		t.Errorf("output should contain 'Diff between', got: %s", output)
+	if output == "" {
+		t.Errorf("output should not be empty")
 	}
 	if !strings.Contains(output, "1 new") {
 		t.Errorf("output should contain '1 new' (one new entry in dest), got: %s", output)
@@ -89,9 +89,9 @@ msgstr "你好"
 	os.Stdout = w
 	defer func() { os.Stdout = oldStdout }()
 
-	got := PoFileDiffStat(path, path)
-	if !got {
-		t.Errorf("PoFileDiffStat returned false, want true")
+	err := PoFileDiffStat(path, path)
+	if err != nil {
+		t.Errorf("PoFileDiffStat returned error: %v", err)
 	}
 
 	w.Close()
@@ -99,8 +99,9 @@ msgstr "你好"
 	buf.ReadFrom(r)
 	output := buf.String()
 
-	if !strings.Contains(output, "Nothing changed") {
-		t.Errorf("output should contain 'Nothing changed', got: %s", output)
+	// When nothing changed, "Nothing changed." is printed to stderr; stdout is empty
+	if output != "" {
+		t.Errorf("output should be empty when files are identical, got: %s", output)
 	}
 }
 
@@ -168,9 +169,9 @@ msgstr "你好"
 	src := FileRevision{Revision: "HEAD~1", File: "po/zh_CN.po"}
 	dest := FileRevision{Revision: "HEAD", File: "po/zh_CN.po"}
 
-	got := PoFileRevisionDiffStat(src, dest)
-	if !got {
-		t.Errorf("PoFileRevisionDiffStat returned false, want true")
+	err = PoFileRevisionDiffStat(src, dest)
+	if err != nil {
+		t.Errorf("PoFileRevisionDiffStat returned error: %v", err)
 	}
 
 	w.Close()
@@ -178,8 +179,8 @@ msgstr "你好"
 	buf.ReadFrom(r)
 	output := buf.String()
 
-	if !strings.Contains(output, "Diff between") {
-		t.Errorf("output should contain 'Diff between', got: %s", output)
+	if output == "" {
+		t.Errorf("output should not be empty")
 	}
 	if !strings.Contains(output, "1 new") {
 		t.Errorf("output should contain '1 new', got: %s", output)

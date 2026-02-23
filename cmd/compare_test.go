@@ -58,8 +58,16 @@ msgstr "你好"
 	runGit("add", "po/")
 	runGit("commit", "-m", "initial")
 
-	// Modify zh_CN.po for HEAD vs worktree tests
+	// Second commit for HEAD~..HEAD tests
 	modifiedContent := poContent + "\nmsgid \"World\"\nmsgstr \"世界\"\n"
+	if err := os.WriteFile(filepath.Join(poDir, "zh_CN.po"), []byte(modifiedContent), 0644); err != nil {
+		t.Fatalf("failed to modify zh_CN.po: %v", err)
+	}
+	runGit("add", "po/zh_CN.po")
+	runGit("commit", "-m", "add World")
+
+	// Modify zh_CN.po for HEAD vs worktree tests
+	modifiedContent = modifiedContent + "\nmsgid \"Foo\"\nmsgstr \"富\"\n"
 	if err := os.WriteFile(filepath.Join(poDir, "zh_CN.po"), []byte(modifiedContent), 0644); err != nil {
 		t.Fatalf("failed to modify zh_CN.po: %v", err)
 	}
@@ -322,8 +330,8 @@ func TestCompareCommand_StatAndNewEntriesOutput(t *testing.T) {
 		t.Run("stat", func(t *testing.T) {
 			requireMsgcmp(t)
 			output := runCompareStatWithOptions(t, tmpDir, "HEAD~..HEAD", "", "", []string{"po/zh_CN.po"})
-			if !strings.Contains(output, "Diff between") {
-				t.Errorf("output should contain 'Diff between', got: %s", output)
+			if output == "" {
+				t.Errorf("output should not be empty")
 			}
 			newCount, removedCount := parseStatOutput(output)
 			if newCount != 2 {
@@ -446,8 +454,8 @@ func TestCompareCommand_StatAndNewEntriesOutput(t *testing.T) {
 		t.Run("stat", func(t *testing.T) {
 			requireMsgcmp(t)
 			output := runCompareStatWithOptions(t, tmpDir, "", "", "", []string{})
-			if !strings.Contains(output, "Diff between") {
-				t.Errorf("output should contain 'Diff between', got: %s", output)
+			if output == "" {
+				t.Errorf("output should not be empty")
 			}
 			newCount, removedCount := parseStatOutput(output)
 			if newCount != 1 || removedCount != 1 {
@@ -491,8 +499,8 @@ func TestCompareCommand_StatAndNewEntriesOutput(t *testing.T) {
 		t.Run("stat", func(t *testing.T) {
 			requireMsgcmp(t)
 			output := runCompareStatWithOptions(t, tmpDir, "", "", "", []string{"po/zh_CN.po", "po/zh_TW.po"})
-			if !strings.Contains(output, "Diff between") {
-				t.Errorf("output should contain 'Diff between', got: %s", output)
+			if output == "" {
+				t.Errorf("output should not be empty")
 			}
 			newCount, removedCount := parseStatOutput(output)
 			if newCount != 0 {
@@ -518,9 +526,10 @@ func TestCompareCommand_StatAndNewEntriesOutput(t *testing.T) {
 	t.Run("HEAD~..HEAD zh_TW: no change (same in both commits)", func(t *testing.T) {
 		t.Run("stat", func(t *testing.T) {
 			requireMsgcmp(t)
+			// When nothing changed, compare --stat returns error; output may be empty
 			output := runCompareStatWithOptions(t, tmpDir, "HEAD~..HEAD", "", "", []string{"po/zh_TW.po"})
-			if !strings.Contains(output, "Nothing changed") {
-				t.Errorf("zh_TW unchanged between commits, expected 'Nothing changed', got: %s", output)
+			if output != "" {
+				t.Errorf("zh_TW unchanged, expected empty output, got: %s", output)
 			}
 		})
 		t.Run("newentries", func(t *testing.T) {

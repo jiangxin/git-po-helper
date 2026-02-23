@@ -76,16 +76,16 @@ func checkoutTmpfile(f *FileRevision) error {
 }
 
 // PoFileRevisionDiffStat implements diff on two files with specific revision.
-func PoFileRevisionDiffStat(src, dest FileRevision) bool {
+func PoFileRevisionDiffStat(src, dest FileRevision) error {
 	var (
 		srcFile  string
 		destFile string
 	)
 	if err := checkoutTmpfile(&src); err != nil {
-		log.Errorf("fail to checkout %s of revision %s: %s", src.File, src.Revision, err)
+		return fmt.Errorf("fail to checkout %s of revision %s: %s", src.File, src.Revision, err)
 	}
 	if err := checkoutTmpfile(&dest); err != nil {
-		log.Errorf("fail to checkout %s of revision %s: %s", dest.File, dest.Revision, err)
+		return fmt.Errorf("fail to checknut %s of revision %s: %s", dest.File, dest.Revision, err)
 	}
 	if src.Tmpfile != "" {
 		srcFile = src.Tmpfile
@@ -109,16 +109,16 @@ func PoFileRevisionDiffStat(src, dest FileRevision) bool {
 }
 
 // PoFileDiffStat implements diff on two files.
-func PoFileDiffStat(src string, dest string) bool {
+func PoFileDiffStat(src string, dest string) error {
 	var (
 		add int32
 		del int32
 	)
 	if !Exist(src) {
-		log.Fatalf(`file "%s" not exist`, src)
+		return fmt.Errorf(`file "%s" not exist`, src)
 	}
 	if !Exist(dest) {
-		log.Fatalf(`file "%s" not exist`, dest)
+		return fmt.Errorf(`file "%s" not exist`, dest)
 	}
 
 	cmd := exec.Command("msgcmp",
@@ -131,11 +131,11 @@ func PoFileDiffStat(src string, dest string) bool {
 	cmd.Env = append(cmd.Env, "LANGUAGE=C")
 	out, err := cmd.StderrPipe()
 	if err != nil {
-		log.Fatalf("fail to run msgcmp: %s", err)
+		return fmt.Errorf("fail to run msgcmp: %s", err)
 	}
 	log.Debugf("running diff command: %s", cmd.String())
 	if err := cmd.Start(); err != nil {
-		log.Fatalf("fail to start msgcmp: %s", err)
+		return fmt.Errorf("fail to start msgcmp: %s", err)
 	}
 	reader := bufio.NewReader(out)
 	for {
@@ -166,12 +166,10 @@ func PoFileDiffStat(src string, dest string) bool {
 		}
 		diffStat += fmt.Sprintf("%d removed", del)
 	}
-	fmt.Printf("# Diff between %s and %s\n",
-		filepath.Base(src), filepath.Base(dest))
-	if diffStat == "" {
-		fmt.Println("\tNothing changed.")
+	if diffStat != "" {
+		fmt.Println(diffStat)
+	} else {
+		fmt.Fprintln(os.Stderr, "Nothing changed.")
 	}
-
-	fmt.Println(diffStat)
-	return true
+	return nil
 }

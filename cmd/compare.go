@@ -90,8 +90,8 @@ func (v compareCommand) executeStat(oldCommit, oldFile, newCommit, newFile strin
 	newFileRevision.Revision = newCommit
 	newFileRevision.File = newFile
 
-	if !util.PoFileRevisionDiffStat(oldFileRevision, newFileRevision) {
-		return errExecute
+	if err := util.PoFileRevisionDiffStat(oldFileRevision, newFileRevision); err != nil {
+		return newUserErrorF("%v", err)
 	}
 	return nil
 }
