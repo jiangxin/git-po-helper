@@ -198,7 +198,7 @@ func ParseReviewJSON(jsonData []byte) (*ReviewJSONResult, error) {
 	log.Debugf("JSON parsed successfully: total_entries=%d, issues_count=%d", review.TotalEntries, len(review.Issues))
 
 	// Note: We allow total_entries to be 0 here because it will be recalculated later
-	// from the actual reviewInputPath file to ensure accuracy.
+	// from the actual file to ensure accuracy.
 	// The validation of total_entries > 0 will happen after recalculation if needed.
 
 	// Validate issues array
@@ -1536,7 +1536,11 @@ func copyFile(src, dst string) error {
 // Returns a result structure with detailed information.
 // The agentTest parameter is provided for consistency, though this method
 // does not use AgentTest configuration.
-func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since string, agentTest bool) (*AgentRunResult, error) {
+func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, agentTest bool) (*AgentRunResult, error) {
+	var (
+		workDir = repository.WorkDir()
+	)
+
 	startTime := time.Now()
 	result := &AgentRunResult{
 		Score: 0,
@@ -1551,19 +1555,8 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 
 	log.Debugf("using agent: %s", agentKey)
 
-	// Resolve poFile when not specified: use git diff to find changed po files
-	changedPoFiles, err := GetChangedPoFiles(commit, since)
-	if err != nil {
-		return result, fmt.Errorf("failed to get changed po files: %w", err)
-	}
-
-	poFile, err = ResolvePoFile(poFile, changedPoFiles)
-	if err != nil {
-		return result, err
-	}
-
-	// Determine PO file path (convert to absolute)
-	poFile, err = GetPoFileAbsPath(cfg, poFile)
+	// Determine PO file path (convert to absolute) - use newFile as the file being reviewed
+	poFile, err := GetPoFileAbsPath(cfg, target.NewFile)
 	if err != nil {
 		return result, err
 	}
@@ -1576,22 +1569,18 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 		return result, fmt.Errorf("PO file does not exist: %s\nHint: Ensure the PO file exists before running review", poFile)
 	}
 
-	workDir := repository.WorkDir()
-	poFileName := filepath.Base(poFile)
-	langCode := strings.TrimSuffix(poFileName, ".po")
-	poDir := filepath.Join(workDir, PoDir)
-
 	// Step 1: Prepare review data
 	log.Infof("preparing review data")
-	reviewInputPath := filepath.Join(poDir, fmt.Sprintf("%s-review-input.po", langCode))
-	if err := PrepareReviewData0(poFile, commit, since, reviewInputPath); err != nil {
+	reviewInputAbsPath := filepath.Join(workDir, PoDir, "review-input.po")
+	if err := PrepareReviewData(target.OldCommit, target.OldFile, target.NewCommit, target.NewFile, reviewInputAbsPath); err != nil {
 		return result, fmt.Errorf("failed to prepare review data: %w", err)
 	}
 
 	// Step 2: Copy review-input.po to review-output.po
-	reviewOutputPath := filepath.Join(poDir, fmt.Sprintf("%s-review-output.po", langCode))
+	reviewOutputPath := filepath.Join(PoDir, "review-output.po")
+	reviewOutputAbsPath := filepath.Join(workDir, reviewOutputPath)
 	log.Debugf("copying review-input.po to review-output.po")
-	if err := copyFile(reviewInputPath, reviewOutputPath); err != nil {
+	if err := copyFile(reviewInputAbsPath, reviewOutputAbsPath); err != nil {
 		return result, fmt.Errorf("failed to copy review-input to review-output: %w", err)
 	}
 
@@ -1601,15 +1590,11 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 		return result, err
 	}
 
-	// Get relative path for source placeholder
-	reviewOutputRelPath := filepath.Join(PoDir, fmt.Sprintf("%s-review-output.po", langCode))
-	sourcePath := filepath.ToSlash(reviewOutputRelPath)
-
 	log.Debugf("using review prompt: %s", prompt)
 	log.Infof("reviewing file: %s", reviewOutputPath)
 
 	// Build agent command with placeholders replaced
-	agentCmd := BuildAgentCommand(selectedAgent, prompt, sourcePath, "")
+	agentCmd := BuildAgentCommand(selectedAgent, prompt, reviewOutputPath, "")
 
 	// Determine output format
 	outputFormat := selectedAgent.Output
@@ -1781,7 +1766,7 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 	log.Debugf("parsed review JSON: total_entries=%d, issues=%d", reviewJSON.TotalEntries, len(reviewJSON.Issues))
 
 	// Recalculate total_entries from reviewInputPath file to ensure accuracy
-	totalEntries, err := countMsgidEntries(reviewInputPath)
+	totalEntries, err := countMsgidEntries(reviewInputAbsPath)
 	if err != nil {
 		log.Errorf("failed to count msgid entries in review input file: %v", err)
 	} else {
@@ -1789,7 +1774,8 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 			// Subtract 1 to account for the header entry
 			totalEntries -= 1
 		}
-		log.Debugf("updating total_entries from %d to %d based on actual msgid count in %s", reviewJSON.TotalEntries, totalEntries, reviewInputPath)
+		log.Debugf("updating total_entries from %d to %d based on actual msgid count in %s",
+			reviewJSON.TotalEntries, totalEntries, reviewInputAbsPath)
 		reviewJSON.TotalEntries = totalEntries
 	}
 
@@ -1828,7 +1814,7 @@ func RunAgentReview(cfg *config.AgentConfig, agentName, poFile, commit, since st
 
 // CmdAgentRunReview implements the agent-run review command logic.
 // It loads configuration and calls RunAgentReview, then handles errors appropriately.
-func CmdAgentRunReview(agentName, poFile, commit, since string) error {
+func CmdAgentRunReview(agentName string, target *CompareTarget) error {
 	// Load configuration
 	log.Debugf("loading agent configuration")
 	cfg, err := config.LoadAgentConfig()
@@ -1839,7 +1825,7 @@ func CmdAgentRunReview(agentName, poFile, commit, since string) error {
 
 	startTime := time.Now()
 
-	result, err := RunAgentReview(cfg, agentName, poFile, commit, since, false)
+	result, err := RunAgentReview(cfg, agentName, target, false)
 	if err != nil {
 		log.Errorf("failed to run agent review: %v", err)
 		return err

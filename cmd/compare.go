@@ -23,7 +23,7 @@ func (v *compareCommand) Command() *cobra.Command {
 	}
 
 	v.cmd = &cobra.Command{
-		Use:   "compare [-r revision | --commit <commit> | --since <commit>] [[<src>] <target>]",
+		Use:   "compare [-r range | --commit <commit> | --since <commit>] [[<src>] <target>]",
 		Short: "Show changes between two l10n files",
 		Long: `By default: output new or changed entries to stdout.
 With --stat: show diff statistics between two l10n file versions.

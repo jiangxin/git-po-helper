@@ -13,6 +13,7 @@ type agentTestCommand struct {
 		Agent                  string
 		Runs                   int
 		DangerouslyRemovePoDir bool
+		Range                  string
 		Commit                 string
 		Since                  string
 		Prompt                 string
@@ -252,7 +253,7 @@ Examples:
 
 	// Add review subcommand
 	reviewCmd := &cobra.Command{
-		Use:   "review [po/XX.po]",
+		Use:   "review [-r range | --commit <commit> | --since <commit>] [[<src>] <target>]",
 		Short: "Test review operation multiple times and calculate average score",
 		Long: `Test the review operation multiple times and calculate an average score.
 
@@ -263,30 +264,21 @@ via --runs or config file) and provides detailed results including:
 - Average score across all runs
 
 Review modes:
+- --range a..b: compare commit a with commit b
+- --range a..: compare commit a with working tree
 - --commit <commit>: review the changes in the specified commit
 - --since <commit>: review changes since the specified commit
-- no --commit/--since: review changes since HEAD (local changes)
+- no --range/--commit/--since: review changes since HEAD (local changes)
 
-Exactly one of --commit and --since may be specified.`,
+Exactly one of --range, --commit and --since may be specified.
+With two file arguments, compare worktree files (revisions not allowed).`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Execute in root of worktree.
-			repository.ChdirProjectRoot()
-
-			if len(args) > 1 {
-				return newUserError("review command expects at most one argument: po/XX.po")
+			target, err := util.ResolveRevisionsAndFiles(v.O.Range, v.O.Commit, v.O.Since, args)
+			if err != nil {
+				return newUserErrorF("%v", err)
 			}
-
-			if v.O.Commit != "" && v.O.Since != "" {
-				return newUserError("review command expects only one of --commit or --since")
-			}
-
-			poFile := ""
-			if len(args) == 1 {
-				poFile = args[0]
-			}
-
-			return util.CmdAgentTestReview(v.O.Agent, poFile, v.O.Runs, v.O.DangerouslyRemovePoDir, v.O.Commit, v.O.Since)
+			return util.CmdAgentTestReview(v.O.Agent, target, v.O.Runs, v.O.DangerouslyRemovePoDir)
 		},
 	}
 
@@ -298,17 +290,20 @@ Exactly one of --commit and --since may be specified.`,
 		"runs",
 		0,
 		"number of test runs (0 means use config file value or default to 5)")
+	reviewCmd.Flags().StringVarP(&v.O.Range, "range", "r", "",
+		"revision range: a..b (a and b), a.. (a and working tree), or a (a~ and a)")
 	reviewCmd.Flags().StringVar(&v.O.Commit,
 		"commit",
 		"",
-		"review changes in the specified commit")
+		"equivalent to -r <commit>^..<commit>")
 	reviewCmd.Flags().StringVar(&v.O.Since,
 		"since",
 		"",
-		"review changes since the specified commit")
+		"equivalent to -r <commit>.. (compare commit with working tree)")
 
 	_ = viper.BindPFlag("agent-test--agent", reviewCmd.Flags().Lookup("agent"))
 	_ = viper.BindPFlag("agent-test--runs", reviewCmd.Flags().Lookup("runs"))
+	_ = viper.BindPFlag("agent-test--range", reviewCmd.Flags().Lookup("range"))
 
 	// Add show-config subcommand
 	showConfigCmd := &cobra.Command{

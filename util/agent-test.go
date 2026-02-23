@@ -877,7 +877,7 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 // RunAgentTestReview runs the agent-test review operation multiple times.
 // It reuses RunAgentReview for each run, saves results to output directory,
 // and accumulates scores. Returns scores for each run, average score, and error.
-func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs int, commit, since string) ([]RunResult, float64, error) {
+func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, runs int) ([]RunResult, float64, error) {
 	// Determine the agent to use (for saving results)
 	selectedAgent, agentKey, err := SelectAgent(cfg, agentName)
 	if err != nil {
@@ -885,8 +885,8 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 	}
 	_ = selectedAgent // Avoid unused variable warning
 
-	// Determine PO file path
-	poFile, err = GetPoFileAbsPath(cfg, poFile)
+	// Determine PO file path (use newFile as the file being reviewed)
+	poFile, err := GetPoFileAbsPath(cfg, target.NewFile)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -914,7 +914,7 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName, poFile string, runs 
 		}
 
 		// Reuse RunAgentReview for each run
-		agentResult, err := RunAgentReview(cfg, agentName, poFile, commit, since, true)
+		agentResult, err := RunAgentReview(cfg, agentName, target, true)
 
 		// Calculate execution time for this iteration
 		iterExecutionTime := time.Since(iterStartTime)
@@ -1096,7 +1096,7 @@ func displayTranslateTestResults(results []RunResult, averageScore float64, tota
 
 // CmdAgentTestReview implements the agent-test review command logic.
 // It runs the agent-run review operation multiple times and calculates an average score.
-func CmdAgentTestReview(agentName, poFile string, runs int, skipConfirmation bool, commit, since string) error {
+func CmdAgentTestReview(agentName string, target *CompareTarget, runs int, skipConfirmation bool) error {
 	// Require user confirmation before proceeding
 	if err := ConfirmAgentTestExecution(skipConfirmation); err != nil {
 		return err
@@ -1128,7 +1128,7 @@ func CmdAgentTestReview(agentName, poFile string, runs int, skipConfirmation boo
 	startTime := time.Now()
 
 	// Run the test
-	results, averageScore, err := RunAgentTestReview(cfg, agentName, poFile, runs, commit, since)
+	results, averageScore, err := RunAgentTestReview(cfg, agentName, target, runs)
 	if err != nil {
 		log.Errorf("agent-test execution failed: %v", err)
 		return fmt.Errorf("agent-test failed: %w", err)

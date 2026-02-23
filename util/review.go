@@ -37,14 +37,6 @@ func ParseCommitSince(workDir, commit, since string) (baseCommit, newFileSource 
 	return "HEAD", ""
 }
 
-// PrepareReviewData0 prepares data for review by creating orig.po, new.po, and review-input.po files.
-// It gets the original file from git, sorts both files by msgid, and extracts differences.
-func PrepareReviewData0(poFile, commit, since, outputFile string) error {
-	workDir := repository.WorkDir()
-	srcCommit, targetCommit := ParseCommitSince(workDir, commit, since)
-	return PrepareReviewData(srcCommit, poFile, targetCommit, poFile, outputFile)
-}
-
 func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string) error {
 	var (
 		err                    error
