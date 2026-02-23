@@ -875,15 +875,15 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 }
 
 // RunAgentTestReview runs the agent-test review operation multiple times.
-// It reuses RunAgentReview for each run, saves results to output directory,
-// and accumulates scores. Returns scores for each run, average score, and error.
-func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, runs int) ([]RunResult, float64, error) {
-	// Determine the agent to use (for saving results)
-	selectedAgent, err := SelectAgent(cfg, agentName)
+// It reuses RunAgentReview for each run, aggregates JSON results (for same msgid
+// takes lowest score), and saves one aggregated JSON at the end. No per-run backup.
+// Returns scores for each run, aggregated score (from merged JSON), and error.
+func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, runs int) ([]RunResult, int, error) {
+	// Determine the agent to use
+	_, err := SelectAgent(cfg, agentName)
 	if err != nil {
 		return nil, 0, err
 	}
-	_ = selectedAgent // Avoid unused variable warning
 
 	// Determine PO file path (use newFile as the file being reviewed)
 	poFile, err := GetPoFileAbsPath(cfg, target.NewFile)
@@ -899,7 +899,7 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 
 	// Run the test multiple times
 	results := make([]RunResult, runs)
-	totalScore := 0
+	var reviewJSONs []*ReviewJSONResult
 
 	for i := 0; i < runs; i++ {
 		runNum := i + 1
@@ -910,7 +910,6 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 
 		if err := CleanPoDirectory(relPoFile); err != nil {
 			log.Warnf("run %d: failed to clean po/ directory: %v", runNum, err)
-			// Continue with the run even if cleanup fails, but log the warning
 		}
 
 		// Reuse RunAgentReview for each run
@@ -920,7 +919,6 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 		iterExecutionTime := time.Since(iterStartTime)
 
 		// Convert AgentRunResult to RunResult
-		// agentResult is never nil (always returns a result structure)
 		result := RunResult{
 			RunNumber:           runNum,
 			PreValidationPass:   agentResult.PreValidationPass,
@@ -936,58 +934,53 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 			AfterNewCount:       agentResult.AfterNewCount,
 			BeforeFuzzyCount:    agentResult.BeforeFuzzyCount,
 			AfterFuzzyCount:     agentResult.AfterFuzzyCount,
-			ExpectedBefore:      nil, // Not used for review
-			ExpectedAfter:       nil, // Not used for review
+			ExpectedBefore:      nil,
+			ExpectedAfter:       nil,
 			NumTurns:            agentResult.NumTurns,
 			ExecutionTime:       iterExecutionTime,
 		}
 
-		// Calculate score from review JSON if available
+		// Record per-run score and collect JSON for aggregation
 		if agentResult.ReviewJSON != nil {
-			// Score is already calculated in RunAgentReview and stored in ReviewScore
 			result.Score = agentResult.ReviewScore
+			reviewJSONs = append(reviewJSONs, agentResult.ReviewJSON)
 			log.Debugf("run %d: review score from JSON: %d (total_entries=%d, issues=%d)",
 				runNum, agentResult.ReviewScore, agentResult.ReviewJSON.TotalEntries, len(agentResult.ReviewJSON.Issues))
 		} else if agentResult.AgentSuccess {
-			// If agent succeeded but no JSON, score is 0 (invalid output)
 			log.Debugf("run %d: agent succeeded but no review JSON found, score=0", runNum)
 			result.Score = 0
 		} else {
-			// If agent failed, score is 0
 			log.Debugf("run %d: agent execution failed, score=0", runNum)
 			result.Score = 0
 		}
 
-		// If there was an error, log it but continue (for agent-test, we want to collect all results)
 		if err != nil {
 			log.Debugf("run %d: agent-run returned error: %v", runNum, err)
-			if agentResult.AgentError != "" {
-				log.Debugf("run %d: agent error details: %s", runNum, agentResult.AgentError)
-			}
-			// Error details are already in the result structure
-		}
-
-		// Save review results to output directory (ignore errors)
-		// Use reviewed.po file if available, otherwise use original poFile
-		reviewedFile := agentResult.ReviewedFilePath
-		if reviewedFile == "" {
-			reviewedFile = poFile
-		}
-		if err := SaveReviewResults(agentName, runNum, reviewedFile, agentResult.ReviewJSONPath, agentResult.AgentStdout, agentResult.AgentStderr); err != nil {
-			log.Warnf("run %d: failed to save review results: %v", runNum, err)
-			// Continue even if saving results fails
 		}
 
 		results[i] = result
-		totalScore += result.Score
 		log.Debugf("run %d: completed with score %d", runNum, result.Score)
 	}
 
-	// Calculate average score
-	averageScore := float64(totalScore) / float64(runs)
-	log.Infof("all runs completed. Total score: %d/%d, Average: %.2f", totalScore, runs, averageScore)
+	// Aggregate JSONs (for same msgid, take lowest score) and save
+	aggregatedScore := 0
+	aggregated := AggregateReviewJSON(reviewJSONs)
+	if aggregated != nil {
+		var scoreErr error
+		aggregatedScore, scoreErr = CalculateReviewScore(aggregated)
+		if scoreErr != nil {
+			log.Warnf("failed to calculate aggregated review score: %v", scoreErr)
+		} else {
+			log.Infof("aggregated review: score=%d/100 (from %d runs, %d unique issues)",
+				aggregatedScore, len(reviewJSONs), len(aggregated.Issues))
+			if _, err := SaveReviewJSON(poFile, aggregated); err != nil {
+				log.Warnf("failed to save aggregated review JSON: %v", err)
+			}
+		}
+	}
 
-	return results, averageScore, nil
+	log.Infof("all runs completed. Aggregated score: %d/100", aggregatedScore)
+	return results, aggregatedScore, nil
 }
 
 // displayTranslateTestResults displays the translation test results in a readable format.
@@ -1128,7 +1121,7 @@ func CmdAgentTestReview(agentName string, target *CompareTarget, runs int, skipC
 	startTime := time.Now()
 
 	// Run the test
-	results, averageScore, err := RunAgentTestReview(cfg, agentName, target, runs)
+	results, aggregatedScore, err := RunAgentTestReview(cfg, agentName, target, runs)
 	if err != nil {
 		log.Errorf("agent-test execution failed: %v", err)
 		return fmt.Errorf("agent-test failed: %w", err)
@@ -1137,15 +1130,17 @@ func CmdAgentTestReview(agentName string, target *CompareTarget, runs int, skipC
 	elapsed := time.Since(startTime)
 
 	// Display results
-	log.Debugf("displaying test results (average score: %.2f)", averageScore)
-	displayReviewTestResults(results, averageScore, runs, elapsed)
+	log.Debugf("displaying test results (aggregated score: %d)", aggregatedScore)
+	displayReviewTestResults(results, aggregatedScore, runs, elapsed)
 
-	log.Infof("agent-test review completed successfully (average score: %.2f/100)", averageScore)
+	log.Infof("agent-test review completed successfully (aggregated score: %d/100)", aggregatedScore)
 	return nil
 }
 
 // displayReviewTestResults displays the review test results in a readable format.
-func displayReviewTestResults(results []RunResult, averageScore float64, totalRuns int, elapsed time.Duration) {
+// Output format matches other agent-test subcommands. Shows per-run scores and
+// aggregated score (from merged JSON, same msgid takes lowest score) in summary.
+func displayReviewTestResults(results []RunResult, aggregatedScore int, totalRuns int, elapsed time.Duration) {
 	fmt.Println()
 	fmt.Println("=" + strings.Repeat("=", 70))
 	fmt.Println("Agent Test Results (Review)")
@@ -1155,7 +1150,7 @@ func displayReviewTestResults(results []RunResult, averageScore float64, totalRu
 	successCount := 0
 	failureCount := 0
 
-	// Display individual run results
+	// Display individual run results (same format as translate/update-po)
 	for _, result := range results {
 		status := "FAIL"
 		if result.Score > 0 {
@@ -1167,7 +1162,6 @@ func displayReviewTestResults(results []RunResult, averageScore float64, totalRu
 
 		fmt.Printf("Run %d: %s (Score: %d/100)\n", result.RunNumber, status, result.Score)
 
-		// Show review details
 		if result.AgentExecuted {
 			if result.AgentSuccess {
 				fmt.Printf("  Agent execution: PASS\n")
@@ -1190,22 +1184,23 @@ func displayReviewTestResults(results []RunResult, averageScore float64, totalRu
 	// Calculate statistics for NumTurns and execution time
 	var numTurnsList []int
 	var executionTimes []time.Duration
+	var runScores []string
 	totalNumTurns := 0
 	totalExecutionTime := time.Duration(0)
 	numTurnsCount := 0
 
 	for _, result := range results {
+		runScores = append(runScores, fmt.Sprintf("%d", result.Score))
 		if result.NumTurns > 0 {
 			numTurnsList = append(numTurnsList, result.NumTurns)
 			totalNumTurns += result.NumTurns
 			numTurnsCount++
 		}
-		// Always collect execution time (we measure it ourselves in the loop)
 		executionTimes = append(executionTimes, result.ExecutionTime)
 		totalExecutionTime += result.ExecutionTime
 	}
 
-	// Display summary statistics
+	// Display summary statistics (aggregated score as total, per-run in parentheses)
 	const labelWidth = 25
 	fmt.Println("=" + strings.Repeat("=", 70))
 	fmt.Println("Summary")
@@ -1213,32 +1208,26 @@ func displayReviewTestResults(results []RunResult, averageScore float64, totalRu
 	fmt.Printf("%-*s %d\n", labelWidth, "Total runs:", totalRuns)
 	fmt.Printf("%-*s %d\n", labelWidth, "Successful runs:", successCount)
 	fmt.Printf("%-*s %d\n", labelWidth, "Failed runs:", failureCount)
-	fmt.Printf("%-*s %.2f/100\n", labelWidth, "Average score:", averageScore)
+	fmt.Printf("%-*s %d/100 (%s)\n", labelWidth, "Aggregated score:", aggregatedScore, strings.Join(runScores, ", "))
 
-	// Display NumTurns statistics
 	if numTurnsCount > 0 {
 		avgNumTurns := totalNumTurns / numTurnsCount
 		var numTurnsStrs []string
 		for _, nt := range numTurnsList {
-			turnsStr := fmt.Sprintf("%d", nt)
-			numTurnsStrs = append(numTurnsStrs, turnsStr)
+			numTurnsStrs = append(numTurnsStrs, fmt.Sprintf("%d", nt))
 		}
 		fmt.Printf("%-*s %d (%s)\n", labelWidth, "Avg Num turns:", avgNumTurns, strings.Join(numTurnsStrs, ", "))
 	}
 
-	// Display execution time statistics
 	if len(executionTimes) > 0 {
 		avgExecutionTime := totalExecutionTime / time.Duration(len(executionTimes))
 		var execTimeStrs []string
-		avgTimeStr := formatDuration(avgExecutionTime)
 		for _, et := range executionTimes {
-			timeStr := formatDuration(et)
-			execTimeStrs = append(execTimeStrs, timeStr)
+			execTimeStrs = append(execTimeStrs, formatDuration(et))
 		}
-		fmt.Printf("%-*s %s (%s)\n", labelWidth, "Avg Execution Time:", avgTimeStr, strings.Join(execTimeStrs, ", "))
+		fmt.Printf("%-*s %s (%s)\n", labelWidth, "Avg Execution Time:", formatDuration(avgExecutionTime), strings.Join(execTimeStrs, ", "))
 	}
 
-	// Always display total elapsed time
 	fmt.Printf("%-*s %s\n", labelWidth, "Total Elapsed Time:", formatDuration(elapsed))
 	fmt.Println("=" + strings.Repeat("=", 70))
 }

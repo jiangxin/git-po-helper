@@ -243,6 +243,39 @@ func getRelativePath(absPath string) string {
 	return relPath
 }
 
+// AggregateReviewJSON merges multiple review JSON results. For each msgid that
+// appears in multiple runs, the issue with the lowest score (most severe) is kept.
+// total_entries is taken from the first non-empty review. Returns nil if no valid input.
+func AggregateReviewJSON(reviews []*ReviewJSONResult) *ReviewJSONResult {
+	if len(reviews) == 0 {
+		return nil
+	}
+	// Map msgid -> best issue (lowest score = most severe)
+	byMsgID := make(map[string]*ReviewIssue)
+	var totalEntries int
+	for _, r := range reviews {
+		if r == nil {
+			continue
+		}
+		if r.TotalEntries > 0 && totalEntries == 0 {
+			totalEntries = r.TotalEntries
+		}
+		for i := range r.Issues {
+			issue := &r.Issues[i]
+			key := issue.MsgID
+			existing, ok := byMsgID[key]
+			if !ok || issue.Score < existing.Score {
+				byMsgID[key] = issue
+			}
+		}
+	}
+	issues := make([]ReviewIssue, 0, len(byMsgID))
+	for _, issue := range byMsgID {
+		issues = append(issues, *issue)
+	}
+	return &ReviewJSONResult{TotalEntries: totalEntries, Issues: issues}
+}
+
 // SaveReviewJSON saves review JSON result to file.
 // It determines the output path from the PO file path:
 // po/XX.po -> po/XX-reviewed.json (where XX is the language code).
