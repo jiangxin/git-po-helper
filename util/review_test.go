@@ -35,7 +35,7 @@ func TestWriteReviewInputPo(t *testing.T) {
 			tmpDir := t.TempDir()
 			outputPath := filepath.Join(tmpDir, "test-output.po")
 
-			err := writeReviewInputPo(outputPath, tt.header, tt.entries)
+			err := WritePoEntries(outputPath, tt.header, tt.entries)
 			if err != nil {
 				t.Fatalf("writeReviewInputPo failed: %v", err)
 			}
@@ -92,7 +92,7 @@ func TestParsePoEntriesRoundTrip(t *testing.T) {
 		t.Fatalf("failed to parse original PO file: %v", err)
 	}
 
-	err = writeReviewInputPo(writtenPoPath, originalHeader, originalEntries)
+	err = WritePoEntries(writtenPoPath, originalHeader, originalEntries)
 	if err != nil {
 		t.Fatalf("failed to write PO file: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestParsePoEntriesRoundTrip(t *testing.T) {
 
 	// Test double round-trip
 	secondWrittenPoPath := filepath.Join(tmpDir, "written2.po")
-	err = writeReviewInputPo(secondWrittenPoPath, writtenHeader, writtenEntries)
+	err = WritePoEntries(secondWrittenPoPath, writtenHeader, writtenEntries)
 	if err != nil {
 		t.Fatalf("failed to write PO file second time: %v", err)
 	}

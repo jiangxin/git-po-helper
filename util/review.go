@@ -4,39 +4,12 @@ package util
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/git-l10n/git-po-helper/repository"
 	log "github.com/sirupsen/logrus"
 )
-
-// ParseCommitSince parses commit and since parameters into baseCommit and newFileSource.
-// - commit: orig is parent of commit, new is the specified commit
-// - since: orig is since commit, new is current file (empty string)
-// - neither: orig is HEAD, new is current file (empty string)
-func ParseCommitSince(workDir, commit, since string) (baseCommit, newFileSource string) {
-	if commit != "" {
-		cmd := exec.Command("git", "rev-parse", commit+"^")
-		cmd.Dir = workDir
-		output, err := cmd.Output()
-		if err != nil {
-			baseCommit = "4b825dc642cb6eb9a060e54bf8d69288fbee4904" // Empty tree for root commit
-		} else {
-			baseCommit = strings.TrimSpace(string(output))
-		}
-		log.Infof("commit mode: orig from %s, new from %s", baseCommit, commit)
-		return baseCommit, commit
-	}
-	if since != "" {
-		log.Infof("since mode: orig from %s, new from current file", since)
-		return since, ""
-	}
-	log.Infof("default mode: orig from HEAD, new from current file")
-	return "HEAD", ""
-}
 
 func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string) error {
 	var (
@@ -130,162 +103,43 @@ func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string
 		}
 	}
 
-	// Extract differences: use msgcmp to find entries that are different or new
-	// We'll use a simpler approach: extract entries from new that don't match orig
-	log.Debugf("extracting differences to review-input.po")
-	if err := extractReviewInput(oldFileRevision.Tmpfile, newFileRevision.Tmpfile, outputFile); err != nil {
-		return fmt.Errorf("failed to extract review input: %w", err)
-	}
-
-	log.Infof("review data prepared: review-input=%s", outputFile)
-	return nil
-}
-
-// extractReviewInput extracts entries from new.po that are different or new compared to orig.po.
-// It copies the header and first empty msgid entry from new.po, then adds all entries
-// that are new or different in new.po.
-func extractReviewInput(origPath, newPath, outputPath string) error {
-	// Read both files
-	origData, err := os.ReadFile(origPath)
+	origData, err := os.ReadFile(oldFileRevision.Tmpfile)
 	if err != nil {
 		return fmt.Errorf("failed to read orig file: %w", err)
 	}
-	newData, err := os.ReadFile(newPath)
+	newData, err := os.ReadFile(newFileRevision.Tmpfile)
 	if err != nil {
 		return fmt.Errorf("failed to read new file: %w", err)
 	}
 
-	// Parse entries from both files
-	origEntries, _, err := ParsePoEntries(origData)
+	log.Debugf("extracting differences to review-input.po")
+	_, data, err := PoCompare(origData, newData)
 	if err != nil {
-		return fmt.Errorf("failed to parse orig file: %w", err)
-	}
-	newEntries, newHeader, err := ParsePoEntries(newData)
-	if err != nil {
-		return fmt.Errorf("failed to parse new file: %w", err)
+		return err
 	}
 
-	// Sort entries by MsgID for consistent ordering
-	sort.Slice(origEntries, func(i, j int) bool {
-		return origEntries[i].MsgID < origEntries[j].MsgID
-	})
-	sort.Slice(newEntries, func(i, j int) bool {
-		return newEntries[i].MsgID < newEntries[j].MsgID
-	})
-
-	// If orig file is empty, all entries in new file will be considered new
-	// This handles the case where the file doesn't exist in HEAD
-	if len(origData) == 0 {
-		log.Debugf("orig file is empty, all entries in new file will be included in review-input")
+	log.Infof("review data prepared: review-input=%s", outputFile)
+	if err = WriteFile(outputFile, data); err != nil {
+		return fmt.Errorf("failed to extract review input: %w", err)
 	}
 
-	// Two-pointer merge of sorted origEntries and newEntries
-	var deleted, added, changed int
-	var reviewEntries []*PoEntry
-	i, j := 0, 0
-	for i < len(origEntries) && j < len(newEntries) {
-		cmp := strings.Compare(origEntries[i].MsgID, newEntries[j].MsgID)
-		if cmp < 0 {
-			// In orig but not in new
-			deleted++
-			i++
-		} else if cmp > 0 {
-			// In new but not in orig
-			added++
-			reviewEntries = append(reviewEntries, newEntries[j])
-			j++
-		} else {
-			// Same msgid
-			if !entriesEqual(origEntries[i], newEntries[j]) {
-				changed++
-				reviewEntries = append(reviewEntries, newEntries[j])
-			}
-			i++
-			j++
-		}
-	}
-	for i < len(origEntries) {
-		deleted++
-		i++
-	}
-	for j < len(newEntries) {
-		added++
-		reviewEntries = append(reviewEntries, newEntries[j])
-		j++
-	}
-
-	log.Debugf("review stats: deleted=%d, added=%d, changed=%d", deleted, added, changed)
-
-	// Write review-input.po with header and review entries
-	return writeReviewInputPo(outputPath, newHeader, reviewEntries)
+	return nil
 }
 
-// entriesEqual checks if two PO entries are equal (same msgid and msgstr).
-func entriesEqual(e1, e2 *PoEntry) bool {
-	if e1.IsFuzzy != e2.IsFuzzy {
-		return false
-	}
-	if e1.MsgID != e2.MsgID {
-		return false
-	}
-	if e1.MsgStr != e2.MsgStr {
-		return false
-	}
-	if e1.MsgIDPlural != e2.MsgIDPlural {
-		return false
-	}
-	if len(e1.MsgStrPlural) != len(e2.MsgStrPlural) {
-		return false
-	}
-	for i := range e1.MsgStrPlural {
-		if e1.MsgStrPlural[i] != e2.MsgStrPlural[i] {
-			return false
+func WriteFile(outputFile string, data []byte) error {
+	if outputFile == "-" || outputFile == "" {
+		if len(data) == 0 {
+			return nil
 		}
-	}
-	return true
-}
-
-// writeReviewInputPo writes the review input PO file with header and review entries.
-// When outputPath is "-" or "" and entries is empty, writes nothing (for new-entries command).
-func writeReviewInputPo(outputPath string, header []string, entries []*PoEntry) error {
-	if (outputPath == "-" || outputPath == "") && len(entries) == 0 {
-		return nil
-	}
-
-	var content strings.Builder
-
-	// Write header
-	// Header structure:
-	// - Comments (if any) - lines starting with #
-	// - msgid "" - line starting with msgid
-	// - msgstr "" - line starting with msgstr
-	// - Continuation lines - already wrapped in quotes (preserved from parsePoEntries)
-	if len(entries) > 0 {
-		for _, line := range header {
-			content.WriteString(line)
-			// Only add newline if the line doesn't already end with \n
-			if !strings.HasSuffix(line, "\n") {
-				content.WriteString("\n")
-			}
-		}
-
-		// Add empty line after header
-		content.WriteString("\n")
-	}
-
-	// Write entries
-	for _, entry := range entries {
-		for _, line := range entry.RawLines {
-			content.WriteString(line)
-			content.WriteString("\n")
-		}
-		content.WriteString("\n")
-	}
-
-	data := []byte(content.String())
-	if outputPath == "-" || outputPath == "" {
 		_, err := os.Stdout.Write(data)
 		return err
 	}
-	return os.WriteFile(outputPath, data, 0644)
+	return os.WriteFile(outputFile, data, 0644)
+}
+
+// WritePoEntries writes the review input PO file with header and review entries.
+// When outputPath is "-" or "" and entries is empty, writes nothing (for new-entries command).
+func WritePoEntries(outputPath string, header []string, entries []*PoEntry) error {
+	data := BuildPoContent(header, entries)
+	return WriteFile(outputPath, data)
 }
