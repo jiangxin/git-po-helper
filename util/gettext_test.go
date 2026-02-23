@@ -2,11 +2,110 @@ package util
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// poRoundTripExamples are PO file contents for ParsePoEntries round-trip testing.
+// Each example is parsed, written back via BuildPoContent, and the result must match the original byte-for-byte.
+var poRoundTripExamples = []string{
+	`# Header comment
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Hello"
+msgstr "你好"
+
+msgid "World"
+msgstr "世界"
+`,
+	`msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "First"
+msgstr "第一个"
+
+msgid "Second"
+msgstr "第二个"
+
+msgid "Third"
+msgstr "第三个"
+`,
+	`msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid ""
+"Multi"
+"line"
+msgstr ""
+"多"
+"行"
+
+msgid "Single"
+msgstr "单"
+`,
+	`msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "One"
+msgid_plural "Many"
+msgstr[0] "一个"
+msgstr[1] "多个"
+
+msgid "File"
+msgid_plural "Files"
+msgstr[0] "文件"
+msgstr[1] "文件"
+`,
+}
+
+func TestParsePoEntriesRoundTripBytes(t *testing.T) {
+	for i, poContent := range poRoundTripExamples {
+		t.Run(string(rune('a'+i)), func(t *testing.T) {
+			original := []byte(poContent)
+			entries, header, err := ParsePoEntries(original)
+			if err != nil {
+				t.Fatalf("ParsePoEntries failed: %v", err)
+			}
+			written := BuildPoContent(header, entries)
+			if !bytes.Equal(original, written) {
+				diff := bytesDiff(original, written)
+				t.Errorf("round-trip mismatch:\n%s", diff)
+			}
+		})
+	}
+}
+
+// bytesDiff returns a string describing the first difference between a and b.
+func bytesDiff(a, b []byte) string {
+	aLines := bytes.Split(a, []byte("\n"))
+	bLines := bytes.Split(b, []byte("\n"))
+	maxLen := len(aLines)
+	if len(bLines) > maxLen {
+		maxLen = len(bLines)
+	}
+	for i := 0; i < maxLen; i++ {
+		var aLine, bLine []byte
+		if i < len(aLines) {
+			aLine = aLines[i]
+		}
+		if i < len(bLines) {
+			bLine = bLines[i]
+		}
+		if !bytes.Equal(aLine, bLine) {
+			return fmt.Sprintf("first difference at line %d:\noriginal (%d bytes): %q\nwritten (%d bytes):  %q\n",
+				i+1, len(a), aLine, len(b), bLine)
+		}
+	}
+	return fmt.Sprintf("lengths differ: original %d bytes, written %d bytes", len(a), len(b))
+}
 
 func TestStrDeQuote(t *testing.T) {
 	tests := []struct {

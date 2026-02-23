@@ -285,6 +285,32 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 	return entries, headerLines, nil
 }
 
+// BuildPoContent builds PO file content from header and entries.
+// It is the inverse of ParsePoEntries: the output can be parsed back to produce the same header and entries.
+func BuildPoContent(header []string, entries []*PoEntry) []byte {
+	var b strings.Builder
+	if len(entries) > 0 {
+		for _, line := range header {
+			b.WriteString(line)
+			if !strings.HasSuffix(line, "\n") {
+				b.WriteString("\n")
+			}
+		}
+		b.WriteString("\n")
+	}
+	for i, entry := range entries {
+		for _, line := range entry.RawLines {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+		// Add blank line between entries, but not after the last one
+		if i < len(entries)-1 {
+			b.WriteString("\n")
+		}
+	}
+	return []byte(b.String())
+}
+
 // ParseEntryRange parses a range specification like "3,5,9-13", "-5", or "50-" into a set of entry indices.
 // Entry 0 is the header entry. Returns indices in ascending order, deduplicated.
 // Valid indices are 0 (header, always included) and 1 to maxEntry.
