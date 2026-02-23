@@ -66,7 +66,7 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 		trimmed := strings.TrimSpace(line)
 
 		// Check for header (empty msgid entry)
-		if inHeader && strings.HasPrefix(trimmed, "msgid ") {
+		if !hasSeenHeaderBlock && strings.HasPrefix(trimmed, "msgid ") {
 			value := strings.TrimPrefix(trimmed, "msgid ")
 			value = strings.TrimSpace(value)
 			value = strDeQuote(value)
@@ -80,22 +80,22 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			}
 		}
 
-		// Check for header msgstr (empty msgstr after empty msgid)
-		if inHeader && strings.HasPrefix(trimmed, "msgstr ") {
-			value := strings.TrimPrefix(trimmed, "msgstr ")
-			value = strings.TrimSpace(value)
-			value = strDeQuote(value)
-			if msgidValue.Len() == 0 && value == "" {
-				// This is the header msgstr line
-				headerLines = append(headerLines, line)
-				// Continue collecting header (including continuation lines starting with ")
-				// Header ends when we encounter an empty line or a new msgid entry
-				continue
-			}
-		}
-
 		// Collect header lines (including continuation lines after msgstr "")
 		if inHeader {
+			// Check for header msgstr (empty msgstr after empty msgid)
+			if strings.HasPrefix(trimmed, "msgstr ") {
+				value := strings.TrimPrefix(trimmed, "msgstr ")
+				value = strings.TrimSpace(value)
+				value = strDeQuote(value)
+				if msgidValue.Len() == 0 && value == "" {
+					// This is the header msgstr line
+					headerLines = append(headerLines, line)
+					// Continue collecting header (including continuation lines starting with ")
+					// Header ends when we encounter an empty line or a new msgid entry
+					continue
+				}
+			}
+
 			// Check if this is a continuation line of header msgstr (starts with ")
 			// Only collect as header if we're still in header mode and haven't started parsing an entry
 			// Also check that we're not in the middle of parsing a msgid or msgstr (which would indicate an entry)

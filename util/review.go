@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/git-l10n/git-po-helper/repository"
@@ -164,31 +165,56 @@ func extractReviewInput(origPath, newPath, outputPath string) error {
 		return fmt.Errorf("failed to parse new file: %w", err)
 	}
 
+	// Sort entries by MsgID for consistent ordering
+	sort.Slice(origEntries, func(i, j int) bool {
+		return origEntries[i].MsgID < origEntries[j].MsgID
+	})
+	sort.Slice(newEntries, func(i, j int) bool {
+		return newEntries[i].MsgID < newEntries[j].MsgID
+	})
+
 	// If orig file is empty, all entries in new file will be considered new
 	// This handles the case where the file doesn't exist in HEAD
 	if len(origData) == 0 {
 		log.Debugf("orig file is empty, all entries in new file will be included in review-input")
 	}
 
-	// Create a map of orig entries by msgid for quick lookup
-	origMap := make(map[string]*PoEntry)
-	for _, entry := range origEntries {
-		origMap[entry.MsgID] = entry
+	// Two-pointer merge of sorted origEntries and newEntries
+	var deleted, added, changed int
+	var reviewEntries []*PoEntry
+	i, j := 0, 0
+	for i < len(origEntries) && j < len(newEntries) {
+		cmp := strings.Compare(origEntries[i].MsgID, newEntries[j].MsgID)
+		if cmp < 0 {
+			// In orig but not in new
+			deleted++
+			i++
+		} else if cmp > 0 {
+			// In new but not in orig
+			added++
+			reviewEntries = append(reviewEntries, newEntries[j])
+			j++
+		} else {
+			// Same msgid
+			if !entriesEqual(origEntries[i], newEntries[j]) {
+				changed++
+				reviewEntries = append(reviewEntries, newEntries[j])
+			}
+			i++
+			j++
+		}
+	}
+	for i < len(origEntries) {
+		deleted++
+		i++
+	}
+	for j < len(newEntries) {
+		added++
+		reviewEntries = append(reviewEntries, newEntries[j])
+		j++
 	}
 
-	// Extract entries that are new or different
-	var reviewEntries []*PoEntry
-	for _, newEntry := range newEntries {
-		origEntry, exists := origMap[newEntry.MsgID]
-		if !exists {
-			// New entry
-			reviewEntries = append(reviewEntries, newEntry)
-		} else if !entriesEqual(origEntry, newEntry) {
-			// Different entry (msgid or msgstr changed)
-			reviewEntries = append(reviewEntries, newEntry)
-		}
-		// If entry exists and is equal, skip it
-	}
+	log.Debugf("review stats: deleted=%d, added=%d, changed=%d", deleted, added, changed)
 
 	// Write review-input.po with header and review entries
 	return writeReviewInputPo(outputPath, newHeader, reviewEntries)
@@ -196,6 +222,9 @@ func extractReviewInput(origPath, newPath, outputPath string) error {
 
 // entriesEqual checks if two PO entries are equal (same msgid and msgstr).
 func entriesEqual(e1, e2 *PoEntry) bool {
+	if e1.IsFuzzy != e2.IsFuzzy {
+		return false
+	}
 	if e1.MsgID != e2.MsgID {
 		return false
 	}
