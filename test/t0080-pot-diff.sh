@@ -22,7 +22,7 @@ test_expect_success "diff old version of po/git.pot" '
 		sed -e "s#from .* for git vN.N.N#from **** for git vN.N.N#" >actual &&
 
 	cat >expect <<-\EOF &&
-		395 new, 573 removed
+		395 new, 2 changed, 573 removed
 	EOF
 	test_cmp expect actual
 '
@@ -39,7 +39,7 @@ test_expect_success "diff new version of po/git.pot" '
 		sed -e "s#from .* for git vN.N.N#from **** for git vN.N.N#" >actual &&
 
 	cat >expect <<-\EOF &&
-		573 new, 395 removed
+		573 new, 2 changed, 395 removed
 	EOF
 	test_cmp expect actual
 '

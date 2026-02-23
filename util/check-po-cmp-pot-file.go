@@ -51,7 +51,7 @@ func CheckUnfinishedPoFiles(commit string, poFiles []string) bool {
 				Revision: commit,
 				File:     fileName,
 			}
-			if err := checkoutTmpfile(&tmpFile); err != nil || tmpFile.Tmpfile == "" {
+			if err := CheckoutTmpfile(&tmpFile); err != nil || tmpFile.Tmpfile == "" {
 				showHorizontalLine()
 				log.Errorf("commit %s: fail to checkout %s of revision %s: %s",
 					AbbrevCommit(commit), tmpFile.File, tmpFile.Revision, err)

@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/git-l10n/git-po-helper/util"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -81,17 +84,57 @@ func (v compareCommand) executeNew(oldCommit, oldFile, newCommit, newFile string
 }
 
 func (v compareCommand) executeStat(oldCommit, oldFile, newCommit, newFile string) error {
-	var (
-		oldFileRevision, newFileRevision util.FileRevision
-	)
+	oldRev := util.FileRevision{Revision: oldCommit, File: oldFile}
+	newRev := util.FileRevision{Revision: newCommit, File: newFile}
+	if err := util.CheckoutTmpfile(&oldRev); err != nil {
+		return newUserErrorF("failed to checkout %s@%s: %v", oldFile, oldCommit, err)
+	}
+	if err := util.CheckoutTmpfile(&newRev); err != nil {
+		return newUserErrorF("failed to checkout %s@%s: %v", newFile, newCommit, err)
+	}
+	defer func() {
+		if oldRev.Tmpfile != "" {
+			os.Remove(oldRev.Tmpfile)
+		}
+		if newRev.Tmpfile != "" {
+			os.Remove(newRev.Tmpfile)
+		}
+	}()
 
-	oldFileRevision.Revision = oldCommit
-	oldFileRevision.File = oldFile
-	newFileRevision.Revision = newCommit
-	newFileRevision.File = newFile
+	srcData, err := os.ReadFile(oldRev.Tmpfile)
+	if err != nil {
+		return newUserErrorF("failed to read old file: %v", err)
+	}
+	destData, err := os.ReadFile(newRev.Tmpfile)
+	if err != nil {
+		return newUserErrorF("failed to read new file: %v", err)
+	}
 
-	if err := util.PoFileRevisionDiffStat(oldFileRevision, newFileRevision); err != nil {
+	stat, _, err := util.PoCompare(srcData, destData)
+	if err != nil {
 		return newUserErrorF("%v", err)
+	}
+
+	diffStat := ""
+	if stat.Added != 0 {
+		diffStat = fmt.Sprintf("%d new", stat.Added)
+	}
+	if stat.Changed != 0 {
+		if diffStat != "" {
+			diffStat += ", "
+		}
+		diffStat += fmt.Sprintf("%d changed", stat.Changed)
+	}
+	if stat.Deleted != 0 {
+		if diffStat != "" {
+			diffStat += ", "
+		}
+		diffStat += fmt.Sprintf("%d removed", stat.Deleted)
+	}
+	if diffStat != "" {
+		fmt.Println(diffStat)
+	} else {
+		fmt.Fprintln(os.Stderr, "Nothing changed.")
 	}
 	return nil
 }

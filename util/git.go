@@ -3,12 +3,22 @@ package util
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/git-l10n/git-po-helper/repository"
 	log "github.com/sirupsen/logrus"
 )
+
+// FileRevision is used as an argument for diff function
+type FileRevision struct {
+	Revision string
+	File     string
+	Tmpfile  string
+}
 
 // GetChangedPoFiles returns the list of changed po/XX.po files between two git versions.
 // For commit mode (commit != ""): uses git diff-tree -r --name-only <baseCommit> <commit> -- po/
@@ -66,4 +76,52 @@ func GetChangedPoFilesRange(rev1, rev2 string) ([]string, error) {
 		}
 	}
 	return poFiles, nil
+}
+
+// CheckoutTmpfile checks out a file revision to a temp file for reading.
+func CheckoutTmpfile(f *FileRevision) error {
+	if f.Tmpfile == "" {
+		tmpfile, err := os.CreateTemp("", "*--"+filepath.Base(f.File))
+		if err != nil {
+			return fmt.Errorf("fail to create tmpfile: %s", err)
+		}
+		f.Tmpfile = tmpfile.Name()
+		tmpfile.Close()
+	}
+	if f.Revision == "" {
+		// Read file from f.File and write to f.Tmpfile
+		data, err := os.ReadFile(f.File)
+		if err != nil {
+			return fmt.Errorf("fail to read file: %w", err)
+		}
+		if err := os.WriteFile(f.Tmpfile, data, 0644); err != nil {
+			return fmt.Errorf("fail to write tmpfile: %w", err)
+		}
+		log.Debugf("read file %s from %s and write to %s", f.File, f.Revision, f.Tmpfile)
+		return nil
+	}
+	cmd := exec.Command("git",
+		"show",
+		f.Revision+":"+f.File)
+	cmd.Stderr = os.Stderr
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf(`get StdoutPipe failed: %s`, err)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("fail to start git-show command: %s", err)
+	}
+	data, err := io.ReadAll(out)
+	out.Close()
+	if err != nil {
+		return fmt.Errorf("fail to read git-show output: %w", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("fail to wait git-show command: %s", err)
+	}
+	if err := os.WriteFile(f.Tmpfile, data, 0644); err != nil {
+		return fmt.Errorf("fail to write tmpfile: %w", err)
+	}
+	log.Debugf(`creating "%s" file using command: %s`, f.Tmpfile, cmd.String())
+	return nil
 }

@@ -747,7 +747,7 @@ func checkCommitChanges(commit string, notL10nChanges, l10nChanges []string) (ok
 			Revision: commit,
 			File:     fileName,
 		}
-		if err := checkoutTmpfile(&tmpFile); err != nil || tmpFile.Tmpfile == "" {
+		if err := CheckoutTmpfile(&tmpFile); err != nil || tmpFile.Tmpfile == "" {
 			errs = append(errs,
 				fmt.Sprintf("commit %s: fail to checkout %s of revision %s: %s",
 					AbbrevCommit(commit), tmpFile.File, tmpFile.Revision, err))
