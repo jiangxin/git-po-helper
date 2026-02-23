@@ -1,9 +1,6 @@
 package cmd
 
 import (
-	"strings"
-
-	"github.com/git-l10n/git-po-helper/repository"
 	"github.com/git-l10n/git-po-helper/util"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -62,96 +59,15 @@ Output is empty when there are no new or changed entries.`,
 }
 
 func (v compareCommand) Execute(args []string) error {
-	// --range, --commit, --since are mutually exclusive
-	nSet := 0
-	if strings.TrimSpace(v.O.Range) != "" {
-		nSet++
-	}
-	if strings.TrimSpace(v.O.Commit) != "" {
-		nSet++
-	}
-	if strings.TrimSpace(v.O.Since) != "" {
-		nSet++
-	}
-	if nSet > 1 {
-		return newUserError("only one of --range, --commit, or --since may be specified")
-	}
-
-	// Resolve range for both modes
-	var revRange string
-	if c := strings.TrimSpace(v.O.Commit); c != "" {
-		revRange = c + "^.." + c
-	} else if s := strings.TrimSpace(v.O.Since); s != "" {
-		revRange = s + ".."
-	} else {
-		revRange = strings.TrimSpace(v.O.Range)
-	}
-	if revRange == "" {
-		switch len(args) {
-		case 0:
-			revRange = "HEAD.."
-		case 1:
-			revRange = "HEAD.."
-		case 2:
-			// Compare two files in worktree
-		}
-	}
-
-	if len(args) > 2 {
-		return newUserErrorF("too many arguments (%d > 2)", len(args))
-	}
-
-	repository.ChdirProjectRoot()
-
-	var (
-		oldCommit, newCommit string
-		oldFile, newFile     string
-	)
-	// Parse revision: "a..b", "a..", or "a"
-	if strings.Contains(revRange, "..") {
-		parts := strings.SplitN(revRange, "..", 2)
-		oldCommit = strings.TrimSpace(parts[0])
-		newCommit = strings.TrimSpace(parts[1])
-	} else if revRange != "" {
-		// a : first is a~, second is a
-		oldCommit = revRange + "~"
-		newCommit = revRange
-	}
-
-	// Set File
-	switch len(args) {
-	case 0:
-		// Automatically or manually select PO file from changed files
-	case 1:
-		oldFile = args[0]
-		newFile = args[0]
-	case 2:
-		oldFile = args[0]
-		newFile = args[1]
-		if oldCommit != "" || newCommit != "" {
-			return newUserErrorF("cannot specify revision for multiple files: %s and %s",
-				oldFile, newFile)
-		}
-	}
-
-	// Resolve poFile when not specified
-	if len(args) == 0 {
-		changedPoFiles, err := util.GetChangedPoFilesRange(oldCommit, newCommit)
-		if err != nil {
-			return newUserErrorF("failed to get changed po files: %v", err)
-		}
-
-		oldFile, err = util.ResolvePoFile(oldFile, changedPoFiles)
-		if err != nil {
-			return newUserErrorF("failed to resolve default po file: %v", err)
-		}
-		newFile = oldFile
+	target, err := util.ResolveRevisionsAndFiles(v.O.Range, v.O.Commit, v.O.Since, args)
+	if err != nil {
+		return newUserErrorF("%v", err)
 	}
 
 	if v.O.Stat {
-		return v.executeStat(oldCommit, oldFile, newCommit, newFile)
+		return v.executeStat(target.OldCommit, target.OldFile, target.NewCommit, target.NewFile)
 	}
-	return v.executeNew(oldCommit, oldFile, newCommit, newFile)
+	return v.executeNew(target.OldCommit, target.OldFile, target.NewCommit, target.NewFile)
 }
 
 func (v compareCommand) executeNew(oldCommit, oldFile, newCommit, newFile string) error {
