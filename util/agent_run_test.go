@@ -345,11 +345,17 @@ msgstr "正常字符串"
 				if entries[1].MsgID != "Normal string" {
 					t.Errorf("expected second entry MsgID 'Normal string', got '%s'", entries[1].MsgID)
 				}
-				// Verify fuzzy comment is preserved
+				// Verify fuzzy comment is preserved and IsFuzzy is set
 				if len(entries[0].Comments) != 1 {
 					t.Errorf("expected 1 comment for fuzzy entry, got %d", len(entries[0].Comments))
 				} else if entries[0].Comments[0] != "#, fuzzy" {
 					t.Errorf("expected comment '#, fuzzy', got '%s'", entries[0].Comments[0])
+				}
+				if !entries[0].IsFuzzy {
+					t.Errorf("expected first entry IsFuzzy=true, got false")
+				}
+				if entries[1].IsFuzzy {
+					t.Errorf("expected second entry IsFuzzy=false, got true")
 				}
 				// Verify second entry has no comments
 				if len(entries[1].Comments) != 0 {

@@ -92,6 +92,18 @@ msgid_plural "Files"
 msgstr[0] "文件"
 msgstr[1] "文件"
 `,
+	`msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#, fuzzy
+msgid "Fuzzy string"
+msgstr "模糊"
+
+#, fuzzy, c-format
+msgid "Fuzzy %s"
+msgstr "模糊 %s"
+`,
 }
 
 func TestParsePoEntriesRoundTripBytes(t *testing.T) {
@@ -108,6 +120,40 @@ func TestParsePoEntriesRoundTripBytes(t *testing.T) {
 				t.Errorf("round-trip mismatch:\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestParsePoEntriesIsFuzzy(t *testing.T) {
+	poContent := `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#, fuzzy
+msgid "Fuzzy"
+msgstr "模糊"
+
+#, fuzzy, c-format
+msgid "Fuzzy %s"
+msgstr "模糊 %s"
+
+msgid "Normal"
+msgstr "正常"
+`
+	entries, _, err := ParsePoEntries([]byte(poContent))
+	if err != nil {
+		t.Fatalf("ParsePoEntries failed: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+	if !entries[0].IsFuzzy {
+		t.Errorf("entry 0 (Fuzzy): expected IsFuzzy=true, got false")
+	}
+	if !entries[1].IsFuzzy {
+		t.Errorf("entry 1 (Fuzzy %%s): expected IsFuzzy=true, got false")
+	}
+	if entries[2].IsFuzzy {
+		t.Errorf("entry 2 (Normal): expected IsFuzzy=false, got true")
 	}
 }
 

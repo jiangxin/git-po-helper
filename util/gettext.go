@@ -17,6 +17,23 @@ type PoEntry struct {
 	MsgIDPlural  string
 	MsgStrPlural []string
 	RawLines     []string // Original lines for the entry
+	IsFuzzy      bool
+}
+
+// commentHasFuzzyFlag returns true if the line is a flag comment (e.g. "#, fuzzy" or "#, fuzzy, c-format")
+// that includes the "fuzzy" flag.
+func commentHasFuzzyFlag(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "#,") {
+		return false
+	}
+	flags := strings.TrimPrefix(trimmed, "#,")
+	for _, f := range strings.Split(flags, ",") {
+		if strings.TrimSpace(f) == "fuzzy" {
+			return true
+		}
+	}
+	return false
 }
 
 // strDeQuote removes one quote character from each end of s if both ends have a quote.
@@ -151,6 +168,7 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 				currentEntry.MsgID = msgidValue.String()
 				currentEntry.MsgStr = msgstrValue.String()
 				currentEntry.RawLines = entryLines
+				currentEntry.IsFuzzy = entryHasFuzzyFlag(currentEntry.Comments)
 				entries = append(entries, currentEntry)
 			}
 			// Start new entry (or continue existing entry if it only has comments)
@@ -247,6 +265,7 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 					}
 				}
 				currentEntry.RawLines = entryLines
+				currentEntry.IsFuzzy = entryHasFuzzyFlag(currentEntry.Comments)
 				entries = append(entries, currentEntry)
 			}
 			currentEntry = nil
@@ -286,10 +305,21 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			}
 		}
 		currentEntry.RawLines = entryLines
+		currentEntry.IsFuzzy = entryHasFuzzyFlag(currentEntry.Comments)
 		entries = append(entries, currentEntry)
 	}
 
 	return entries, headerLines, nil
+}
+
+// entryHasFuzzyFlag returns true if any comment in the entry has the fuzzy flag.
+func entryHasFuzzyFlag(comments []string) bool {
+	for _, c := range comments {
+		if commentHasFuzzyFlag(c) {
+			return true
+		}
+	}
+	return false
 }
 
 // BuildPoContent builds PO file content from header and entries.
