@@ -35,6 +35,7 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 	lines := strings.Split(string(data), "\n")
 	var currentEntry *PoEntry
 	var inHeader = true
+	var hasSeenHeaderBlock bool // true after we've seen msgid "" (the header block)
 	var headerLines []string
 	var entryLines []string
 	var msgidValue strings.Builder
@@ -53,8 +54,8 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			value = strings.TrimSpace(value)
 			value = strDeQuote(value)
 			if value == "" {
-				// This is the header entry
-				inHeader = true
+				// This is the header entry (msgid "" block)
+				hasSeenHeaderBlock = true
 				headerLines = append(headerLines, line)
 				entryLines = append(entryLines, line)
 				// Continue to collect header
@@ -93,8 +94,14 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 					continue
 				}
 			}
-			// Check if this is an empty line - end of header
+			// Check if this is an empty line
 			if trimmed == "" {
+				if !hasSeenHeaderBlock {
+					// Blank line in comment block (before msgid "") - keep in header
+					headerLines = append(headerLines, line)
+					continue
+				}
+				// Blank line after msgid ""/msgstr "" block - end of header
 				inHeader = false
 				msgidValue.Reset()
 				msgstrValue.Reset()

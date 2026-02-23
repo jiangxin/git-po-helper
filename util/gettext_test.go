@@ -23,6 +23,34 @@ msgstr "你好"
 msgid "World"
 msgstr "世界"
 `,
+	`
+
+# Empty line before header comment
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Hello"
+msgstr "你好"
+
+msgid "World"
+msgstr "世界"
+`,
+	`# Header comment
+# Empty line after comments
+
+# Another empty line after comment
+
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Hello"
+msgstr "你好"
+
+msgid "World"
+msgstr "世界"
+`,
 	`msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
