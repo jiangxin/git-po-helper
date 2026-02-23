@@ -26,6 +26,13 @@ const (
 	maxDisplayLines = 10
 )
 
+// flushStdout flushes stdout to ensure agent output (🤖 etc.) is visible immediately.
+// Without this, stdout may be buffered when not a TTY, causing output to appear only with -v
+// (which produces more stderr activity that can trigger flushing in some environments).
+func flushStdout() {
+	_ = os.Stdout.Sync()
+}
+
 // CountPotEntries counts msgid entries in a POT file.
 // It excludes the header entry (which has an empty msgid) and counts
 // only non-empty msgid entries.
@@ -1232,6 +1239,7 @@ func printSystemMessage(msg *ClaudeSystemMessage) {
 	}
 	fmt.Println("==========================================")
 	fmt.Println()
+	flushStdout()
 }
 
 // truncateText truncates text to maxBytes bytes and/or maxLines lines, appending "..." if truncated.
@@ -1269,6 +1277,7 @@ func printAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.B
 			// Print agent marker with robot emoji at the beginning of agent output
 			fmt.Print("🤖 ")
 			fmt.Println(displayText)
+			flushStdout()
 			resultBuilder.WriteString(content.Text)
 		} else {
 			log.Debugf("stream-json: assistant message: content type: %s", content.Type)
@@ -1279,6 +1288,7 @@ func printAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.B
 // printResultParsing displays the parsing process of a result message.
 func printResultParsing(msg *ClaudeJSONOutput, resultSize int) {
 	fmt.Printf("🤖 return result (%d bytes)\n", resultSize)
+	flushStdout()
 }
 
 // printResultMessage displays the final result message.
@@ -1296,6 +1306,7 @@ func printResultMessage(msg *ClaudeJSONOutput, resultBuilder *strings.Builder) {
 		}
 		fmt.Println("==========================================")
 		resultBuilder.WriteString(msg.Result)
+		flushStdout()
 	}
 }
 
@@ -1422,6 +1433,7 @@ func PrintAgentDiagnostics(result interface{}) {
 		fmt.Printf("**API duration:** %.2f s\n", durationSec)
 	}
 	fmt.Println("==========================================")
+	flushStdout()
 }
 
 // ParseCodexJSONLRealtime parses Codex JSONL format in real-time, displaying messages as they arrive.
@@ -1549,6 +1561,7 @@ func printCodexThreadStarted(msg *CodexThreadStarted) {
 	}
 	fmt.Println("==========================================")
 	fmt.Println()
+	flushStdout()
 }
 
 // printCodexAgentMessage displays agent message content.
@@ -1559,6 +1572,7 @@ func printCodexAgentMessage(item *CodexItem, resultBuilder *strings.Builder) {
 		// Print agent marker with robot emoji at the beginning of agent output
 		fmt.Print("🤖 ")
 		fmt.Println(displayText)
+		flushStdout()
 		// Note: resultBuilder is not used here, we only store the last message
 	}
 }
@@ -1688,6 +1702,7 @@ func printOpenCodeText(msg *OpenCodeText, resultBuilder *strings.Builder) {
 		// Print agent marker with robot emoji at the beginning of agent output
 		fmt.Print("🤖 ")
 		fmt.Println(displayText)
+		flushStdout()
 		resultBuilder.WriteString(msg.Part.Text)
 	}
 }
@@ -1733,6 +1748,7 @@ func printOpenCodeToolUse(msg *OpenCodeToolUse, resultBuilder *strings.Builder) 
 		// Write full output to resultBuilder (for accumulation)
 		resultBuilder.WriteString(msg.Part.State.Output)
 	}
+	flushStdout()
 }
 
 // ParseGeminiJSONLRealtime parses Gemini-CLI JSONL output in real-time from an io.Reader.
@@ -1789,6 +1805,7 @@ func ParseGeminiJSONLRealtime(reader io.Reader) (content []byte, result *GeminiJ
 					}
 					fmt.Println("==========================================")
 					fmt.Println()
+					flushStdout()
 
 					// Initialize result
 					if lastResult == nil {
@@ -1828,6 +1845,7 @@ func ParseGeminiJSONLRealtime(reader io.Reader) (content []byte, result *GeminiJ
 					displayText := truncateText(assistantText.String(), maxDisplayBytes, maxDisplayLines)
 					fmt.Print("🤖 ")
 					fmt.Println(displayText)
+					flushStdout()
 					lastAssistantText = assistantText.String()
 				}
 
