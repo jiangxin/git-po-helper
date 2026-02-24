@@ -825,6 +825,15 @@ type ClaudeAssistantMessage struct {
 	UUID            string        `json:"uuid"`
 }
 
+// ClaudeUserMessage represents a user message (e.g. tool result) in json format (stream-json internally).
+type ClaudeUserMessage struct {
+	Type            string        `json:"type"`
+	Message         ClaudeMessage `json:"message"`
+	ParentToolUseID *string       `json:"parent_tool_use_id"`
+	SessionID       string        `json:"session_id"`
+	UUID            string        `json:"uuid"`
+}
+
 // CodexUsage represents token usage information in Codex JSON output.
 type CodexUsage struct {
 	InputTokens  int `json:"input_tokens"`
@@ -1208,9 +1217,12 @@ func ParseClaudeStreamJSONRealtime(reader io.Reader) (content []byte, result *Cl
 				log.Debugf("stream-json: failed to parse result message: %v", err)
 			}
 		case "user":
-			// User messages are typically tool results or intermediate messages
-			// Log at debug level but don't display to avoid cluttering output
-			log.Debugf("stream-json: received user message (suppressed from output)")
+			var userMsg ClaudeUserMessage
+			if err := json.Unmarshal([]byte(line), &userMsg); err == nil {
+				printClaudeUserMessage([]byte(line), &userMsg)
+			} else {
+				log.Debugf("stream-json: failed to parse user message: %v", err)
+			}
 		default:
 			// Unknown type, log at debug level and output as-is
 			log.Debugf("stream-json: unknown message type: %s", baseMsg.Type)
@@ -1361,6 +1373,48 @@ func printClaudeAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *str
 // printClaudeResultParsing displays the parsing process of a result message.
 func printClaudeResultParsing(msg *ClaudeJSONOutput, resultSize int) {
 	fmt.Printf("🤖 return result (%d bytes)\n", resultSize)
+	flushStdout()
+}
+
+// parseClaudeUserContentType parses user message content to determine content subtype.
+// Returns "tool_result" if all content items are tool_result, otherwise the first non-tool_result type.
+func parseClaudeUserContentType(msg *ClaudeUserMessage) string {
+	if len(msg.Message.Content) == 0 {
+		return "tool_result" // default
+	}
+	var firstOther string
+	for _, raw := range msg.Message.Content {
+		var typeOnly struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(raw, &typeOnly); err != nil {
+			continue
+		}
+		if typeOnly.Type != "tool_result" {
+			if firstOther == "" {
+				firstOther = typeOnly.Type
+			}
+		}
+	}
+	if firstOther != "" {
+		return firstOther
+	}
+	return "tool_result"
+}
+
+// printClaudeUserMessage displays user message (e.g. tool result) with user icon.
+// For tool_result: shows "... xxx bytes ...". For other types: "type: ... xxx bytes ...".
+func printClaudeUserMessage(rawLine []byte, msg *ClaudeUserMessage) {
+	size := len(rawLine)
+	contentType := parseClaudeUserContentType(msg)
+	var displayText string
+	if contentType == "tool_result" {
+		displayText = fmt.Sprintf("tool_result: ... %d bytes ...", size)
+	} else {
+		displayText = fmt.Sprintf("%s: ... %d bytes ...", contentType, size)
+	}
+	fmt.Print("💬 ")
+	fmt.Println(displayText)
 	flushStdout()
 }
 
