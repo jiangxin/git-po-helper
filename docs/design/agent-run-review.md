@@ -660,14 +660,14 @@ func displayReviewTestResults(results []RunResult, averageScore float64, totalRu
 ### Step 12: Documentation and Testing
 
 **Tasks**:
-1. Update user documentation (`docs/agent-run.md`)
+1. Update user documentation (`docs/agent-commands.md`)
 2. Add example configuration file entries
 3. Write integration tests
 4. Test with real agents (if available)
 5. Verify JSON output format matches specification
 
 **Files to Create/Modify**:
-- `docs/agent-run.md` - Add review command documentation
+- `docs/agent-commands.md` - Add review command documentation
 - `test/t*agent-run-review*.sh` - Integration tests
 - Example `git-po-helper.yaml` in docs
 

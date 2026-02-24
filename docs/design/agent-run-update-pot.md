@@ -570,13 +570,13 @@ func RunAgentTestUpdatePot(agentName string, runs int) ([]int, float64, error)
 ### Step 9: Documentation and Testing
 
 **Tasks**:
-1. Update `README.md` or create `docs/agent-run.md`
+1. Update `README.md` or create `docs/agent-commands.md`
 2. Add example configuration file
 3. Write integration tests
 4. Test with real agents (if available)
 
 **Files to Create/Modify**:
-- `docs/agent-run.md` - User documentation
+- `docs/agent-commands.md` - User documentation
 - `test/t*agent-run*.sh` - Integration tests
 - Example `git-po-helper.yaml` in docs
 

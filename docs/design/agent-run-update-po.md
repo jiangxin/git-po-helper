@@ -561,7 +561,7 @@ The exact signatures can be aligned with existing `RunAgentUpdatePot` / `CmdAgen
 **Tasks**:
 1. Maintain this design document (`docs/design/agent-run-update-po.md`).
 2. Add or update integration tests under `test/` (e.g., `t0090-agent-run.sh`, `t0091-agent-test.sh`) to cover `update-po` scenarios.
-3. Optionally update `docs/agent-run.md` and example configuration files to include `update-po` usage.
+3. Optionally update `docs/agent-commands.md` and example configuration files to include `update-po` usage.
 
 **Validation**:
 - Integration tests pass.

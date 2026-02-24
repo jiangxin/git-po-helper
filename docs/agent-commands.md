@@ -11,7 +11,7 @@ These commands use configured code agents to automate various localization opera
 
 ## Configuration
 
-Both commands read configuration from `git-po-helper.yaml` files. The configuration can be placed in:
+Both commands read configuration from `git-po-helper.yaml` files. A `--prompt` flag can override the prompt from configuration. The configuration can be placed in:
 
 1. **User home directory**: `~/.git-po-helper.yaml` (lower priority)
 2. **Repository root**: `<repo-root>/git-po-helper.yaml` (higher priority, overrides user config)
@@ -21,14 +21,14 @@ The repository config takes precedence over the user config when both exist.
 ### Configuration File Format
 
 ```yaml
-default_lang_code: "zh_CN"
+default_lang_code: "zh_CN"   # or system locale (LC_ALL/LC_MESSAGES/LANG)
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
   update_po: "update {source} according to po/README.md"
   translate: "translate {source} according to po/README.md"
-  review: "review and improve {source} according to po/README.md"
+  review:
 agent-test:
-  runs: 5
+  runs: 1
   pot_entries_before_update: null
   pot_entries_after_update: null
   po_entries_before_update: null
@@ -37,9 +37,24 @@ agent-test:
   po_fuzzy_entries_after_update: null
 agents:
   claude:
-    cmd: ["claude", "-p", "{prompt}"]
+    cmd: ["claude", "--dangerously-skip-permissions", "-p", "{prompt}"]
+    kind: claude
+    output: json
+  codex:
+    cmd: ["codex", "exec", "--yolo", "{prompt}"]
+    kind: codex
+    output: json
+  opencode:
+    cmd: ["opencode", "run", "--thinking", "{prompt}"]
+    kind: opencode
+    output: json
   gemini:
-    cmd: ["gemini", "--prompt", "{prompt}"]
+    cmd: ["gemini", "--yolo", "{prompt}"]
+    kind: gemini
+    output: json
+  echo:
+    cmd: ["echo", "{prompt}"]
+    kind: echo
 ```
 
 ### Configuration Fields
@@ -53,7 +68,7 @@ agents:
 
 #### Agent Test Configuration
 
-- `agent-test.runs`: Default number of runs for `agent-test` (default: 5)
+- `agent-test.runs`: Default number of runs for `agent-test` (default: 1)
 - `agent-test.pot_entries_before_update`: Expected POT entry count before update (null or 0 to disable)
 - `agent-test.pot_entries_after_update`: Expected POT entry count after update (null or 0 to disable)
 - `agent-test.po_entries_before_update`: Expected PO entry count before update (used by update-po)
@@ -63,13 +78,16 @@ agents:
 
 #### Agents
 
-Each agent is defined with a name and a command. The command is a list of strings where placeholders are replaced:
+Each agent is defined with a name and a command. Supported agent kinds: `claude`, `gemini`, `codex`, `opencode`, `qwen` (gemini-compatible), `echo` (test agent).
 
+- `cmd`: Command and arguments as a list of strings
+- `kind`: Agent type for output parsing (optional; auto-detected from command name if empty)
+- `output`: Output format: `default`, `json`, or `stream_json` (optional; `json` enables real-time streaming display)
+
+Placeholders in commands:
 - `{prompt}`: Replaced with the actual prompt text
 - `{source}`: Replaced with the source file path (PO file)
 - `{commit}`: Replaced with the commit ID (default: HEAD)
-
-## Commands
 
 ## Commands
 
@@ -162,20 +180,21 @@ Review translations in a PO file using a configured agent. The agent reviews tra
 
 **Usage:**
 ```bash
-git-po-helper agent-run review [--agent <agent-name>] [--commit <commit>] [--since <commit>] [po/XX.po]
+git-po-helper agent-run review [--agent <agent-name>] [-r range | --commit <commit> | --since <commit>] [[<src>] <target>]
 ```
 
 **Options:**
 - `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
-- `--commit <commit>`: Review changes in the specified commit
-- `--since <commit>`: Review changes since the specified commit
-- `po/XX.po`: Optional PO file path; if omitted, `default_lang_code` is used (e.g., `zh_CN` → `po/zh_CN.po`)
+- `-r`, `--range <range>`: Revision range: `a..b` (compare a with b), `a..` (compare a with working tree), or `a` (compare a~ with a)
+- `--commit <commit>`: Equivalent to `-r <commit>^..<commit>` (review changes in the specified commit)
+- `--since <commit>`: Equivalent to `-r <commit>..` (compare commit with working tree)
+- `[<src>] <target>`: Zero, one, or two PO file paths. With two files, compare worktree files (revisions not allowed)
 
-**Note:** Exactly one of `--commit` or `--since` may be specified. If neither is provided, the command defaults to reviewing local changes (since HEAD).
+**Note:** Exactly one of `--range`, `--commit`, or `--since` may be specified. If none is provided, defaults to reviewing local changes (since HEAD). With no file arguments, the PO file is auto-selected from changed files or `default_lang_code`.
 
 **Examples:**
 ```bash
-# Review local changes using default_lang_code
+# Review local changes (auto-select PO file from changed files)
 git-po-helper agent-run review
 
 # Review local changes for a specific PO file
@@ -184,8 +203,14 @@ git-po-helper agent-run review po/zh_CN.po
 # Review changes in a specific commit
 git-po-helper agent-run review --commit abc123 po/zh_CN.po
 
-# Review changes since a specific commit
+# Review changes since a specific commit (compare commit with worktree)
 git-po-helper agent-run review --since def456 po/zh_CN.po
+
+# Compare two commits
+git-po-helper agent-run review -r HEAD~..HEAD po/zh_CN.po
+
+# Compare two worktree files
+git-po-helper agent-run review po/zh_CN.po po/zh_TW.po
 
 # Use a specific agent
 git-po-helper agent-run review --agent claude po/zh_CN.po
@@ -193,9 +218,9 @@ git-po-helper agent-run review --agent claude po/zh_CN.po
 
 **What it does:**
 1. Loads configuration from `git-po-helper.yaml`
-2. Determines target PO file from CLI argument or `default_lang_code`
+2. Resolves target PO file(s) from arguments or auto-selects from changed files
 3. Selects an agent (auto-selects if only one, or uses `--agent` flag)
-4. Determines review mode from `--range`, `--commit`, or `--since` (uses `prompt.review` with `{source}` placeholder)
+4. Prepares review data (orig vs new) based on `--range`, `--commit`, or `--since`
 5. Executes the agent command with the appropriate prompt template
 6. Extracts JSON from agent output
 7. Parses and validates the review JSON structure
@@ -246,6 +271,35 @@ The command displays:
 - Number of issues found (broken down by score: critical, minor, perfect)
 - Path to saved JSON file
 
+### agent-run parse-log
+
+Parse an agent JSONL log file and display formatted output. Auto-detects format (Claude, Codex, OpenCode, Gemini/Qwen) and displays with type-specific icons.
+
+**Usage:**
+```bash
+git-po-helper agent-run parse-log [log-file]
+```
+
+**Options:**
+- `log-file`: Path to JSONL file (default: `/tmp/claude.log.jsonl`)
+
+**Display icons:**
+- 🤔 thinking content
+- 🤖 text content
+- 🔧 tool_use content (tool name and input)
+- 💬 user/tool_result (raw size)
+- ❓ unknown type
+
+**Examples:**
+```bash
+# Parse default log file
+git-po-helper agent-run parse-log
+
+# Parse specific log file
+git-po-helper agent-run parse-log /tmp/claude.log.jsonl
+git-po-helper agent-run parse-log /tmp/qwen.log.jsonl
+```
+
 ### agent-test update-pot
 
 Test the `update-pot` operation multiple times and calculate an average score.
@@ -257,11 +311,11 @@ git-po-helper agent-test update-pot [--agent <agent-name>] [--runs <n>]
 
 **Options:**
 - `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
-- `--runs <n>`: Number of test runs (default: 5, or from config file)
+- `--runs <n>`: Number of test runs (default: 1, or from config file)
 
 **Examples:**
 ```bash
-# Run 5 tests with default agent
+# Run tests with default agent
 git-po-helper agent-test update-pot
 
 # Run 10 tests with a specific agent
@@ -270,7 +324,7 @@ git-po-helper agent-test update-pot --agent claude --runs 10
 
 **What it does:**
 1. Loads configuration from `git-po-helper.yaml`
-2. Determines number of runs (from `--runs` flag, config file, or default to 5)
+2. Determines number of runs (from `--runs` flag, config file, or default to 1)
 3. For each run:
    - Performs pre-validation (if configured)
    - Executes agent command (if pre-validation passed)
@@ -306,7 +360,7 @@ git-po-helper agent-test update-po [--agent <agent-name>] [--runs <n>] [po/XX.po
 
 **Options:**
 - `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
-- `--runs <n>`: Number of test runs (default: 5, or from config file)
+- `--runs <n>`: Number of test runs (default: 1, or from config file)
 - `po/XX.po`: Optional PO file path; if omitted, `default_lang_code` is used (e.g., `zh_CN` → `po/zh_CN.po`)
 
 **Examples:**
@@ -323,7 +377,7 @@ git-po-helper agent-test update-po --agent claude --runs 10 po/zh_CN.po
 
 **What it does:**
 1. Loads configuration from `git-po-helper.yaml`
-2. Determines number of runs (from `--runs` flag, config file, or default to 5)
+2. Determines number of runs (from `--runs` flag, config file, or default to 1)
 3. For each run:
    - Restores `po/` directory to `HEAD` for a clean state
    - Calls `agent-run update-po` logic via `RunAgentUpdatePo`
@@ -345,28 +399,29 @@ The command displays:
 
 ### agent-test review
 
-Test the `review` operation multiple times and calculate an average score.
+Test the `review` operation multiple times and calculate an average score. Aggregates JSON from all runs: for each msgid, uses the lowest score; final result is written to one review file.
 
 **Usage:**
 ```bash
-git-po-helper agent-test review [--agent <agent-name>] [--runs <n>] [--commit <commit>] [--since <commit>] [po/XX.po]
+git-po-helper agent-test review [--agent <agent-name>] [--runs <n>] [-r range | --commit <commit> | --since <commit>] [[<src>] <target>]
 ```
 
 **Options:**
 - `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
-- `--runs <n>`: Number of test runs (default: 5, or from config file)
+- `--runs <n>`: Number of test runs (default: 1, or from config file)
+- `-r`, `--range <range>`: Revision range (same as agent-run review)
 - `--commit <commit>`: Review changes in the specified commit
 - `--since <commit>`: Review changes since the specified commit
-- `po/XX.po`: Optional PO file path; if omitted, `default_lang_code` is used (e.g., `zh_CN` → `po/zh_CN.po`)
+- `[<src>] <target>`: Zero, one, or two PO file paths (same as agent-run review)
 
-**Note:** Exactly one of `--commit` or `--since` may be specified. If neither is provided, the command defaults to reviewing local changes (since HEAD).
+**Note:** Exactly one of `--range`, `--commit`, or `--since` may be specified. If none is provided, defaults to reviewing local changes (since HEAD).
 
 **Examples:**
 ```bash
-# Run 5 tests using default_lang_code to locate PO file
+# Run tests (auto-select PO file)
 git-po-helper agent-test review
 
-# Run 5 tests for a specific PO file
+# Run tests for a specific PO file
 git-po-helper agent-test review po/zh_CN.po
 
 # Run 10 tests with a specific agent
@@ -378,34 +433,29 @@ git-po-helper agent-test review --since abc123 po/zh_CN.po
 
 **What it does:**
 1. Loads configuration from `git-po-helper.yaml`
-2. Determines number of runs (from `--runs` flag, config file, or default to 5)
+2. Determines number of runs (from `--runs` flag, config file, or default to 1)
 3. For each run:
    - Calls `agent-run review` logic
-   - Saves results to `output/<agent-name>/<iteration-number>/`:
-     - `XX-reviewed.po`: The reviewed PO file
-     - `review.log`: Execution log (stdout + stderr)
-     - `XX-reviewed.json`: Review JSON result
-   - Parses JSON and calculates score using `CalculateReviewScore()`
-   - Records score for this run
-4. Calculates average score: `(sum of scores) / number of runs`
-5. Displays results:
-   - Individual run results (including scores and issue counts)
-   - Average score
-   - Summary statistics (success count, failure count)
+   - Parses JSON and records score for this run
+   - Aggregates issues: for each msgid, keeps the lowest score across runs
+4. Generates one aggregated review JSON from all runs
+5. Writes final review result file (e.g., `po/zh_CN-reviewed.json`)
+6. Displays results:
+   - Individual run scores (in parentheses)
+   - Aggregated score (used as final)
+   - Summary statistics
 
 **Scoring:**
-- Each run produces a JSON file with review results
-- Score is calculated from JSON using `CalculateReviewScore()`
-- Success = score > 0 (agent executed and produced valid JSON)
-- Failure = score = 0 (agent failed or produced invalid JSON)
-- Average = sum of scores / number of runs
+- Each run produces a JSON with review results
+- Aggregated score: for each msgid, take the minimum score across runs
+- Final score = calculated from aggregated JSON
+- Output format matches other agent-test subcommands
 
 **Output:**
 The command displays:
-- Individual run results with status (PASS/FAIL) and score
-- Agent execution status and review status
-- Summary statistics (total runs, successful runs, failed runs, average score)
-- Results are saved to `output/<agent-name>/<iteration-number>/` for later review
+- Individual run results with score
+- Aggregated score (final)
+- Summary statistics (total runs, successful runs, failed runs)
 
 ## Entry Count Validation
 
@@ -486,6 +536,18 @@ All commands provide clear error messages with actionable hints:
 - **File operation errors**: Include file paths and suggestions
 - **Command execution errors**: Include exit codes and stderr output
 
+## Agent Output Display
+
+When agents use `output: json` (stream-json), the command displays real-time output with type-specific icons:
+
+- 🤔 thinking content
+- 🤖 text content
+- 🔧 tool_use content (command/tool name; long commands truncated to first 128 + last 32 chars)
+- 💬 user/tool_result (size only)
+- ❓ unknown type
+
+Multi-line output is indented (3 spaces for lines 2+) and wrapped at 99 characters at word boundaries.
+
 ## Logging
 
 The commands use structured logging with different levels:
@@ -525,7 +587,7 @@ git-po-helper agent-run update-pot --agent my-agent
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agent-test:
-  runs: 5
+  runs: 1
   pot_entries_before_update: 5000
   pot_entries_after_update: 5100
 agents:
