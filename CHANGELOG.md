@@ -2,7 +2,64 @@
 
 Changes of git-po-helper.
 
-## dev
+## dev (2026-02-22)
+
+### Agent commands (agent-run, agent-test)
+
+* feat: add agent-run and agent-test with update-po, update-pot, translate, review subcommands
+* feat: support multiple AI agents (Claude, Codex, OpenCode, Gemini, Qwen)
+* feat: stream-json real-time output with type-specific icons (🤔 thinking, 🤖 text, 🔧 tool, 💬 user)
+* feat: parse Claude/Gemini assistant content (text, thinking, tool_use) and user tool_result
+* feat: improve Codex JSONL parsing (thread.started, item.started/completed, turn.completed)
+* feat: improve OpenCode message output with tool input/output display
+* feat: add Kind field for type-safe agent detection (claude, codex, opencode, gemini)
+* feat: truncate long command display (first 128 + last 32 bytes)
+* feat: indent and wrap multi-line agent output at 80 chars with word boundary
+* feat: agent-test review aggregates JSON and uses lowest score per msgid
+* feat: add --range, --commit, --since and two-file support to review commands
+* fix: flush stdout so agent output appears without -v
+* refactor: use AgentStreamResult interface to reduce redundancy
+
+### Compare command
+
+* feat: rename diff to compare, add --stat requirement
+* feat: add --commit and --since, refine -r range parsing (a..b, a.., a)
+* feat: merge new-entries into compare (default mode outputs new/changed entries)
+* refactor: extract ResolveCompareTarget to util/helper.go for reuse
+* refactor: use PoCompare for compare --stat
+
+### PO / gettext
+
+* feat: add strDeQuote, BuildPoContent and ParsePoEntries round-trip test
+* feat: set PoEntry.IsFuzzy from #, fuzzy flag comments
+* feat: add msg-select command to extract PO/POT entries by index range
+* fix: allow blank lines in header comment block
+* refactor: rename po_parse.go to gettext.go, move to util/gettext.go
+
+### Review
+
+* refactor: extract review logic to util/review.go (PrepareReviewData, extractReviewInput)
+* refactor: extract PoCompare with DiffStat (Added, Changed, Deleted)
+* refactor: use two-pointer merge instead of hash map for entry comparison
+* refactor: use temp files for orig/new in PrepareReviewData
+
+### Configuration and prompts
+
+* feat: add --prompt option to override prompts
+* feat: add multiple AI agent configurations
+* refactor: unify prompt retrieval with action parameter
+* feat: add prefix @ introducing po/README.md in prompts
+
+### Refactoring and infrastructure
+
+* refactor: extract git and file selection to util/git.go, util/files.go
+* refactor: return error instead of bool from diff stat functions
+* refactor: use newUserError for cmd error handling
+* test: add PoFileDiffStat, PoFileRevisionDiffStat, PoCompare tests
+* test: add ResolvePoFile and ResolveCompareTarget tests
+* docs: add agent-commands.md, update README and AGENTS.md
+
+## 0.7.6 (2026-02-07)
 
 * update: new option --no-file-location and --no-location
 * update: use --add-location=file to remove location by default
