@@ -1141,6 +1141,9 @@ func CmdAgentRunParseLog(logFile string) error {
 
 	if strings.Contains(firstLine, "claude_code_version") {
 		_, _, err = ParseClaudeStreamJSONRealtime(parseReader)
+	} else if strings.Contains(firstLine, `"type":"step_start"`) || strings.Contains(firstLine, `"type": "step_start"`) {
+		// OpenCode format
+		_, _, err = ParseOpenCodeJSONLRealtime(parseReader)
 	} else {
 		// Qwen/Gemini format (qwen_code_version or Gemini-style system init)
 		_, _, err = ParseGeminiJSONLRealtime(parseReader)

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -891,6 +892,7 @@ type OpenCodePart struct {
 	Tool      string             `json:"tool,omitempty"`
 	State     *OpenCodeToolState `json:"state,omitempty"`
 	Tokens    *OpenCodeTokens    `json:"tokens,omitempty"`
+	Reason    string             `json:"reason,omitempty"` // step_finish: "stop" usually means end
 }
 
 // OpenCodeTokens represents token usage information in OpenCode step_finish messages.
@@ -907,13 +909,9 @@ type OpenCodeTokens struct {
 
 // OpenCodeToolState represents the state information for tool_use messages.
 type OpenCodeToolState struct {
-	Status string `json:"status"`
-	Input  struct {
-		Command     string `json:"command,omitempty"`
-		FilePath    string `json:"filePath,omitempty"`
-		Description string `json:"description,omitempty"`
-	} `json:"input"`
-	Output string `json:"output"`
+	Status string                 `json:"status"`
+	Input  map[string]interface{} `json:"input"`
+	Output string                 `json:"output"`
 }
 
 // OpenCodeStepStart represents a step_start message in OpenCode JSONL format.
@@ -1776,7 +1774,12 @@ func ParseOpenCodeJSONLRealtime(reader io.Reader) (content []byte, result *OpenC
 				elapsed := time.Since(startTime)
 				lastResult.DurationAPIMS = int(elapsed.Milliseconds())
 				inStep = false
-				log.Debugf("opencode-json: received step_finish (suppressed from output)")
+				// When Reason is "stop", it usually means the session has ended
+				if stepMsg.Part.Reason == "stop" {
+					fmt.Println("✅ Step complete (reason: stop)")
+					flushStdout()
+				}
+				log.Debugf("opencode-json: received step_finish (reason: %s)", stepMsg.Part.Reason)
 			} else {
 				log.Debugf("opencode-json: failed to parse step_finish message: %v", err)
 			}
@@ -1835,41 +1838,49 @@ func printOpenCodeText(msg *OpenCodeText, resultBuilder *strings.Builder) {
 	}
 }
 
+// maxInputValueLen is the max length for each input value when displaying (truncate if longer).
+const maxInputValueLen = 100
+
 // printOpenCodeToolUse displays tool use message content.
 func printOpenCodeToolUse(msg *OpenCodeToolUse, resultBuilder *strings.Builder) {
 	if msg.Part.State == nil {
 		return
 	}
 
-	// Display tool type and command
 	toolType := msg.Part.Tool
 	if toolType == "" {
 		toolType = "unknown"
 	}
 
-	command := ""
-	if msg.Part.State.Input.Command != "" {
-		command = msg.Part.State.Input.Command
-	} else if msg.Part.State.Input.FilePath != "" {
-		command = msg.Part.State.Input.FilePath
+	// Format input as key=value pairs (generalized dict), truncate long values
+	var inputParts []string
+	if msg.Part.State.Input != nil {
+		for k, v := range msg.Part.State.Input {
+			valStr := fmt.Sprintf("%v", v)
+			if len(valStr) > maxInputValueLen {
+				valStr = valStr[:maxInputValueLen-3] + "..."
+			}
+			inputParts = append(inputParts, fmt.Sprintf("%s=%s", k, valStr))
+		}
+	}
+	// Sort for deterministic output
+	if len(inputParts) > 1 {
+		// Keep simple order: prefer common keys first
+		sort.Slice(inputParts, func(i, j int) bool { return inputParts[i] < inputParts[j] })
 	}
 
-	// Print tool header
-	if command != "" {
-		fmt.Printf("🔧 %s: %s\n", toolType, command)
-		resultBuilder.WriteString(fmt.Sprintf("%s: %s\n", toolType, command))
+	var displayLine string
+	if len(inputParts) > 0 {
+		displayLine = toolType + ": " + strings.Join(inputParts, ", ")
 	} else {
-		fmt.Printf("🔧 %s\n", toolType)
-		resultBuilder.WriteString(fmt.Sprintf("%s\n", toolType))
+		displayLine = toolType
 	}
+	fmt.Printf("🔧 %s\n", displayLine)
+	resultBuilder.WriteString(displayLine + "\n")
 
-	// Display output (limited to 10 lines)
+	// Display output as size only
 	if msg.Part.State.Output != "" {
-		// Truncate output to 4KB and 10 lines for display
-		displayOutput := truncateText(msg.Part.State.Output, maxDisplayBytes, maxDisplayLines)
-		fmt.Println(displayOutput)
-
-		// Write full output to resultBuilder (for accumulation)
+		fmt.Printf("💬 ... %d bytes ...\n", len(msg.Part.State.Output))
 		resultBuilder.WriteString(msg.Part.State.Output)
 	}
 	flushStdout()
