@@ -1144,6 +1144,9 @@ func CmdAgentRunParseLog(logFile string) error {
 	} else if strings.Contains(firstLine, `"type":"step_start"`) || strings.Contains(firstLine, `"type": "step_start"`) {
 		// OpenCode format
 		_, _, err = ParseOpenCodeJSONLRealtime(parseReader)
+	} else if strings.Contains(firstLine, "thread.started") {
+		// Codex format
+		_, _, err = ParseCodexJSONLRealtime(parseReader)
 	} else {
 		// Qwen/Gemini format (qwen_code_version or Gemini-style system init)
 		_, _, err = ParseGeminiJSONLRealtime(parseReader)

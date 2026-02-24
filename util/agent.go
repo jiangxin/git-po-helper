@@ -837,8 +837,9 @@ type ClaudeUserMessage struct {
 
 // CodexUsage represents token usage information in Codex JSON output.
 type CodexUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens       int `json:"input_tokens"`
+	OutputTokens      int `json:"output_tokens"`
+	CachedInputTokens int `json:"cached_input_tokens"`
 }
 
 // CodexThreadStarted represents a thread.started message in Codex JSONL format.
@@ -847,17 +848,33 @@ type CodexThreadStarted struct {
 	ThreadID string `json:"thread_id"`
 }
 
-// CodexItem represents an item in Codex item.completed messages.
+// CodexItem represents an item in Codex item.completed messages (agent_message type).
 type CodexItem struct {
 	ID   string `json:"id"`
 	Type string `json:"type"`
 	Text string `json:"text"`
 }
 
-// CodexItemCompleted represents an item.completed message in Codex JSONL format.
+// CodexCommandExecution represents command_execution item in Codex JSONL format.
+type CodexCommandExecution struct {
+	ID               string `json:"id"`
+	Type             string `json:"type"`
+	Command          string `json:"command"`
+	AggregatedOutput string `json:"aggregated_output"`
+	ExitCode         *int   `json:"exit_code"` // null means not yet completed
+	Status           string `json:"status"`
+}
+
+// CodexItemStarted represents item.started message in Codex JSONL format.
+type CodexItemStarted struct {
+	Type string          `json:"type"`
+	Item json.RawMessage `json:"item"`
+}
+
+// CodexItemCompleted represents item.completed message in Codex JSONL format.
 type CodexItemCompleted struct {
-	Type string    `json:"type"`
-	Item CodexItem `json:"item"`
+	Type string          `json:"type"`
+	Item json.RawMessage `json:"item"`
 }
 
 // CodexTurnCompleted represents a turn.completed message in Codex JSONL format.
@@ -1582,24 +1599,32 @@ func ParseCodexJSONLRealtime(reader io.Reader) (content []byte, result *CodexJSO
 		}
 
 		// Try to parse as JSON to determine message type
-		var baseMsg struct {
-			Type string `json:"type"`
-		}
+		var baseMsg map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(line), &baseMsg); err != nil {
-			// If line is not valid JSON, log at debug level only
 			log.Debugf("codex-json: non-JSON lines, error: %s", err)
 			fmt.Print("❓ ")
 			fmt.Println(line)
 			continue
 		}
 
-		// Parse based on message type
-		switch baseMsg.Type {
+		// Skip JSON with only "type" and no other fields
+		if len(baseMsg) <= 1 {
+			log.Debugf("codex-json: skipping message with only type field")
+			continue
+		}
+
+		var typeOnly struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &typeOnly); err != nil {
+			continue
+		}
+
+		switch typeOnly.Type {
 		case "thread.started":
 			var threadMsg CodexThreadStarted
 			if err := json.Unmarshal([]byte(line), &threadMsg); err == nil {
 				printCodexThreadStarted(&threadMsg)
-				// Initialize result if needed
 				if lastResult == nil {
 					lastResult = &CodexJSONOutput{}
 				}
@@ -1607,65 +1632,54 @@ func ParseCodexJSONLRealtime(reader io.Reader) (content []byte, result *CodexJSO
 			} else {
 				log.Debugf("codex-json: failed to parse thread.started message: %v", err)
 			}
+		case "item.started":
+			var itemMsg CodexItemStarted
+			if err := json.Unmarshal([]byte(line), &itemMsg); err == nil {
+				lastAgentMessage = printCodexItem(itemMsg.Item, lastResult, lastAgentMessage, false)
+			} else {
+				log.Debugf("codex-json: failed to parse item.started message: %v", err)
+			}
 		case "item.completed":
 			var itemMsg CodexItemCompleted
 			if err := json.Unmarshal([]byte(line), &itemMsg); err == nil {
-				// Only display and count agent_message items
-				if itemMsg.Item.Type == "agent_message" {
-					// Increment NumTurns
-					if lastResult == nil {
-						lastResult = &CodexJSONOutput{}
-					}
-					lastResult.NumTurns++
-					log.Debugf("codex-json: turn %d", lastResult.NumTurns)
-					// Display message text
-					printCodexAgentMessage(&itemMsg.Item, nil)
-					// Store the last agent message (replace, don't accumulate)
-					lastAgentMessage = itemMsg.Item.Text
-				} else {
-					// Log other item types at debug level
-					log.Debugf("codex-json: received item.completed with type=%s (suppressed from output)", itemMsg.Item.Type)
-				}
+				lastAgentMessage = printCodexItem(itemMsg.Item, lastResult, lastAgentMessage, true)
 			} else {
 				log.Debugf("codex-json: failed to parse item.completed message: %v", err)
 			}
 		case "turn.completed":
 			var turnMsg CodexTurnCompleted
 			if err := json.Unmarshal([]byte(line), &turnMsg); err == nil {
-				// Merge usage information: prefer the result with more complete usage info
 				if lastResult == nil {
 					lastResult = &CodexJSONOutput{}
 				}
-				// Merge usage information if the new turn has it
-				if turnMsg.Usage != nil && (turnMsg.Usage.InputTokens > 0 || turnMsg.Usage.OutputTokens > 0) {
+				if turnMsg.Usage != nil {
 					if lastResult.Usage == nil {
-						lastResult.Usage = turnMsg.Usage
-					} else {
-						// Use the values from the new turn if they are non-zero
-						if turnMsg.Usage.InputTokens > 0 {
-							lastResult.Usage.InputTokens = turnMsg.Usage.InputTokens
-						}
-						if turnMsg.Usage.OutputTokens > 0 {
-							lastResult.Usage.OutputTokens = turnMsg.Usage.OutputTokens
-						}
+						lastResult.Usage = &CodexUsage{}
+					}
+					if turnMsg.Usage.InputTokens > 0 {
+						lastResult.Usage.InputTokens = turnMsg.Usage.InputTokens
+					}
+					if turnMsg.Usage.OutputTokens > 0 {
+						lastResult.Usage.OutputTokens = turnMsg.Usage.OutputTokens
+					}
+					if turnMsg.Usage.CachedInputTokens > 0 {
+						lastResult.Usage.CachedInputTokens = turnMsg.Usage.CachedInputTokens
 					}
 				}
-				// Always update duration_api_ms with the latest value
 				if turnMsg.DurationMS > 0 {
 					lastResult.DurationAPIMS = turnMsg.DurationMS
 				} else {
-					// If DurationMS is 0, calculate elapsed time from function start
 					elapsed := time.Since(startTime)
 					lastResult.DurationAPIMS = int(elapsed.Milliseconds())
 				}
-				// Log turn completion at debug level
-				log.Debugf("codex-json: received turn.completed (suppressed from output)")
+				printCodexTurnCompleted(turnMsg.Usage)
 			} else {
 				log.Debugf("codex-json: failed to parse turn.completed message: %v", err)
 			}
 		default:
-			// Unknown type, log at debug level only
-			log.Debugf("codex-json: unknown message type: %s", baseMsg.Type)
+			log.Debugf("codex-json: unknown message type: %s", typeOnly.Type)
+			fmt.Printf("❓ %s: ... %d bytes ...\n", typeOnly.Type, len(line))
+			flushStdout()
 		}
 	}
 
@@ -1690,16 +1704,132 @@ func printCodexThreadStarted(msg *CodexThreadStarted) {
 	flushStdout()
 }
 
-// printCodexAgentMessage displays agent message content.
-func printCodexAgentMessage(item *CodexItem, resultBuilder *strings.Builder) {
-	if item.Text != "" {
-		// Truncate text to 4KB and 10 lines for display
-		displayText := truncateText(item.Text, maxDisplayBytes, maxDisplayLines)
-		// Print agent marker with robot emoji at the beginning of agent output
-		fmt.Print("🤖 ")
-		fmt.Println(displayText)
+// printCodexItem displays item.started or item.completed based on item type.
+// When dedup is false (item.started): show command for command_execution.
+// When dedup is true (item.completed): show bytes for command_execution, full message for agent_message.
+// Returns last agent message text.
+func printCodexItem(itemRaw json.RawMessage, lastResult *CodexJSONOutput, lastAgentMessage string, dedup bool) string {
+	var typeOnly struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(itemRaw, &typeOnly); err != nil {
+		return lastAgentMessage
+	}
+	switch typeOnly.Type {
+	case "command_execution":
+		var cmd CodexCommandExecution
+		if err := json.Unmarshal(itemRaw, &cmd); err != nil {
+			return lastAgentMessage
+		}
+		if !dedup {
+			fmt.Printf("🔧 %s\n", cmd.Command)
+		} else {
+			size := len(cmd.AggregatedOutput)
+			icon := "💬 "
+			if cmd.ExitCode != nil && *cmd.ExitCode != 0 {
+				icon = "❌ "
+			}
+			fmt.Printf("%s... %d bytes ...\n", icon, size)
+		}
 		flushStdout()
-		// Note: resultBuilder is not used here, we only store the last message
+	case "agent_message":
+		if !dedup {
+			return lastAgentMessage
+		}
+		var item CodexItem
+		if err := json.Unmarshal(itemRaw, &item); err != nil {
+			return lastAgentMessage
+		}
+		if lastResult != nil {
+			lastResult.NumTurns++
+			log.Debugf("codex-json: turn %d", lastResult.NumTurns)
+		}
+		printCodexAgentMessage(&item, nil)
+		return item.Text
+	default:
+		fmt.Printf("❓ %s: ... %d bytes ...\n", typeOnly.Type, len(itemRaw))
+		flushStdout()
+	}
+	return lastAgentMessage
+}
+
+// stripThinkTags removes <think>...</think> tags from text, returning the inner content and any text outside.
+func stripThinkTags(text string) string {
+	text = strings.TrimSpace(text)
+	lower := strings.ToLower(text)
+	thinkStart := strings.Index(lower, "<think>")
+	if thinkStart == -1 {
+		return text
+	}
+	thinkEnd := strings.Index(lower[thinkStart:], "</think>")
+	if thinkEnd == -1 {
+		return text
+	}
+	// Extract content: before <think>, content inside, after </think>
+	before := strings.TrimSpace(text[:thinkStart])
+	inner := strings.TrimSpace(text[thinkStart+7 : thinkStart+thinkEnd])
+	after := strings.TrimSpace(text[thinkStart+thinkEnd+8:])
+	var parts []string
+	if before != "" {
+		parts = append(parts, before)
+	}
+	if inner != "" {
+		parts = append(parts, inner)
+	}
+	if after != "" {
+		parts = append(parts, after)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// hasThinkTags returns true if text contains <think> </think> tags (after trim).
+func hasThinkTags(text string) bool {
+	text = strings.TrimSpace(text)
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "<think>") && strings.Contains(lower, "</think>")
+}
+
+// printCodexAgentMessage displays agent message content.
+// For agent_message: trim text, use 🤔 if wrapped in <think> </think>, else 🤖. Strip think tags from display.
+func printCodexAgentMessage(item *CodexItem, resultBuilder *strings.Builder) {
+	text := strings.TrimSpace(item.Text)
+	if text == "" {
+		return
+	}
+	displayText := stripThinkTags(text)
+	if displayText == "" {
+		return
+	}
+	displayText = truncateText(displayText, maxDisplayBytes, maxDisplayLines)
+	var icon string
+	if hasThinkTags(item.Text) {
+		icon = "🤔 "
+	} else {
+		icon = "🤖 "
+	}
+	fmt.Print(icon)
+	fmt.Println(displayText)
+	flushStdout()
+}
+
+// printCodexTurnCompleted displays turn.completed usage when values are non-zero.
+func printCodexTurnCompleted(usage *CodexUsage) {
+	if usage == nil {
+		return
+	}
+	var parts []string
+	if usage.InputTokens > 0 {
+		parts = append(parts, fmt.Sprintf("input_tokens=%d", usage.InputTokens))
+	}
+	if usage.OutputTokens > 0 {
+		parts = append(parts, fmt.Sprintf("output_tokens=%d", usage.OutputTokens))
+	}
+	if usage.CachedInputTokens > 0 {
+		parts = append(parts, fmt.Sprintf("cached_input_tokens=%d", usage.CachedInputTokens))
+	}
+	if len(parts) > 0 {
+		fmt.Printf("📊 %s\n", strings.Join(parts, ", "))
+		flushStdout()
 	}
 }
 
