@@ -1358,6 +1358,55 @@ func truncateText(text string, maxBytes int, maxLines int) string {
 	return strings.TrimRight(truncated, "\n") + "..."
 }
 
+// indentSubsequentLines prefixes each line after the first with indent, and wraps long lines (>80 chars)
+// at word boundaries. Wrapped continuations are also indented.
+func indentSubsequentLines(text string) string {
+	const indentStr = "   "
+	const maxLineWidth = 99
+	contentWidth := maxLineWidth - len(indentStr) // width for indented continuation
+
+	wrapAt := func(s string, width int) []string {
+		var out []string
+		for len(s) > width {
+			chunk := s[:width]
+			breakAt := width
+			for i := width - 1; i >= 0; i-- {
+				if chunk[i] == ' ' || chunk[i] == '\t' {
+					breakAt = i + 1
+					break
+				}
+			}
+			out = append(out, s[:breakAt])
+			s = strings.TrimLeft(s[breakAt:], " \t")
+		}
+		if s != "" {
+			out = append(out, s)
+		}
+		return out
+	}
+
+	lines := strings.Split(text, "\n")
+	var result []string
+	for i, line := range lines {
+		parts := wrapAt(line, maxLineWidth)
+		for j, p := range parts {
+			if i > 0 || j > 0 {
+				// Indented: wrap content at contentWidth, then prefix each part
+				sub := wrapAt(p, contentWidth)
+				for _, s := range sub {
+					result = append(result, indentStr+s)
+				}
+			} else {
+				result = append(result, p)
+			}
+		}
+	}
+	if len(result) <= 1 {
+		return text
+	}
+	return strings.Join(result, "\n")
+}
+
 // printClaudeAssistantMessage displays assistant message content, printing each block with type-specific icons.
 // (Applicable to Claude Code and Gemini-CLI)
 // Icons: 🤔 thinking, 🔧 tool_use, 🤖 text, ❓ unknown
@@ -1387,7 +1436,7 @@ func printClaudeAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *str
 			icon = "❓ "
 		}
 		fmt.Print(icon)
-		fmt.Println(displayText)
+		fmt.Println(indentSubsequentLines(displayText))
 		flushStdout()
 		if resultText != "" {
 			resultBuilder.WriteString(resultText)
@@ -1439,7 +1488,7 @@ func printClaudeUserMessage(rawLine []byte, msg *ClaudeUserMessage) {
 		displayText = fmt.Sprintf("%s: ... %d bytes ...", contentType, size)
 	}
 	fmt.Print("💬 ")
-	fmt.Println(displayText)
+	fmt.Println(indentSubsequentLines(displayText))
 	flushStdout()
 }
 
@@ -1613,7 +1662,7 @@ func ParseCodexJSONLRealtime(reader io.Reader) (content []byte, result *CodexJSO
 		if err := json.Unmarshal([]byte(line), &baseMsg); err != nil {
 			log.Debugf("codex-json: non-JSON lines, error: %s", err)
 			fmt.Print("❓ ")
-			fmt.Println(line)
+			fmt.Println(indentSubsequentLines(line))
 			continue
 		}
 
@@ -1732,7 +1781,7 @@ func printCodexItem(itemRaw json.RawMessage, lastResult *CodexJSONOutput, lastAg
 			return lastAgentMessage
 		}
 		if !dedup {
-			fmt.Printf("🔧 %s\n", truncateCommandDisplay(cmd.Command))
+			fmt.Printf("🔧 %s\n", indentSubsequentLines(truncateCommandDisplay(cmd.Command)))
 		} else {
 			size := len(cmd.AggregatedOutput)
 			icon := "💬 "
@@ -1818,7 +1867,7 @@ func printCodexAgentMessage(item *CodexItem, resultBuilder *strings.Builder) {
 		icon = "🤖 "
 	}
 	fmt.Print(icon)
-	fmt.Println(displayText)
+	fmt.Println(indentSubsequentLines(displayText))
 	flushStdout()
 }
 
@@ -1871,7 +1920,7 @@ func ParseOpenCodeJSONLRealtime(reader io.Reader) (content []byte, result *OpenC
 			// If line is not valid JSON, log at debug level only
 			log.Debugf("opencode-json: non-JSON lines, error: %s", err)
 			fmt.Print("❓ ")
-			fmt.Println(line)
+			fmt.Println(indentSubsequentLines(line))
 			continue
 		}
 
@@ -1972,7 +2021,7 @@ func printOpenCodeText(msg *OpenCodeText, resultBuilder *strings.Builder) {
 		displayText := truncateText(msg.Part.Text, maxDisplayBytes, maxDisplayLines)
 		// Print agent marker with robot emoji at the beginning of agent output
 		fmt.Print("🤖 ")
-		fmt.Println(displayText)
+		fmt.Println(indentSubsequentLines(displayText))
 		flushStdout()
 		resultBuilder.WriteString(msg.Part.Text)
 	}
@@ -2015,7 +2064,7 @@ func printOpenCodeToolUse(msg *OpenCodeToolUse, resultBuilder *strings.Builder) 
 	} else {
 		displayLine = toolType
 	}
-	fmt.Printf("🔧 %s\n", truncateCommandDisplay(displayLine))
+	fmt.Printf("🔧 %s\n", indentSubsequentLines(truncateCommandDisplay(displayLine)))
 	resultBuilder.WriteString(displayLine + "\n")
 
 	// Display output as size only
@@ -2053,7 +2102,7 @@ func printGeminiAssistantMessage(msg *GeminiAssistantMessage, resultBuilder *str
 			icon = "❓ "
 		}
 		fmt.Print(icon)
-		fmt.Println(displayText)
+		fmt.Println(indentSubsequentLines(displayText))
 		flushStdout()
 		if resultText != "" {
 			resultBuilder.WriteString(resultText)
@@ -2097,7 +2146,7 @@ func printGeminiUserMessage(rawLine []byte, msg *GeminiUserMessage) {
 		displayText = fmt.Sprintf("%s: ... %d bytes ...", contentType, size)
 	}
 	fmt.Print("💬 ")
-	fmt.Println(displayText)
+	fmt.Println(indentSubsequentLines(displayText))
 	flushStdout()
 }
 
@@ -2126,7 +2175,7 @@ func ParseGeminiJSONLRealtime(reader io.Reader) (content []byte, result *GeminiJ
 		if err := json.Unmarshal([]byte(line), &baseMsg); err != nil {
 			// If line is not valid JSON, treat it as plain text
 			fmt.Print("❓ ")
-			fmt.Println(line)
+			fmt.Println(indentSubsequentLines(line))
 			log.Debugf("gemini-json: non-JSON line: %s", line)
 			continue
 		}
