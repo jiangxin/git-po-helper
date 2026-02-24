@@ -29,6 +29,7 @@ SOURCES_CMD = ( \
                 | sed -e 's|^\./||' \
         )
 FOUND_SOURCE_FILES := $(shell $(SOURCES_CMD))
+FOUND_SOURCE_FILES += $(wildcard config/prompts/*.txt)
 
 # Returns a list of all non-vendored (local packages)
 LOCAL_PACKAGES = $(shell go list ./... | grep -v -e '^$(PKG)/vendor/')

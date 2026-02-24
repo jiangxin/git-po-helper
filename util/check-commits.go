@@ -747,7 +747,7 @@ func checkCommitChanges(commit string, notL10nChanges, l10nChanges []string) (ok
 			Revision: commit,
 			File:     fileName,
 		}
-		if err := checkoutTmpfile(&tmpFile); err != nil || tmpFile.Tmpfile == "" {
+		if err := CheckoutTmpfile(&tmpFile); err != nil || tmpFile.Tmpfile == "" {
 			errs = append(errs,
 				fmt.Sprintf("commit %s: fail to checkout %s of revision %s: %s",
 					AbbrevCommit(commit), tmpFile.File, tmpFile.Revision, err))
@@ -874,12 +874,6 @@ func fetchBlobsInPartialClone(args []string) error {
 	log.Debugf("successfully fetched %d missing blob(s) in a batch from partial clone",
 		len(blobList))
 	scanner = bufio.NewScanner(bytes.NewReader(out))
-	if err != nil {
-		for scanner.Scan() {
-			log.Error(scanner.Text())
-		}
-		return err
-	}
 	for scanner.Scan() {
 		log.Info(scanner.Text())
 	}

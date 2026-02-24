@@ -29,7 +29,8 @@ established contribution conventions.
 The project follows a standard Go project structure:
 
 - `cmd/` - CLI subcommand implementations (check, check-commits,
-  check-po, diff, init, team, update, version)
+  check-po, compare, agent-run, agent-test, init, msg-select, team,
+  update, version)
 - `util/` - Core utility functions and business logic
 - `data/` - ISO-3166 and ISO-639 language/country code data
   (generated from CSV)
@@ -138,11 +139,15 @@ The project uses automatically generated version files:
 
 #### Command List
 
+- `agent-run` - Run agent commands for automation (update-pot, update-po, translate, review)
+- `agent-test` - Test agent commands with multiple runs
 - `check` - Check all .po files and commits
 - `check-commits` - Check if commits comply with l10n conventions
 - `check-po` - Check syntax of XX.po file
-- `diff` - Show differences between two l10n files
+- `check-pot` - Check syntax of XX.pot file
+- `compare` - Show differences between two l10n files (--stat for diff stats, or new/changed entries)
 - `init` - Create a new XX.po file
+- `msg-select` - Extract entries from PO/POT file by index range
 - `team` - Show team leader/member information
 - `update` - Update XX.po file
 - `version` - Display version information
@@ -189,6 +194,28 @@ following can be inferred from the code structure:
    Actions)
 4. **Backward Compatibility**: Maintain compatibility with older
    versions of gettext
+
+### Commit Conventions
+
+- **Specification**: Commit messages MUST follow the
+  [Conventional Commits Specification](https://www.conventionalcommits.org/en/v1.0.0/).
+- **Language**: Commit messages MUST be written in English.
+- **Multi-line structure**: A good commit message SHOULD contain multiple lines:
+  the first line is the subject, the second line is blank, and the third and
+  subsequent lines contain a detailed description of the change.
+- **Content focus**: The detailed description MUST explain the reasons for the
+  change (why) and include a concise description of what was changed, rather
+  than only describing how the change was implemented (how).
+- **Inferring reasons**: The reasons for the change SHOULD be inferred from the
+  prompts together with the actual code changes.
+- **Line length**: No single line in the commit message SHOULD exceed 72
+  characters. If a line would be longer, wrap it to the next line without
+  inserting extra blank lines.
+- **HereDoc usage**: When running the `git commit` command, use a HereDoc to
+  provide the commit message, for example:
+  `git commit -F- <<-EOF`, and do NOT use multiple `-m <message>` arguments to
+  build a multi-line commit message, because multiple `-m <message>` options
+  will insert redundant blank lines into the final commit message.
 
 ### Configuration
 

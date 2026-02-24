@@ -1,0 +1,21 @@
+{
+  "name": "git-po-helper",
+  "version": "1.0.0",
+  "description": "[![CI](https://github.com/git-l10n/git-po-helper/actions/workflows/main.yml/badge.svg)](https://github.com/git-l10n/git-po-helper/actions/workflows/main.yml)",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepare": "husky"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

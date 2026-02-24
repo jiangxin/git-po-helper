@@ -1,6 +1,14 @@
 [![CI](https://github.com/git-l10n/git-po-helper/actions/workflows/main.yml/badge.svg)](https://github.com/git-l10n/git-po-helper/actions/workflows/main.yml)
 
-**A helper program to check conventions for git l10n contributions**
+**A helper program for Git localization (l10n) contributions**
+
+## Overview
+
+`git-po-helper` serves two main purposes:
+
+1. **Quality checking** — Check conventions for Git l10n contributions. Pull requests to [git-l10n/git-po](https://github.com/git-l10n/git-po) must comply with file location, commit log format, PO syntax, and other rules. This tool automates these checks for coordinators and contributors.
+
+2. **AI-assisted translation** — Integrate AI code agents (Claude, Gemini, Codex, OpenCode, etc.) to automate localization tasks: update POT templates, update PO files, translate new entries, and review translations. See [docs/agent-commands.md](docs/agent-commands.md) for configuration and usage.
 
 ## Conventions
 
@@ -22,7 +30,7 @@ following conventions.
   - Add a prefix ("l10n:" followed by a space) in the subject of the commit log.
     Take history commits as an example: `git log --no-merges -- po/`.
 
-  - Do not use non-ASCII chracters in the subject of a commit.
+  - Do not use non-ASCII characters in the subject of a commit.
 
   - The subject (the first line) of the commit log should have characters no more than 50.
 
@@ -64,12 +72,12 @@ conventions:
 * Add a new entry in the `po/TEAMS` file with proper format.
 
 
-## Prerequsites
+## Prerequisites
 
 `git-po-helper` is written in [golang](https://golang.org/), golang must be
 installed before compiling.
 
-Additional prerequsites need by `git-po-helper`:
+Additional prerequisites needed by `git-po-helper`:
 
 * git
 * gettext
@@ -112,21 +120,62 @@ Usage:
   git-po-helper [command]
 
 Available Commands:
+  agent-run     Run agent commands for automation
+  agent-test    Test agent commands with multiple runs
   check         Check all ".po" files and commits
   check-commits Check commits for l10n conventions
   check-po      Check syntax of XX.po file
-  diff          Show changes between two l10n files
+  check-pot     Check syntax of XX.pot file
+  compare       Show changes between two l10n files
   help          Help about any command
   init          Create XX.po file
+  msg-select    Extract entries from PO/POT file by index range
   team          Show team leader/members
   update        Update XX.po file
   version       Display the version of git-po-helper
 
 Flags:
-  -h, --help            help for git-po-helper
-  -q, --quiet count     quiet mode
-  -v, --verbose count   verbose mode
-  -V, --version         Show version
+  -h, --help              help for git-po-helper
+      --pot-file string   way to get latest pot file: 'auto', 'download', 'build', 'no' or filename (default "auto")
+  -q, --quiet count       quiet mode
+  -v, --verbose count     verbose mode
+      --version           Show version
 
 Use "git-po-helper [command] --help" for more information about a command.
 ```
+
+## Commands
+
+### Quality checking
+
+| Command | Description |
+|---------|-------------|
+| `check` | Check all `.po` files and commits. Options: `--core` (also check against git-core.pot), `--force`, `--no-gpg`, `--report-file-locations`, `--report-typos`. |
+| `check-commits` | Check commits for l10n conventions. Usage: `check-commits [<range>]`. Options: `--force`, `--no-gpg`, `--report-file-locations`, `--report-typos`. |
+| `check-po` | Check syntax of XX.po file. Usage: `check-po <XX.po>...`. Options: `--core`, `--report-file-locations`, `--report-typos`. |
+| `check-pot` | Check config variables in POT file. Options: `--show-all-configs`, `--show-camel-case-configs` (for config manpage). |
+
+### PO file operations
+
+| Command | Description |
+|---------|-------------|
+| `compare` | Show changes between two PO files or versions. Default: output new or changed entries to stdout. With `--stat`: show diff statistics. Use `-r`, `--commit`, or `--since` for revision range. Usage: `compare [-r range] [[<src>] <target>]`. |
+| `init` | Create XX.po file. Usage: `init <XX.po>`. Option: `--core` (generate from po/git-core.pot). |
+| `msg-select` | Extract entries from PO/POT file by index range. Usage: `msg-select --range "3,5,9-13" <po-file>`. Range format: `3,5` (entries 3 and 5), `9-13` (entries 9–13), `-5` (first 5), `50-` (from 50 to end). |
+| `update` | Update XX.po file. Usage: `update <XX.po>...`. Options: `--no-file-location`, `--no-location`. |
+
+### Team and version
+
+| Command | Description |
+|---------|-------------|
+| `team` | Show team leader/members. Usage: `team [options] [team]...`. Options: `-a` (all users), `-c` (check members), `-L` (language), `-l` (leaders only), `-m` (members only). |
+| `version` | Display the version of git-po-helper. |
+
+### Agent commands (AI-assisted translation)
+
+| Command | Description |
+|---------|-------------|
+| `agent-run` | Run agent commands for automation. Subcommands: `update-pot`, `update-po`, `translate`, `review`, `parse-log`, `show-config`. Uses git-po-helper.yaml for configuration. Option: `--prompt` (override prompt). |
+| `agent-test` | Test agent commands with multiple runs and calculate average scores. Subcommands: `update-pot`, `update-po`, `translate`, `review`, `show-config`. Options: `--runs` (number of runs, default 5), `--dangerously-remove-po-directory`. |
+
+See [docs/agent-commands.md](docs/agent-commands.md) for agent configuration and detailed usage.

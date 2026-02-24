@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 
 	"github.com/git-l10n/git-po-helper/cmd"
 )
@@ -23,7 +24,15 @@ func main() {
 			resp.Cmd.Println(resp.Cmd.UsageString())
 		} else if resp.Cmd.SilenceErrors {
 			resp.Cmd.Println("")
-			resp.Cmd.Printf("ERROR: fail to execute \"%s %s\"\n", Program, resp.Cmd.Name())
+			// Use CommandPath() to get full command path (e.g., "git-po-helper agent-run translate")
+			// Remove Program prefix to get subcommand path (e.g., "agent-run translate")
+			cmdPath := resp.Cmd.CommandPath()
+			subCmdPath := strings.TrimPrefix(cmdPath, Program+" ")
+			if subCmdPath == "" {
+				// Fallback to Name() if CommandPath() only contains Program
+				subCmdPath = resp.Cmd.Name()
+			}
+			resp.Cmd.Printf("ERROR: fail to execute \"%s %s\"\n", Program, subCmdPath)
 		}
 		os.Exit(-1)
 	}
