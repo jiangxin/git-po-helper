@@ -976,13 +976,13 @@ type GeminiContent struct {
 
 // GeminiMessage represents the message object in Gemini-CLI output.
 type GeminiMessage struct {
-	ID         string          `json:"id"`
-	Type       string          `json:"type"`
-	Role       string          `json:"role"`
-	Model      string          `json:"model"`
-	Content    []GeminiContent `json:"content"`
-	StopReason interface{}     `json:"stop_reason"`
-	Usage      *GeminiUsage    `json:"usage,omitempty"`
+	ID         string            `json:"id"`
+	Type       string            `json:"type"`
+	Role       string            `json:"role"`
+	Model      string            `json:"model"`
+	Content    []json.RawMessage `json:"content"`
+	StopReason interface{}       `json:"stop_reason"`
+	Usage      *GeminiUsage      `json:"usage,omitempty"`
 }
 
 // GeminiSystemMessage represents a system initialization message in Gemini-CLI JSONL format.
@@ -1012,8 +1012,8 @@ type GeminiUserMessage struct {
 	SessionID       string  `json:"session_id"`
 	ParentToolUseID *string `json:"parent_tool_use_id"`
 	Message         struct {
-		Role    string          `json:"role"`
-		Content []GeminiContent `json:"content"`
+		Role    string            `json:"role"`
+		Content []json.RawMessage `json:"content"`
 	} `json:"message"`
 }
 
@@ -1409,7 +1409,7 @@ func printClaudeUserMessage(rawLine []byte, msg *ClaudeUserMessage) {
 	contentType := parseClaudeUserContentType(msg)
 	var displayText string
 	if contentType == "tool_result" {
-		displayText = fmt.Sprintf("tool_result: ... %d bytes ...", size)
+		displayText = fmt.Sprintf("... %d bytes ...", size)
 	} else {
 		displayText = fmt.Sprintf("%s: ... %d bytes ...", contentType, size)
 	}
@@ -1875,6 +1875,81 @@ func printOpenCodeToolUse(msg *OpenCodeToolUse, resultBuilder *strings.Builder) 
 	flushStdout()
 }
 
+// printGeminiAssistantMessage displays assistant message content with type-specific icons.
+// Uses same content format as Claude (text, thinking, tool_use). Icons: 🤔 thinking, 🔧 tool_use, 🤖 text, ❓ unknown.
+func printGeminiAssistantMessage(msg *GeminiAssistantMessage, resultBuilder *strings.Builder) {
+	if len(msg.Message.Content) == 0 {
+		return
+	}
+	for _, raw := range msg.Message.Content {
+		contentType, displayText, resultText, ok := parseClaudeContentBlock(raw)
+		if !ok {
+			log.Debugf("gemini-json: assistant message: content type: %s", contentType)
+			continue
+		}
+		if displayText == "" {
+			continue
+		}
+		var icon string
+		switch contentType {
+		case "text":
+			icon = "🤖 "
+		case "thinking":
+			icon = "🤔 "
+		case "tool_use":
+			icon = "🔧 "
+		default:
+			icon = "❓ "
+		}
+		fmt.Print(icon)
+		fmt.Println(displayText)
+		flushStdout()
+		if resultText != "" {
+			resultBuilder.WriteString(resultText)
+		}
+	}
+}
+
+// parseGeminiUserContentType parses user message content to determine content subtype.
+func parseGeminiUserContentType(msg *GeminiUserMessage) string {
+	if len(msg.Message.Content) == 0 {
+		return "tool_result"
+	}
+	var firstOther string
+	for _, raw := range msg.Message.Content {
+		var typeOnly struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(raw, &typeOnly); err != nil {
+			continue
+		}
+		if typeOnly.Type != "tool_result" {
+			if firstOther == "" {
+				firstOther = typeOnly.Type
+			}
+		}
+	}
+	if firstOther != "" {
+		return firstOther
+	}
+	return "tool_result"
+}
+
+// printGeminiUserMessage displays user message (e.g. tool result) with conversation icon.
+func printGeminiUserMessage(rawLine []byte, msg *GeminiUserMessage) {
+	size := len(rawLine)
+	contentType := parseGeminiUserContentType(msg)
+	var displayText string
+	if contentType == "tool_result" {
+		displayText = fmt.Sprintf("tool_result: ... %d bytes ...", size)
+	} else {
+		displayText = fmt.Sprintf("%s: ... %d bytes ...", contentType, size)
+	}
+	fmt.Print("💬 ")
+	fmt.Println(displayText)
+	flushStdout()
+}
+
 // ParseGeminiJSONLRealtime parses Gemini-CLI JSONL output in real-time from an io.Reader.
 // It displays messages as they arrive and returns the final parsed result.
 func ParseGeminiJSONLRealtime(reader io.Reader) (content []byte, result *GeminiJSONOutput, err error) {
@@ -1953,25 +2028,10 @@ func ParseGeminiJSONLRealtime(reader io.Reader) (content []byte, result *GeminiJ
 				lastResult.NumTurns++
 				log.Debugf("gemini-json: turn %d", lastResult.NumTurns)
 
-				// Extract text from message.content (type="text")
+				// Display assistant content with type-specific icons (same as Claude)
 				var assistantText strings.Builder
-				for _, content := range asstMsg.Message.Content {
-					if content.Type == "text" && content.Text != "" {
-						assistantText.WriteString(content.Text)
-					} else {
-						log.Debugf("gemini-json: turn %d: content type: %s",
-							lastResult.NumTurns, content.Type)
-					}
-				}
-
-				// Display with robot emoji (similar to Claude's printAssistantMessage)
-				if assistantText.Len() > 0 {
-					displayText := truncateText(assistantText.String(), maxDisplayBytes, maxDisplayLines)
-					fmt.Print("🤖 ")
-					fmt.Println(displayText)
-					flushStdout()
-					lastAssistantText = assistantText.String()
-				}
+				printGeminiAssistantMessage(&asstMsg, &assistantText)
+				lastAssistantText = assistantText.String()
 
 				// Extract usage from message.usage and merge into lastResult.Usage
 				if asstMsg.Message.Usage != nil {
@@ -1993,10 +2053,9 @@ func ParseGeminiJSONLRealtime(reader io.Reader) (content []byte, result *GeminiJ
 				log.Debugf("gemini-json: failed to parse assistant message: %v", err)
 			}
 		case "user":
-			// Log user messages at debug level (similar to Claude's user message handling)
 			var userMsg GeminiUserMessage
 			if err := json.Unmarshal([]byte(line), &userMsg); err == nil {
-				log.Debugf("gemini-json: user message (tool result): session_id=%s", userMsg.SessionID)
+				printGeminiUserMessage([]byte(line), &userMsg)
 			} else {
 				log.Debugf("gemini-json: failed to parse user message: %v", err)
 			}

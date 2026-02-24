@@ -1121,9 +1121,10 @@ func CmdAgentRunShowConfig() error {
 	return nil
 }
 
-// CmdAgentRunParseLog parses a Claude agent JSONL log file and displays formatted output.
+// CmdAgentRunParseLog parses an agent JSONL log file and displays formatted output.
+// Auto-detects format: Claude (claude_code_version) vs Qwen/Gemini (qwen_code_version or Gemini-style).
 // Each line in the file should be a JSON object. Supports system, assistant (with text,
-// thinking, tool_use content types), and result messages.
+// thinking, tool_use content types), user (tool_result), and result messages.
 func CmdAgentRunParseLog(logFile string) error {
 	f, err := os.Open(logFile)
 	if err != nil {
@@ -1131,7 +1132,19 @@ func CmdAgentRunParseLog(logFile string) error {
 	}
 	defer f.Close()
 
-	_, _, err = ParseClaudeStreamJSONRealtime(f)
+	reader := bufio.NewReader(f)
+	firstLine, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return fmt.Errorf("failed to read log file: %w", err)
+	}
+	parseReader := io.MultiReader(strings.NewReader(firstLine), reader)
+
+	if strings.Contains(firstLine, "claude_code_version") {
+		_, _, err = ParseClaudeStreamJSONRealtime(parseReader)
+	} else {
+		// Qwen/Gemini format (qwen_code_version or Gemini-style system init)
+		_, _, err = ParseGeminiJSONLRealtime(parseReader)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to parse log file: %w", err)
 	}

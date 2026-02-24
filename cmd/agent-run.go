@@ -255,18 +255,20 @@ With two file arguments, compare worktree files (revisions not allowed).`,
 	// Add parse-log subcommand
 	parseLogCmd := &cobra.Command{
 		Use:   "parse-log [log-file]",
-		Short: "Parse Claude agent JSONL log file and display formatted output",
-		Long: `Parse a Claude agent JSONL log file (one JSON object per line) and display
-formatted output with type-specific icons:
-- 💭 thinking content
+		Short: "Parse agent JSONL log file and display formatted output",
+		Long: `Parse a Claude or Qwen/Gemini agent JSONL log file (one JSON object per line).
+Auto-detects format and displays with type-specific icons:
+- 🤔 thinking content
 - 🔧 tool_use content (tool name and input)
 - 🤖 text content
+- 💬 user/tool_result (raw size)
 
 If no log file is specified, defaults to /tmp/claude.log.jsonl.
 
 Examples:
   git-po-helper agent-run parse-log
-  git-po-helper agent-run parse-log /tmp/claude.log.jsonl`,
+  git-po-helper agent-run parse-log /tmp/claude.log.jsonl
+  git-po-helper agent-run parse-log /tmp/qwen.log.jsonl`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logFile := "/tmp/claude.log.jsonl"
