@@ -680,7 +680,7 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 
 	// Execute agent command
 	workDir := repository.WorkDir()
-	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json", strings.Join(agentCmd, " "))
+	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json", truncateCommandDisplay(strings.Join(agentCmd, " ")))
 	result.AgentExecuted = true
 
 	var stdout []byte
@@ -884,7 +884,8 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	outputFormat = normalizeOutputFormat(outputFormat)
 
 	// Execute agent command
-	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json", strings.Join(agentCmd, " "))
+	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json",
+		truncateCommandDisplay(strings.Join(agentCmd, " ")))
 	result.AgentExecuted = true
 
 	var stdout []byte
@@ -1257,7 +1258,8 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	outputFormat = normalizeOutputFormat(outputFormat)
 
 	// Execute agent command
-	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json", strings.Join(agentCmd, " "))
+	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json",
+		truncateCommandDisplay(strings.Join(agentCmd, " ")))
 	result.AgentExecuted = true
 
 	var stdout []byte
@@ -1511,7 +1513,7 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 	outputFormat = normalizeOutputFormat(outputFormat)
 
 	// Execute agent command
-	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json", strings.Join(agentCmd, " "))
+	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json", truncateCommandDisplay(strings.Join(agentCmd, " ")))
 	result.AgentExecuted = true
 
 	var stdout []byte

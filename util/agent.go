@@ -1320,10 +1320,20 @@ func parseClaudeContentBlock(raw json.RawMessage) (contentType, displayText, res
 			}
 			sb.WriteString(strings.Join(pairs, ", "))
 		}
-		return "tool_use", sb.String(), "", true
+		return "tool_use", truncateCommandDisplay(sb.String()), "", true
 	default:
 		return typeOnly.Type, fmt.Sprintf("... %d bytes ...", len(raw)), "", true
 	}
+}
+
+// truncateCommandDisplay truncates long command/agent output for display.
+// Shows first 128 bytes + "..." + last 32 bytes when len > 160.
+func truncateCommandDisplay(s string) string {
+	const headLen, tailLen = 128, 32
+	if len(s) <= headLen+tailLen {
+		return s
+	}
+	return s[:headLen] + "..." + s[len(s)-tailLen:]
 }
 
 // truncateText truncates text to maxBytes bytes and/or maxLines lines, appending "..." if truncated.
@@ -1722,7 +1732,7 @@ func printCodexItem(itemRaw json.RawMessage, lastResult *CodexJSONOutput, lastAg
 			return lastAgentMessage
 		}
 		if !dedup {
-			fmt.Printf("🔧 %s\n", cmd.Command)
+			fmt.Printf("🔧 %s\n", truncateCommandDisplay(cmd.Command))
 		} else {
 			size := len(cmd.AggregatedOutput)
 			icon := "💬 "
@@ -2005,7 +2015,7 @@ func printOpenCodeToolUse(msg *OpenCodeToolUse, resultBuilder *strings.Builder) 
 	} else {
 		displayLine = toolType
 	}
-	fmt.Printf("🔧 %s\n", displayLine)
+	fmt.Printf("🔧 %s\n", truncateCommandDisplay(displayLine))
 	resultBuilder.WriteString(displayLine + "\n")
 
 	// Display output as size only
