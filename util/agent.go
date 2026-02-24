@@ -1244,6 +1244,7 @@ func printSystemMessage(msg *ClaudeSystemMessage) {
 
 // truncateText truncates text to maxBytes bytes and/or maxLines lines, appending "..." if truncated.
 // If maxLines > 0, the text is first limited to maxLines lines, then to maxBytes.
+// Returns text without trailing newline so callers can use fmt.Println without double newlines.
 func truncateText(text string, maxBytes int, maxLines int) string {
 	// First, limit by lines if maxLines > 0
 	if maxLines > 0 {
@@ -1256,11 +1257,11 @@ func truncateText(text string, maxBytes int, maxLines int) string {
 
 	// Then, limit by bytes
 	if len(text) <= maxBytes {
-		return text
+		return strings.TrimRight(text, "\n")
 	}
 	// Truncate to maxBytes - 3 to leave room for "..."
 	truncated := text[:maxBytes-3]
-	return truncated + "..."
+	return strings.TrimRight(truncated, "\n") + "..."
 }
 
 // printAssistantMessage displays assistant message content, printing each text block on a separate line.
@@ -1297,12 +1298,13 @@ func printResultMessage(msg *ClaudeJSONOutput, resultBuilder *strings.Builder) {
 		fmt.Println()
 		fmt.Println("✅ Final Result")
 		fmt.Println("==========================================")
-		// Print result text (may be multi-line)
+		// Print result text (may be multi-line); trim trailing empty from split to avoid extra blank
 		lines := strings.Split(msg.Result, "\n")
+		for len(lines) > 0 && lines[len(lines)-1] == "" {
+			lines = lines[:len(lines)-1]
+		}
 		for _, line := range lines {
-			if line != "" {
-				fmt.Println(line)
-			}
+			fmt.Println(line)
 		}
 		fmt.Println("==========================================")
 		resultBuilder.WriteString(msg.Result)
@@ -1735,12 +1737,8 @@ func printOpenCodeToolUse(msg *OpenCodeToolUse, resultBuilder *strings.Builder) 
 		resultBuilder.WriteString(fmt.Sprintf("%s\n", toolType))
 	}
 
-	// Display output (limited to 10 lines, with blank line separator)
+	// Display output (limited to 10 lines)
 	if msg.Part.State.Output != "" {
-		// Add blank line separator between tool and output
-		fmt.Println()
-		resultBuilder.WriteString("\n")
-
 		// Truncate output to 4KB and 10 lines for display
 		displayOutput := truncateText(msg.Part.State.Output, maxDisplayBytes, maxDisplayLines)
 		fmt.Println(displayOutput)
