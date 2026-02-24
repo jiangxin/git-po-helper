@@ -252,6 +252,34 @@ With two file arguments, compare worktree files (revisions not allowed).`,
 	_ = viper.BindPFlag("agent-run--agent", reviewCmd.Flags().Lookup("agent"))
 	_ = viper.BindPFlag("agent-run--range", reviewCmd.Flags().Lookup("range"))
 
+	// Add parse-log subcommand
+	parseLogCmd := &cobra.Command{
+		Use:   "parse-log [log-file]",
+		Short: "Parse Claude agent JSONL log file and display formatted output",
+		Long: `Parse a Claude agent JSONL log file (one JSON object per line) and display
+formatted output with type-specific icons:
+- 💭 thinking content
+- 🔧 tool_use content (tool name and input)
+- 🤖 text content
+
+If no log file is specified, defaults to /tmp/claude.log.jsonl.
+
+Examples:
+  git-po-helper agent-run parse-log
+  git-po-helper agent-run parse-log /tmp/claude.log.jsonl`,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			logFile := "/tmp/claude.log.jsonl"
+			if len(args) > 0 {
+				logFile = args[0]
+			}
+			if len(args) > 1 {
+				return newUserError("parse-log expects at most one argument: log-file")
+			}
+			return util.CmdAgentRunParseLog(logFile)
+		},
+	}
+
 	// Add show-config subcommand
 	showConfigCmd := &cobra.Command{
 		Use:   "show-config",
@@ -285,6 +313,7 @@ will be displayed.`,
 	v.cmd.AddCommand(updatePoCmd)
 	v.cmd.AddCommand(translateCmd)
 	v.cmd.AddCommand(reviewCmd)
+	v.cmd.AddCommand(parseLogCmd)
 	v.cmd.AddCommand(showConfigCmd)
 
 	return v.cmd

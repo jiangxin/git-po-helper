@@ -786,20 +786,34 @@ type ClaudeSystemMessage struct {
 	UUID              string   `json:"uuid"`
 }
 
-// ClaudeMessageContent represents a content item in assistant message.
-type ClaudeMessageContent struct {
+// ClaudeTextContent represents type="text" content block.
+type ClaudeTextContent struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
 }
 
+// ClaudeThinkingContent represents type="thinking" content block.
+type ClaudeThinkingContent struct {
+	Type     string `json:"type"`
+	Thinking string `json:"thinking"`
+}
+
+// ClaudeToolUseContent represents type="tool_use" content block.
+type ClaudeToolUseContent struct {
+	Type  string                 `json:"type"`
+	ID    string                 `json:"id"`
+	Name  string                 `json:"name"`
+	Input map[string]interface{} `json:"input"`
+}
+
 // ClaudeMessage represents the message structure in assistant messages.
 type ClaudeMessage struct {
-	ID      string                 `json:"id"`
-	Type    string                 `json:"type"`
-	Role    string                 `json:"role"`
-	Model   string                 `json:"model"`
-	Content []ClaudeMessageContent `json:"content"`
-	Usage   *ClaudeUsage           `json:"usage,omitempty"`
+	ID      string            `json:"id"`
+	Type    string            `json:"type"`
+	Role    string            `json:"role"`
+	Model   string            `json:"model"`
+	Content []json.RawMessage `json:"content"`
+	Usage   *ClaudeUsage      `json:"usage,omitempty"`
 }
 
 // ClaudeAssistantMessage represents an assistant message in json format (stream-json internally).
@@ -1041,10 +1055,10 @@ func (r *GeminiJSONOutput) GetNumTurns() int {
 	return r.NumTurns
 }
 
-// ParseAgentOutput parses agent output based on the output format.
+// ParseClaudeAgentOutput parses agent output based on the output format.
 // Returns the actual content (result text) and the parsed JSON result.
 // For claude, json format is treated as stream-json (JSONL format).
-func ParseAgentOutput(output []byte, outputFormat string) (content []byte, result *ClaudeJSONOutput, err error) {
+func ParseClaudeAgentOutput(output []byte, outputFormat string) (content []byte, result *ClaudeJSONOutput, err error) {
 	// Normalize output format (convert underscores to hyphens and unify stream-json to json)
 	outputFormat = normalizeOutputFormat(outputFormat)
 
@@ -1055,7 +1069,7 @@ func ParseAgentOutput(output []byte, outputFormat string) (content []byte, resul
 
 	// JSON format: parse as stream JSON (JSONL format, one JSON object per line)
 	if outputFormat == "json" {
-		return parseStreamJSON(output)
+		return parseClaudeStreamJSON(output)
 	}
 
 	// Unknown format: return as-is
@@ -1063,8 +1077,8 @@ func ParseAgentOutput(output []byte, outputFormat string) (content []byte, resul
 	return output, nil, nil
 }
 
-// parseStreamJSON parses stream JSON format where each line is a JSON object.
-func parseStreamJSON(output []byte) (content []byte, result *ClaudeJSONOutput, err error) {
+// parseClaudeStreamJSON parses stream JSON format where each line is a JSON object.
+func parseClaudeStreamJSON(output []byte) (content []byte, result *ClaudeJSONOutput, err error) {
 	var resultBuilder strings.Builder
 	var lastResult *ClaudeJSONOutput
 
@@ -1139,7 +1153,7 @@ func ParseClaudeStreamJSONRealtime(reader io.Reader) (content []byte, result *Cl
 		case "system":
 			var sysMsg ClaudeSystemMessage
 			if err := json.Unmarshal([]byte(line), &sysMsg); err == nil {
-				printSystemMessage(&sysMsg)
+				printClaudeSystemMessage(&sysMsg)
 			} else {
 				log.Debugf("stream-json: failed to parse system message: %v", err)
 			}
@@ -1148,7 +1162,7 @@ func ParseClaudeStreamJSONRealtime(reader io.Reader) (content []byte, result *Cl
 			if err := json.Unmarshal([]byte(line), &asstMsg); err == nil {
 				turnCount++
 				log.Debugf("stream-json: turn %d", turnCount)
-				printAssistantMessage(&asstMsg, &resultBuilder)
+				printClaudeAssistantMessage(&asstMsg, &resultBuilder)
 			} else {
 				log.Debugf("stream-json: failed to parse assistant message: %v", err)
 			}
@@ -1157,7 +1171,7 @@ func ParseClaudeStreamJSONRealtime(reader io.Reader) (content []byte, result *Cl
 			if err := json.Unmarshal([]byte(line), &resultMsg); err == nil {
 				// Print result parsing process
 				resultSize := len(resultMsg.Result)
-				printResultParsing(&resultMsg, resultSize)
+				printClaudeResultParsing(&resultMsg, resultSize)
 				// Merge usage information: prefer the result with more complete usage info
 				if lastResult == nil {
 					lastResult = &resultMsg
@@ -1189,7 +1203,7 @@ func ParseClaudeStreamJSONRealtime(reader io.Reader) (content []byte, result *Cl
 						lastResult.NumTurns = resultMsg.NumTurns
 					}
 				}
-				printResultMessage(&resultMsg, &resultBuilder)
+				printClaudeResultMessage(&resultMsg, &resultBuilder)
 			} else {
 				log.Debugf("stream-json: failed to parse result message: %v", err)
 			}
@@ -1213,9 +1227,9 @@ func ParseClaudeStreamJSONRealtime(reader io.Reader) (content []byte, result *Cl
 	return []byte(resultBuilder.String()), lastResult, nil
 }
 
-// printSystemMessage displays system initialization information.
+// printClaudeSystemMessage displays system initialization information.
 // (Applicable to Claude Code and Gemini-CLI)
-func printSystemMessage(msg *ClaudeSystemMessage) {
+func printClaudeSystemMessage(msg *ClaudeSystemMessage) {
 	fmt.Println()
 	fmt.Println("🤖 System Initialization")
 	fmt.Println("==========================================")
@@ -1242,6 +1256,49 @@ func printSystemMessage(msg *ClaudeSystemMessage) {
 	flushStdout()
 }
 
+// parseClaudeContentBlock parses a raw content block and returns (contentType, displayText, resultText, ok).
+// displayText is formatted for console output; resultText is the raw text to accumulate (for text type).
+func parseClaudeContentBlock(raw json.RawMessage) (contentType, displayText, resultText string, ok bool) {
+	var typeOnly struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &typeOnly); err != nil {
+		return "", "", "", false
+	}
+	switch typeOnly.Type {
+	case "text":
+		var c ClaudeTextContent
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return "", "", "", false
+		}
+		return "text", truncateText(c.Text, maxDisplayBytes, maxDisplayLines), c.Text, true
+	case "thinking":
+		var c ClaudeThinkingContent
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return "", "", "", false
+		}
+		return "thinking", truncateText(c.Thinking, maxDisplayBytes, maxDisplayLines), "", true
+	case "tool_use":
+		var c ClaudeToolUseContent
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return "", "", "", false
+		}
+		var sb strings.Builder
+		sb.WriteString(c.Name)
+		if len(c.Input) > 0 {
+			sb.WriteString(": ")
+			var pairs []string
+			for k, v := range c.Input {
+				pairs = append(pairs, fmt.Sprintf("%s=%v", k, v))
+			}
+			sb.WriteString(strings.Join(pairs, ", "))
+		}
+		return "tool_use", sb.String(), "", true
+	default:
+		return typeOnly.Type, fmt.Sprintf("... %d bytes ...", len(raw)), "", true
+	}
+}
+
 // truncateText truncates text to maxBytes bytes and/or maxLines lines, appending "..." if truncated.
 // If maxLines > 0, the text is first limited to maxLines lines, then to maxBytes.
 // Returns text without trailing newline so callers can use fmt.Println without double newlines.
@@ -1264,36 +1321,51 @@ func truncateText(text string, maxBytes int, maxLines int) string {
 	return strings.TrimRight(truncated, "\n") + "..."
 }
 
-// printAssistantMessage displays assistant message content, printing each text block on a separate line.
+// printClaudeAssistantMessage displays assistant message content, printing each block with type-specific icons.
 // (Applicable to Claude Code and Gemini-CLI)
-func printAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.Builder) {
+// Icons: 🤔 thinking, 🔧 tool_use, 🤖 text, ❓ unknown
+func printClaudeAssistantMessage(msg *ClaudeAssistantMessage, resultBuilder *strings.Builder) {
 	if msg.Message.Content == nil {
 		return
 	}
 
-	for _, content := range msg.Message.Content {
-		if content.Type == "text" && content.Text != "" {
-			// Truncate text to 4KB and 10 lines for display
-			displayText := truncateText(content.Text, maxDisplayBytes, maxDisplayLines)
-			// Print agent marker with robot emoji at the beginning of agent output
-			fmt.Print("🤖 ")
-			fmt.Println(displayText)
-			flushStdout()
-			resultBuilder.WriteString(content.Text)
-		} else {
-			log.Debugf("stream-json: assistant message: content type: %s", content.Type)
+	for _, raw := range msg.Message.Content {
+		contentType, displayText, resultText, ok := parseClaudeContentBlock(raw)
+		if !ok {
+			log.Debugf("stream-json: assistant message: content type: %s", contentType)
+			continue
+		}
+		if displayText == "" {
+			continue
+		}
+		var icon string
+		switch contentType {
+		case "text":
+			icon = "🤖 "
+		case "thinking":
+			icon = "🤔 "
+		case "tool_use":
+			icon = "🔧 "
+		default:
+			icon = "❓ "
+		}
+		fmt.Print(icon)
+		fmt.Println(displayText)
+		flushStdout()
+		if resultText != "" {
+			resultBuilder.WriteString(resultText)
 		}
 	}
 }
 
-// printResultParsing displays the parsing process of a result message.
-func printResultParsing(msg *ClaudeJSONOutput, resultSize int) {
+// printClaudeResultParsing displays the parsing process of a result message.
+func printClaudeResultParsing(msg *ClaudeJSONOutput, resultSize int) {
 	fmt.Printf("🤖 return result (%d bytes)\n", resultSize)
 	flushStdout()
 }
 
-// printResultMessage displays the final result message.
-func printResultMessage(msg *ClaudeJSONOutput, resultBuilder *strings.Builder) {
+// printClaudeResultMessage displays the final result message.
+func printClaudeResultMessage(msg *ClaudeJSONOutput, resultBuilder *strings.Builder) {
 	if msg.Result != "" {
 		fmt.Println()
 		fmt.Println("✅ Final Result")

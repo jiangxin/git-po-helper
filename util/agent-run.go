@@ -733,7 +733,7 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 		log.Infof("agent command completed successfully")
 
 		if !isCodex && !isOpencode {
-			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
+			parsedStdout, parsedResult, err := ParseClaudeAgentOutput(stdout, outputFormat)
 			if err != nil {
 				log.Warnf("failed to parse agent output: %v, using raw output", err)
 				parsedStdout = stdout
@@ -937,7 +937,7 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 		log.Infof("agent command completed successfully")
 
 		if !isCodex && !isOpencode {
-			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
+			parsedStdout, parsedResult, err := ParseClaudeAgentOutput(stdout, outputFormat)
 			if err != nil {
 				log.Warnf("failed to parse agent output: %v, using raw output", err)
 				parsedStdout = stdout
@@ -1121,6 +1121,23 @@ func CmdAgentRunShowConfig() error {
 	return nil
 }
 
+// CmdAgentRunParseLog parses a Claude agent JSONL log file and displays formatted output.
+// Each line in the file should be a JSON object. Supports system, assistant (with text,
+// thinking, tool_use content types), and result messages.
+func CmdAgentRunParseLog(logFile string) error {
+	f, err := os.Open(logFile)
+	if err != nil {
+		return fmt.Errorf("failed to open log file %s: %w", logFile, err)
+	}
+	defer f.Close()
+
+	_, _, err = ParseClaudeStreamJSONRealtime(f)
+	if err != nil {
+		return fmt.Errorf("failed to parse log file: %w", err)
+	}
+	return nil
+}
+
 // RunAgentTranslate executes a single agent-run translate operation.
 // It performs pre-validation (count new/fuzzy entries), executes the agent command,
 // performs post-validation (verify new=0 and fuzzy=0), and validates PO file syntax.
@@ -1274,7 +1291,7 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 		log.Infof("agent command completed successfully")
 
 		if !isCodex && !isOpencode {
-			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
+			parsedStdout, parsedResult, err := ParseClaudeAgentOutput(stdout, outputFormat)
 			if err != nil {
 				log.Warnf("failed to parse agent output: %v, using raw output", err)
 				parsedStdout = stdout
@@ -1538,7 +1555,7 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 		log.Infof("agent command completed successfully")
 
 		if !isCodex && !isOpencode {
-			parsedStdout, parsedResult, err := ParseAgentOutput(stdout, outputFormat)
+			parsedStdout, parsedResult, err := ParseClaudeAgentOutput(stdout, outputFormat)
 			if err != nil {
 				log.Warnf("failed to parse agent output: %v, using raw output", err)
 				parsedStdout = stdout
