@@ -287,7 +287,7 @@ msgstr "第三个"
 	}
 
 	var buf bytes.Buffer
-	err := MsgSelect(poFile, "1,3", &buf)
+	err := MsgSelect(poFile, "1,3", &buf, false)
 	if err != nil {
 		t.Fatalf("MsgSelect failed: %v", err)
 	}
@@ -331,7 +331,7 @@ msgstr "三"
 
 	t.Run("-2 means entries 1-2", func(t *testing.T) {
 		var buf bytes.Buffer
-		err := MsgSelect(poFile, "-2", &buf)
+		err := MsgSelect(poFile, "-2", &buf, false)
 		if err != nil {
 			t.Fatalf("MsgSelect failed: %v", err)
 		}
@@ -346,7 +346,7 @@ msgstr "三"
 
 	t.Run("2- means entries 2 to last", func(t *testing.T) {
 		var buf bytes.Buffer
-		err := MsgSelect(poFile, "2-", &buf)
+		err := MsgSelect(poFile, "2-", &buf, false)
 		if err != nil {
 			t.Fatalf("MsgSelect failed: %v", err)
 		}
@@ -380,11 +380,43 @@ msgstr "二"
 
 	// Range selects only out-of-range entries (file has 2 content entries)
 	var buf bytes.Buffer
-	err := MsgSelect(poFile, "10-20", &buf)
+	err := MsgSelect(poFile, "10-20", &buf, false)
 	if err != nil {
 		t.Fatalf("MsgSelect failed: %v", err)
 	}
 	if buf.Len() != 0 {
 		t.Errorf("output should be empty when no content entries selected, got %d bytes:\n%s", buf.Len(), buf.String())
+	}
+}
+
+func TestMsgSelect_NoHeader(t *testing.T) {
+	poContent := `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "First"
+msgstr "一"
+
+msgid "Second"
+msgstr "二"
+`
+
+	tmpDir := t.TempDir()
+	poFile := filepath.Join(tmpDir, "test.po")
+	if err := os.WriteFile(poFile, []byte(poContent), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	var buf bytes.Buffer
+	err := MsgSelect(poFile, "1-2", &buf, true)
+	if err != nil {
+		t.Fatalf("MsgSelect failed: %v", err)
+	}
+	output := buf.String()
+	if strings.Contains(output, "Content-Type") {
+		t.Errorf("output should not contain header when noHeader=true, got:\n%s", output)
+	}
+	if !strings.Contains(output, "First") || !strings.Contains(output, "Second") {
+		t.Errorf("output should contain First and Second, got:\n%s", output)
 	}
 }
