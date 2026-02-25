@@ -226,6 +226,9 @@ Exactly one of --range, --commit and --since may be specified.
 With two file arguments, compare worktree files (revisions not allowed).`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Execute in root of worktree.
+			repository.ChdirProjectRoot()
+
 			target, err := util.ResolveRevisionsAndFiles(v.O.Range, v.O.Commit, v.O.Since, args)
 			if err != nil {
 				return newUserErrorF("%v", err)
