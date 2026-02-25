@@ -212,11 +212,11 @@ func TestParseEntryRange(t *testing.T) {
 		wantErr  bool
 	}{
 		{"1", 10, []int{1}, false},
-		{"0", 10, []int{0}, false},
+		{"0", 10, []int{}, false}, // 0 excluded (header only)
 		{"1-3", 10, []int{1, 2, 3}, false},
 		{"3,5,9-13", 20, []int{3, 5, 9, 10, 11, 12, 13}, false},
 		{"1-3,5", 10, []int{1, 2, 3, 5}, false},
-		{"0,2,4", 5, []int{0, 2, 4}, false},
+		{"0,2,4", 5, []int{2, 4}, false},  // 0 excluded
 		{"15", 10, []int{}, false},        // Out of range, silently skipped
 		{"1-5", 3, []int{1, 2, 3}, false}, // Range clipped
 		{"", 10, nil, true},
@@ -358,4 +358,33 @@ msgstr "三"
 			t.Errorf("output should not contain First (entry 1), got:\n%s", output)
 		}
 	})
+}
+
+func TestMsgSelect_NoContentEntries(t *testing.T) {
+	poContent := `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "First"
+msgstr "一"
+
+msgid "Second"
+msgstr "二"
+`
+
+	tmpDir := t.TempDir()
+	poFile := filepath.Join(tmpDir, "test.po")
+	if err := os.WriteFile(poFile, []byte(poContent), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	// Range selects only out-of-range entries (file has 2 content entries)
+	var buf bytes.Buffer
+	err := MsgSelect(poFile, "10-20", &buf)
+	if err != nil {
+		t.Fatalf("MsgSelect failed: %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("output should be empty when no content entries selected, got %d bytes:\n%s", buf.Len(), buf.String())
+	}
 }

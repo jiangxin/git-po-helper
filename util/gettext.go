@@ -348,9 +348,10 @@ func BuildPoContent(header []string, entries []*PoEntry) []byte {
 	return []byte(b.String())
 }
 
-// ParseEntryRange parses a range specification like "3,5,9-13", "-5", or "50-" into a set of entry indices.
-// Entry 0 is the header entry. Returns indices in ascending order, deduplicated.
-// Valid indices are 0 (header, always included) and 1 to maxEntry.
+// ParseEntryRange parses a range specification like "3,5,9-13", "-5", or "50-"
+// into a set of entry indices. Entry 0 (header) is handled by MsgSelect; this
+// returns only content entry indices (1 to maxEntry). Returns indices in
+// ascending order, deduplicated.
 // Range formats:
 //   - N-M: entries N through M
 //   - -N: entries 1 through N (omit start)
@@ -414,7 +415,7 @@ func ParseEntryRange(spec string, maxEntry int) ([]int, error) {
 				}
 			}
 			for i := start; i <= end; i++ {
-				if i >= 0 && i <= maxEntry {
+				if i > 0 && i <= maxEntry {
 					seen[i] = true
 				}
 			}
@@ -424,15 +425,15 @@ func ParseEntryRange(spec string, maxEntry int) ([]int, error) {
 			if err != nil {
 				return nil, fmt.Errorf("invalid entry number: %s", part)
 			}
-			if n >= 0 && n <= maxEntry {
+			if n > 0 && n <= maxEntry {
 				seen[n] = true
 			}
 		}
 	}
 
-	// Build result in ascending order (0, 1, 2, ...)
+	// Build result in ascending order (1, 2, ...)
 	var result []int
-	for i := 0; i <= maxEntry; i++ {
+	for i := 1; i <= maxEntry; i++ {
 		if seen[i] {
 			result = append(result, i)
 		}
@@ -441,7 +442,8 @@ func ParseEntryRange(spec string, maxEntry int) ([]int, error) {
 }
 
 // MsgSelect reads a PO/POT file, selects entries by the given range specification,
-// and writes the result to w. Entry 0 (header) is always included.
+// and writes the result to w. Entry 0 (header) is included when content entries
+// are selected. If no content entries match the range, outputs nothing (empty).
 // Range spec format: comma-separated numbers or ranges, e.g. "3,5,9-13".
 func MsgSelect(poFile, rangeSpec string, w io.Writer) error {
 	data, err := os.ReadFile(poFile)
@@ -461,17 +463,9 @@ func MsgSelect(poFile, rangeSpec string, w io.Writer) error {
 		return fmt.Errorf("invalid range %q: %w", rangeSpec, err)
 	}
 
-	// Always ensure entry 0 (header) is included
-	hasHeader := false
-	for _, i := range indices {
-		if i == 0 {
-			hasHeader = true
-			break
-		}
-	}
-	if !hasHeader {
-		// Prepend 0 to indices
-		indices = append([]int{0}, indices...)
+	// If no content entries, output empty
+	if len(indices) == 0 {
+		return nil
 	}
 
 	// Write header
@@ -489,11 +483,8 @@ func MsgSelect(poFile, rangeSpec string, w io.Writer) error {
 		return err
 	}
 
-	// Write selected entries (index 0 = header already written, index 1+ = entries[i-1])
+	// Write selected entries (entries[idx-1])
 	for _, idx := range indices {
-		if idx == 0 {
-			continue // Header already written
-		}
 		entry := entries[idx-1]
 		for _, line := range entry.RawLines {
 			if _, err := io.WriteString(w, line); err != nil {

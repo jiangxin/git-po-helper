@@ -24,8 +24,9 @@ func (v *msgSelectCommand) Command() *cobra.Command {
 		Short: "Extract entries from PO/POT file by index range",
 		Long: `Extract entries from a PO or POT file by entry number range and write to stdout.
 
-Entry 0 is the header entry and is always included in the output.
+Entry 0 is the header entry; it is included when content entries are selected.
 Entry numbers 1, 2, 3, ... refer to the first, second, third content entries.
+If no content entries match the range, output is empty.
 
 Range format (--range): comma-separated numbers or ranges, e.g. "3,5,9-13"
   - Single numbers: 3, 5 (extract entries 3 and 5)
