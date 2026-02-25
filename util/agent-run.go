@@ -1501,6 +1501,103 @@ func executeReviewAgent(selectedAgent config.Agent, prompt, reviewFilePath, work
 	return stdout, stderr, originalStdout, streamResult, nil
 }
 
+// runReviewSingleBatch runs review on the full ReviewPOFile (single batch).
+func runReviewSingleBatch(selectedAgent config.Agent, prompt, reviewFilePath, workDir string, result *AgentRunResult, entryCount int) (*ReviewJSONResult, error) {
+	stdout, _, _, _, err := executeReviewAgent(selectedAgent, prompt, reviewFilePath, workDir, result)
+	if err != nil {
+		return nil, err
+	}
+	return parseAndAccumulateReviewJSON(stdout, entryCount, reviewFilePath)
+}
+
+// runReviewBatched runs review in batches using msg-select when entry count > 100.
+func runReviewBatched(selectedAgent config.Agent, prompt, ReviewPOFile, workDir string, result *AgentRunResult, entryCount int) (*ReviewJSONResult, error) {
+	num := 50
+	if entryCount > 500 {
+		num = 100
+	} else if entryCount > 200 {
+		num = 75
+	}
+
+	batchFile := filepath.Join(PoDir, "review-batch.po")
+
+	var allIssues []ReviewIssue
+	for batchNum := 1; ; batchNum++ {
+		start := (batchNum-1)*num + 1
+		end := batchNum * num
+		if end > entryCount {
+			end = entryCount
+		}
+
+		rangeSpec := formatMsgSelectRange(batchNum, start, end, entryCount, num)
+		log.Infof("reviewing batch %d: entries %d-%d (of %d)", batchNum, start, end, entryCount)
+
+		// Extract batch with msg-select
+		f, err := os.Create(batchFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create batch file: %w", err)
+		}
+		if err := MsgSelect(ReviewPOFile, rangeSpec, f, false); err != nil {
+			f.Close()
+			os.Remove(batchFile)
+			return nil, fmt.Errorf("msg-select failed: %w", err)
+		}
+		f.Close()
+
+		// Run agent on batch
+		stdout, _, _, _, err := executeReviewAgent(selectedAgent, prompt, batchFile, workDir, result)
+		os.Remove(batchFile) // Clean up batch file
+		if err != nil {
+			return nil, err
+		}
+
+		// Parse JSON and accumulate issues
+		batchJSON, err := parseAndAccumulateReviewJSON(stdout, end-start+1, batchFile)
+		if err != nil {
+			return nil, err
+		}
+		if batchJSON != nil {
+			allIssues = append(allIssues, batchJSON.Issues...)
+		}
+
+		if end >= entryCount {
+			break
+		}
+	}
+
+	return &ReviewJSONResult{TotalEntries: entryCount, Issues: allIssues}, nil
+}
+
+// formatMsgSelectRange returns the range spec for msg-select (e.g. "-50", "51-100", "101-").
+func formatMsgSelectRange(batchNum, start, end, entryCount, num int) string {
+	if batchNum == 1 {
+		return fmt.Sprintf("-%d", num)
+	}
+	if end >= entryCount {
+		return fmt.Sprintf("%d-", start)
+	}
+	return fmt.Sprintf("%d-%d", start, end)
+}
+
+// parseAndAccumulateReviewJSON extracts and parses JSON from stdout, updates total_entries.
+func parseAndAccumulateReviewJSON(stdout []byte, entryCount int, reviewFilePath string) (*ReviewJSONResult, error) {
+	jsonBytes, err := ExtractJSONFromOutput(stdout)
+	if err != nil {
+		log.Errorf("failed to extract JSON from agent output: %v", err)
+		return nil, fmt.Errorf("failed to extract JSON: %w", err)
+	}
+
+	reviewJSON, err := ParseReviewJSON(jsonBytes)
+	if err != nil {
+		log.Errorf("failed to parse review JSON: %v", err)
+		return nil, fmt.Errorf("failed to parse review JSON: %w", err)
+	}
+
+	reviewJSON.TotalEntries = entryCount
+	log.Debugf("parsed review JSON: total_entries=%d, issues=%d", reviewJSON.TotalEntries, len(reviewJSON.Issues))
+	return reviewJSON, nil
+}
+
 // RunAgentReview executes a single agent-run review operation with the new workflow:
 // 1. Prepare review data (orig.po, new.po, review-input.po)
 // 2. Copy review-input.po to review-output.po
@@ -1512,7 +1609,8 @@ func executeReviewAgent(selectedAgent config.Agent, prompt, reviewFilePath, work
 // does not use AgentTest configuration.
 func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, agentTest bool) (*AgentRunResult, error) {
 	var (
-		workDir = repository.WorkDir()
+		workDir    = repository.WorkDir()
+		reviewJSON *ReviewJSONResult
 	)
 
 	startTime := time.Now()
@@ -1549,65 +1647,35 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 		return result, fmt.Errorf("failed to prepare review data: %w", err)
 	}
 
-	// Step 2: Get prompt.review and execute agent
+	// Step 2: Get prompt.review
 	prompt, err := GetPrompt(cfg, "review")
 	if err != nil {
 		return result, err
 	}
 	log.Debugf("using review prompt: %s", prompt)
 
-	stdout, _, _, _, err := executeReviewAgent(selectedAgent, prompt, ReviewPOFile, workDir, result)
-	if err != nil {
-		return result, err
-	}
-
-	// Extract JSON from agent output
-	log.Infof("extracting JSON from agent output")
-	log.Debugf("agent stdout length: %d bytes", len(stdout))
-	jsonBytes, err := ExtractJSONFromOutput(stdout)
-	if err != nil {
-		log.Errorf("failed to extract JSON from agent output: %v", err)
-		previewLen := 500
-		if len(stdout) < previewLen {
-			previewLen = len(stdout)
-		}
-		if previewLen > 0 {
-			log.Debugf("agent stdout (first %d chars): %s", previewLen, string(stdout[:previewLen]))
-		}
-		result.AgentError = fmt.Sprintf("failed to extract JSON: %v", err)
-		return result, fmt.Errorf("failed to extract JSON from agent output: %w\nHint: Ensure the agent outputs valid JSON", err)
-	}
-	log.Debugf("extracted JSON length: %d bytes", len(jsonBytes))
-
-	// Parse JSON
-	log.Infof("parsing review JSON")
-	reviewJSON, err := ParseReviewJSON(jsonBytes)
-	if err != nil {
-		log.Errorf("failed to parse review JSON: %v", err)
-		previewLen := 500
-		if len(jsonBytes) < previewLen {
-			previewLen = len(jsonBytes)
-		}
-		if previewLen > 0 {
-			log.Debugf("JSON data (first %d chars): %s", previewLen, string(jsonBytes[:previewLen]))
-		}
-		result.AgentError = fmt.Sprintf("failed to parse JSON: %v", err)
-		return result, fmt.Errorf("failed to parse review JSON: %w\nHint: Check the JSON format matches ReviewJSONResult structure", err)
-	}
-	log.Debugf("parsed review JSON: total_entries=%d, issues=%d", reviewJSON.TotalEntries, len(reviewJSON.Issues))
-
-	// Recalculate total_entries from reviewInputPath file to ensure accuracy
 	totalEntries, err := countMsgidEntries(ReviewPOFile)
 	if err != nil {
 		log.Errorf("failed to count msgid entries in review input file: %v", err)
-	} else {
-		if totalEntries > 0 {
-			// Subtract 1 to account for the header entry
-			totalEntries -= 1
+		return result, fmt.Errorf("failed to count entries: %w", err)
+	}
+	entryCount := totalEntries
+	if entryCount > 0 {
+		entryCount-- // Exclude header
+	}
+
+	if entryCount <= 100 {
+		// Single run: review entire file
+		reviewJSON, err = runReviewSingleBatch(selectedAgent, prompt, ReviewPOFile, workDir, result, entryCount)
+		if err != nil {
+			return result, err
 		}
-		log.Debugf("updating total_entries from %d to %d based on actual msgid count in %s",
-			reviewJSON.TotalEntries, totalEntries, ReviewPOFile)
-		reviewJSON.TotalEntries = totalEntries
+	} else {
+		// Batch mode: iterate with msg-select
+		reviewJSON, err = runReviewBatched(selectedAgent, prompt, ReviewPOFile, workDir, result, entryCount)
+		if err != nil {
+			return result, err
+		}
 	}
 
 	// Save JSON to file
