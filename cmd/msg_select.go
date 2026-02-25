@@ -10,7 +10,8 @@ import (
 type msgSelectCommand struct {
 	cmd *cobra.Command
 	O   struct {
-		Range string
+		Range    string
+		NoHeader bool
 	}
 }
 
@@ -24,9 +25,10 @@ func (v *msgSelectCommand) Command() *cobra.Command {
 		Short: "Extract entries from PO/POT file by index range",
 		Long: `Extract entries from a PO or POT file by entry number range and write to stdout.
 
-Entry 0 is the header entry; it is included when content entries are selected.
-Entry numbers 1, 2, 3, ... refer to the first, second, third content entries.
-If no content entries match the range, output is empty.
+Entry 0 is the header entry; it is included when content entries are selected
+(use --no-header to omit). Entry numbers 1, 2, 3, ... refer to the first,
+second, third content entries. If no content entries match the range,
+output is empty.
 
 Range format (--range): comma-separated numbers or ranges, e.g. "3,5,9-13"
   - Single numbers: 3, 5 (extract entries 3 and 5)
@@ -46,6 +48,7 @@ Examples:
 	}
 
 	v.cmd.Flags().StringVar(&v.O.Range, "range", "", "entry range to extract (e.g. 3,5,9-13)")
+	v.cmd.Flags().BoolVar(&v.O.NoHeader, "no-header", false, "omit header entry from output")
 	_ = v.cmd.MarkFlagRequired("range")
 
 	return v.cmd
@@ -57,7 +60,7 @@ func (v msgSelectCommand) Execute(args []string) error {
 	}
 
 	poFile := args[0]
-	return util.MsgSelect(poFile, v.O.Range, os.Stdout)
+	return util.MsgSelect(poFile, v.O.Range, os.Stdout, v.O.NoHeader)
 }
 
 var msgSelectCmd = msgSelectCommand{}

@@ -443,9 +443,10 @@ func ParseEntryRange(spec string, maxEntry int) ([]int, error) {
 
 // MsgSelect reads a PO/POT file, selects entries by the given range specification,
 // and writes the result to w. Entry 0 (header) is included when content entries
-// are selected. If no content entries match the range, outputs nothing (empty).
-// Range spec format: comma-separated numbers or ranges, e.g. "3,5,9-13".
-func MsgSelect(poFile, rangeSpec string, w io.Writer) error {
+// are selected, unless noHeader is true. If no content entries match the range,
+// outputs nothing (empty). Range spec format: comma-separated numbers or ranges,
+// e.g. "3,5,9-13".
+func MsgSelect(poFile, rangeSpec string, w io.Writer, noHeader bool) error {
 	data, err := os.ReadFile(poFile)
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", poFile, err)
@@ -468,19 +469,21 @@ func MsgSelect(poFile, rangeSpec string, w io.Writer) error {
 		return nil
 	}
 
-	// Write header
-	for _, line := range header {
-		if _, err := io.WriteString(w, line); err != nil {
-			return err
-		}
-		if !strings.HasSuffix(line, "\n") {
-			if _, err := io.WriteString(w, "\n"); err != nil {
+	// Write header (unless skipped)
+	if !noHeader {
+		for _, line := range header {
+			if _, err := io.WriteString(w, line); err != nil {
 				return err
 			}
+			if !strings.HasSuffix(line, "\n") {
+				if _, err := io.WriteString(w, "\n"); err != nil {
+					return err
+				}
+			}
 		}
-	}
-	if _, err := io.WriteString(w, "\n"); err != nil {
-		return err
+		if _, err := io.WriteString(w, "\n"); err != nil {
+			return err
+		}
 	}
 
 	// Write selected entries (entries[idx-1])
