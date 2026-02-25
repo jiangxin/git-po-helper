@@ -70,6 +70,11 @@ type ReviewJSONResult struct {
 	Issues       []ReviewIssue `json:"issues"`
 }
 
+var (
+	ReviewPOFile   = filepath.Join(PoDir, "review.po")
+	ReviewJSONFile = filepath.Join(PoDir, "review.json")
+)
+
 // CalculateReviewScore calculates a 0-100 score from a ReviewJSONResult.
 // The scoring model treats each entry as having a maximum of 3 points.
 // For each reported issue, the score is reduced by (3 - issue.Score).
@@ -276,52 +281,27 @@ func AggregateReviewJSON(reviews []*ReviewJSONResult) *ReviewJSONResult {
 	return &ReviewJSONResult{TotalEntries: totalEntries, Issues: issues}
 }
 
-// SaveReviewJSON saves review JSON result to file.
-// It determines the output path from the PO file path:
-// po/XX.po -> po/XX-reviewed.json (where XX is the language code).
-// Creates directory if needed, writes JSON with proper formatting.
-// Returns the file path or error.
-func SaveReviewJSON(poFile string, review *ReviewJSONResult) (string, error) {
+// saveReviewJSON saves review JSON result
+func saveReviewJSON(review *ReviewJSONResult) error {
 	if review == nil {
-		return "", fmt.Errorf("review result is nil")
-	}
-
-	// Determine output file path from PO file path
-	// Example: po/zh_CN.po -> po/zh_CN-reviewed.json
-	poFileName := filepath.Base(poFile)
-	langCode := strings.TrimSuffix(poFileName, ".po")
-	if langCode == "" || langCode == poFileName {
-		return "", fmt.Errorf("invalid PO file path: %s (expected format: po/XX.po)", poFile)
-	}
-
-	// Build output path: po/XX-reviewed.json
-	workDir := repository.WorkDir()
-	outputPath := filepath.Join(workDir, PoDir, fmt.Sprintf("%s-reviewed.json", langCode))
-
-	log.Debugf("saving review JSON to %s", outputPath)
-
-	// Create po/ directory if it doesn't exist
-	poDir := filepath.Join(workDir, PoDir)
-	if err := os.MkdirAll(poDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create directory %s: %w", poDir, err)
+		return fmt.Errorf("review result is nil")
 	}
 
 	// Marshal JSON with indentation for readability
 	jsonData, err := json.MarshalIndent(review, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal JSON: %w", err)
+		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
 	// Add newline at end of file
 	jsonData = append(jsonData, '\n')
 
 	// Write JSON to file
-	if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
-		return "", fmt.Errorf("failed to write JSON file %s: %w", outputPath, err)
+	if err := os.WriteFile(ReviewJSONFile, jsonData, 0644); err != nil {
+		return fmt.Errorf("failed to write JSON file %s: %w", ReviewJSONFile, err)
 	}
 
-	log.Infof("review JSON saved to %s", outputPath)
-	return outputPath, nil
+	return nil
 }
 
 // ValidatePotEntryCount validates the entry count in a POT file.
@@ -1426,15 +1406,6 @@ func CmdAgentRunTranslate(agentName, poFile string) error {
 	return nil
 }
 
-// copyFile copies a file from src to dst.
-func copyFile(src, dst string) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, data, 0644)
-}
-
 // RunAgentReview executes a single agent-run review operation with the new workflow:
 // 1. Prepare review data (orig.po, new.po, review-input.po)
 // 2. Copy review-input.po to review-output.po
@@ -1478,31 +1449,20 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 	}
 
 	// Step 1: Prepare review data
-	log.Infof("preparing review data")
-	reviewInputAbsPath := filepath.Join(workDir, PoDir, "review-input.po")
-	if err := PrepareReviewData(target.OldCommit, target.OldFile, target.NewCommit, target.NewFile, reviewInputAbsPath); err != nil {
+	log.Infof("preparing review data: %s", ReviewPOFile)
+	if err := PrepareReviewData(target.OldCommit, target.OldFile, target.NewCommit, target.NewFile, ReviewPOFile); err != nil {
 		return result, fmt.Errorf("failed to prepare review data: %w", err)
 	}
 
-	// Step 2: Copy review-input.po to review-output.po
-	reviewOutputPath := filepath.Join(PoDir, "review-output.po")
-	reviewOutputAbsPath := filepath.Join(workDir, reviewOutputPath)
-	log.Debugf("copying review-input.po to review-output.po")
-	if err := copyFile(reviewInputAbsPath, reviewOutputAbsPath); err != nil {
-		return result, fmt.Errorf("failed to copy review-input to review-output: %w", err)
-	}
-
-	// Step 3: Get prompt.review and execute agent
+	// Step 2: Get prompt.review and execute agent
 	prompt, err := GetPrompt(cfg, "review")
 	if err != nil {
 		return result, err
 	}
-
 	log.Debugf("using review prompt: %s", prompt)
-	log.Infof("reviewing file: %s", reviewOutputPath)
 
 	// Build agent command with placeholders replaced
-	agentCmd := BuildAgentCommand(selectedAgent, prompt, reviewOutputPath, "")
+	agentCmd := BuildAgentCommand(selectedAgent, prompt, ReviewPOFile, "")
 
 	// Determine output format
 	outputFormat := selectedAgent.Output
@@ -1639,7 +1599,7 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 	log.Debugf("parsed review JSON: total_entries=%d, issues=%d", reviewJSON.TotalEntries, len(reviewJSON.Issues))
 
 	// Recalculate total_entries from reviewInputPath file to ensure accuracy
-	totalEntries, err := countMsgidEntries(reviewInputAbsPath)
+	totalEntries, err := countMsgidEntries(ReviewPOFile)
 	if err != nil {
 		log.Errorf("failed to count msgid entries in review input file: %v", err)
 	} else {
@@ -1648,21 +1608,19 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 			totalEntries -= 1
 		}
 		log.Debugf("updating total_entries from %d to %d based on actual msgid count in %s",
-			reviewJSON.TotalEntries, totalEntries, reviewInputAbsPath)
+			reviewJSON.TotalEntries, totalEntries, ReviewPOFile)
 		reviewJSON.TotalEntries = totalEntries
 	}
 
 	// Save JSON to file
-	log.Infof("saving review JSON to file")
-	jsonPath, err := SaveReviewJSON(poFile, reviewJSON)
-	if err != nil {
+	log.Infof("saving review JSON to %s", ReviewJSONFile)
+	if err := saveReviewJSON(reviewJSON); err != nil {
 		log.Errorf("failed to save review JSON: %v", err)
 		log.Debugf("PO file path: %s", poFile)
 		return result, fmt.Errorf("failed to save review JSON: %w", err)
 	}
 	result.ReviewJSON = reviewJSON
-	result.ReviewJSONPath = jsonPath
-	log.Debugf("review JSON saved to: %s", jsonPath)
+	result.ReviewJSONPath = ReviewJSONFile
 
 	// Calculate review score
 	log.Infof("calculating review score")
@@ -1674,10 +1632,10 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 	}
 	result.ReviewScore = reviewScore
 	result.Score = reviewScore
-	result.ReviewedFilePath = reviewOutputPath
+	result.ReviewedFilePath = ReviewPOFile
 
 	log.Infof("review completed successfully (score: %d/100, total entries: %d, issues: %d, reviewed file: %s)",
-		reviewScore, reviewJSON.TotalEntries, len(reviewJSON.Issues), reviewOutputPath)
+		reviewScore, reviewJSON.TotalEntries, len(reviewJSON.Issues), ReviewPOFile)
 
 	// Record execution time
 	result.ExecutionTime = time.Since(startTime)

@@ -973,7 +973,7 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 		} else {
 			log.Infof("aggregated review: score=%d/100 (from %d runs, %d unique issues)",
 				aggregatedScore, len(reviewJSONs), len(aggregated.Issues))
-			if _, err := SaveReviewJSON(poFile, aggregated); err != nil {
+			if err := saveReviewJSON(aggregated); err != nil {
 				log.Warnf("failed to save aggregated review JSON: %v", err)
 			}
 		}
