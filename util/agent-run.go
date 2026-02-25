@@ -1406,6 +1406,101 @@ func CmdAgentRunTranslate(agentName, poFile string) error {
 	return nil
 }
 
+// executeReviewAgent executes the agent command for reviewing the given file.
+// reviewFilePath is the PO file to review (e.g. po/review.po or po/review-batch.po).
+// Returns stdout (for JSON extraction), stderr, originalStdout (raw before parsing), streamResult.
+// Updates result with AgentExecuted, AgentSuccess, AgentError, AgentStdout, AgentStderr.
+func executeReviewAgent(selectedAgent config.Agent, prompt, reviewFilePath, workDir string, result *AgentRunResult) (stdout, stderr, originalStdout []byte, streamResult AgentStreamResult, err error) {
+	agentCmd := BuildAgentCommand(selectedAgent, prompt, reviewFilePath, "")
+
+	outputFormat := selectedAgent.Output
+	if outputFormat == "" {
+		outputFormat = "default"
+	}
+	outputFormat = normalizeOutputFormat(outputFormat)
+
+	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json", truncateCommandDisplay(strings.Join(agentCmd, " ")))
+	result.AgentExecuted = true
+
+	kind := selectedAgent.Kind
+	isCodex := kind == config.AgentKindCodex
+	isOpencode := kind == config.AgentKindOpencode
+
+	if outputFormat == "json" {
+		stdoutReader, stderrBuf, cmdProcess, execErr := ExecuteAgentCommandStream(agentCmd, workDir)
+		if execErr != nil {
+			log.Errorf("agent command execution failed: %v", execErr)
+			return nil, nil, nil, streamResult, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", execErr)
+		}
+		defer stdoutReader.Close()
+
+		var stdoutBuf bytes.Buffer
+		teeReader := io.TeeReader(stdoutReader, &stdoutBuf)
+
+		stdout, streamResult, _ = parseStreamByKind(kind, teeReader)
+		originalStdout = stdoutBuf.Bytes()
+
+		waitErr := cmdProcess.Wait()
+		stderr = stderrBuf.Bytes()
+
+		if waitErr != nil {
+			if len(stderr) > 0 {
+				log.Debugf("agent command stderr: %s", string(stderr))
+			}
+			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", waitErr)
+			log.Errorf("agent command execution failed: %v", waitErr)
+			return nil, stderr, originalStdout, streamResult, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", waitErr)
+		}
+		result.AgentSuccess = true
+		log.Infof("agent command completed successfully")
+	} else {
+		var execErr error
+		stdout, stderr, execErr = ExecuteAgentCommand(agentCmd, workDir)
+		originalStdout = stdout
+		result.AgentStdout = stdout
+		result.AgentStderr = stderr
+
+		if execErr != nil {
+			if len(stderr) > 0 {
+				log.Debugf("agent command stderr: %s", string(stderr))
+			}
+			if len(stdout) > 0 {
+				log.Debugf("agent command stdout: %s", string(stdout))
+			}
+			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", execErr)
+			log.Errorf("agent command execution failed: %v", execErr)
+			return nil, stderr, originalStdout, streamResult, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", execErr)
+		}
+		result.AgentSuccess = true
+		log.Infof("agent command completed successfully")
+
+		if !isCodex && !isOpencode {
+			parsedStdout, parsedResult, parseErr := ParseClaudeAgentOutput(stdout, outputFormat)
+			if parseErr != nil {
+				log.Warnf("failed to parse agent output: %v, using raw output", parseErr)
+			} else {
+				stdout = parsedStdout
+				streamResult = parsedResult
+			}
+		}
+	}
+
+	applyAgentDiagnostics(result, streamResult)
+	result.AgentStdout = originalStdout
+	if len(stderr) > 0 {
+		result.AgentStderr = stderr
+	}
+
+	if len(stdout) > 0 {
+		log.Debugf("agent command stdout: %s", string(stdout))
+	}
+	if len(stderr) > 0 {
+		log.Debugf("agent command stderr: %s", string(stderr))
+	}
+
+	return stdout, stderr, originalStdout, streamResult, nil
+}
+
 // RunAgentReview executes a single agent-run review operation with the new workflow:
 // 1. Prepare review data (orig.po, new.po, review-input.po)
 // 2. Copy review-input.po to review-output.po
@@ -1461,106 +1556,9 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 	}
 	log.Debugf("using review prompt: %s", prompt)
 
-	// Build agent command with placeholders replaced
-	agentCmd := BuildAgentCommand(selectedAgent, prompt, ReviewPOFile, "")
-
-	// Determine output format
-	outputFormat := selectedAgent.Output
-	if outputFormat == "" {
-		outputFormat = "default"
-	}
-	// Normalize output format (convert underscores to hyphens)
-	outputFormat = normalizeOutputFormat(outputFormat)
-
-	// Execute agent command
-	log.Infof("executing agent command (output=%s, streaming=%v): %s", outputFormat, outputFormat == "json", truncateCommandDisplay(strings.Join(agentCmd, " ")))
-	result.AgentExecuted = true
-
-	var stdout []byte
-	var stderr []byte
-	var streamResult AgentStreamResult
-	var originalStdout []byte
-
-	kind := selectedAgent.Kind
-	isCodex := kind == config.AgentKindCodex
-	isOpencode := kind == config.AgentKindOpencode
-
-	// Use streaming execution for json format (treated as stream-json)
-	if outputFormat == "json" {
-		stdoutReader, stderrBuf, cmdProcess, err := ExecuteAgentCommandStream(agentCmd, workDir)
-		if err != nil {
-			log.Errorf("agent command execution failed: %v", err)
-			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
-		}
-		defer stdoutReader.Close()
-
-		// For review, capture the original stream for JSON extraction
-		var stdoutBuf bytes.Buffer
-		teeReader := io.TeeReader(stdoutReader, &stdoutBuf)
-
-		stdout, streamResult, _ = parseStreamByKind(kind, teeReader)
-		originalStdout = stdoutBuf.Bytes()
-
-		waitErr := cmdProcess.Wait()
-		stderr = stderrBuf.Bytes()
-
-		if waitErr != nil {
-			if len(stderr) > 0 {
-				log.Debugf("agent command stderr: %s", string(stderr))
-			}
-			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", waitErr)
-			log.Errorf("agent command execution failed: %v", waitErr)
-			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", waitErr)
-		}
-		result.AgentSuccess = true
-		log.Infof("agent command completed successfully")
-	} else {
-		var err error
-		stdout, stderr, err = ExecuteAgentCommand(agentCmd, workDir)
-		originalStdout = stdout
-		result.AgentStdout = stdout
-		result.AgentStderr = stderr
-
-		if err != nil {
-			if len(stderr) > 0 {
-				log.Debugf("agent command stderr: %s", string(stderr))
-			}
-			if len(stdout) > 0 {
-				log.Debugf("agent command stdout: %s", string(stdout))
-			}
-			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", err)
-			log.Errorf("agent command execution failed: %v", err)
-			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
-		}
-		result.AgentSuccess = true
-		log.Infof("agent command completed successfully")
-
-		if !isCodex && !isOpencode {
-			parsedStdout, parsedResult, err := ParseClaudeAgentOutput(stdout, outputFormat)
-			if err != nil {
-				log.Warnf("failed to parse agent output: %v, using raw output", err)
-				parsedStdout = stdout
-			} else {
-				stdout = parsedStdout
-				streamResult = parsedResult
-			}
-		}
-	}
-
-	applyAgentDiagnostics(result, streamResult)
-
-	// For review, save the original stdout (before parsing) for JSON extraction
-	result.AgentStdout = originalStdout
-	if len(stderr) > 0 {
-		result.AgentStderr = stderr
-	}
-
-	// Log output if verbose
-	if len(stdout) > 0 {
-		log.Debugf("agent command stdout: %s", string(stdout))
-	}
-	if len(stderr) > 0 {
-		log.Debugf("agent command stderr: %s", string(stderr))
+	stdout, _, _, _, err := executeReviewAgent(selectedAgent, prompt, ReviewPOFile, workDir, result)
+	if err != nil {
+		return result, err
 	}
 
 	// Extract JSON from agent output
