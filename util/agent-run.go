@@ -71,9 +71,20 @@ type ReviewJSONResult struct {
 }
 
 var (
-	ReviewPOFile   = filepath.Join(PoDir, "review.po")
-	ReviewJSONFile = filepath.Join(PoDir, "review.json")
+	ReviewDefaultOutputFile = filepath.Join(PoDir, "review.json")
 )
+
+// ReviewOutputPaths returns (poFile, jsonFile) for the given output base path.
+// If base is empty, use ReviewDefaultOutputFile.
+// Strips .po or .json extension from base if present.
+func ReviewOutputPaths(base string) (poFile, jsonFile string) {
+	if base == "" {
+		base = ReviewDefaultOutputFile
+	}
+	base = strings.TrimSuffix(base, ".po")
+	base = strings.TrimSuffix(base, ".json")
+	return base + ".po", base + ".json"
+}
 
 // CalculateReviewScore calculates a 0-100 score from a ReviewJSONResult.
 // The scoring model treats each entry as having a maximum of 3 points.
@@ -281,8 +292,8 @@ func AggregateReviewJSON(reviews []*ReviewJSONResult) *ReviewJSONResult {
 	return &ReviewJSONResult{TotalEntries: totalEntries, Issues: issues}
 }
 
-// saveReviewJSON saves review JSON result
-func saveReviewJSON(review *ReviewJSONResult) error {
+// saveReviewJSON saves review JSON result to the given file path.
+func saveReviewJSON(review *ReviewJSONResult, jsonFile string) error {
 	if review == nil {
 		return fmt.Errorf("review result is nil")
 	}
@@ -297,8 +308,8 @@ func saveReviewJSON(review *ReviewJSONResult) error {
 	jsonData = append(jsonData, '\n')
 
 	// Write JSON to file
-	if err := os.WriteFile(ReviewJSONFile, jsonData, 0644); err != nil {
-		return fmt.Errorf("failed to write JSON file %s: %w", ReviewJSONFile, err)
+	if err := os.WriteFile(jsonFile, jsonData, 0644); err != nil {
+		return fmt.Errorf("failed to write JSON file %s: %w", jsonFile, err)
 	}
 
 	return nil
@@ -1501,7 +1512,7 @@ func executeReviewAgent(selectedAgent config.Agent, prompt, reviewFilePath, work
 	return stdout, stderr, originalStdout, streamResult, nil
 }
 
-// runReviewSingleBatch runs review on the full ReviewPOFile (single batch).
+// runReviewSingleBatch runs review on the full reviewFilePath (single batch).
 func runReviewSingleBatch(selectedAgent config.Agent, prompt, reviewFilePath, workDir string, result *AgentRunResult, entryCount int) (*ReviewJSONResult, error) {
 	stdout, _, _, _, err := executeReviewAgent(selectedAgent, prompt, reviewFilePath, workDir, result)
 	if err != nil {
@@ -1511,7 +1522,7 @@ func runReviewSingleBatch(selectedAgent config.Agent, prompt, reviewFilePath, wo
 }
 
 // runReviewBatched runs review in batches using msg-select when entry count > 100.
-func runReviewBatched(selectedAgent config.Agent, prompt, ReviewPOFile, workDir string, result *AgentRunResult, entryCount int) (*ReviewJSONResult, error) {
+func runReviewBatched(selectedAgent config.Agent, prompt, reviewPOFile, workDir string, result *AgentRunResult, entryCount int) (*ReviewJSONResult, error) {
 	num := 50
 	if entryCount > 500 {
 		num = 100
@@ -1537,7 +1548,7 @@ func runReviewBatched(selectedAgent config.Agent, prompt, ReviewPOFile, workDir 
 		if err != nil {
 			return nil, fmt.Errorf("failed to create batch file: %w", err)
 		}
-		if err := MsgSelect(ReviewPOFile, rangeSpec, f, false); err != nil {
+		if err := MsgSelect(reviewPOFile, rangeSpec, f, false); err != nil {
 			f.Close()
 			os.Remove(batchFile)
 			return nil, fmt.Errorf("msg-select failed: %w", err)
@@ -1607,7 +1618,9 @@ func parseAndAccumulateReviewJSON(stdout []byte, entryCount int, reviewFilePath 
 // Returns a result structure with detailed information.
 // The agentTest parameter is provided for consistency, though this method
 // does not use AgentTest configuration.
-func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, agentTest bool) (*AgentRunResult, error) {
+// outputBase: base path for review output files (e.g. "po/review"); empty uses default.
+func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, agentTest bool, outputBase string) (*AgentRunResult, error) {
+	reviewPOFile, reviewJSONFile := ReviewOutputPaths(outputBase)
 	var (
 		workDir    = repository.WorkDir()
 		reviewJSON *ReviewJSONResult
@@ -1642,8 +1655,8 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 	}
 
 	// Step 1: Prepare review data
-	log.Infof("preparing review data: %s", ReviewPOFile)
-	if err := PrepareReviewData(target.OldCommit, target.OldFile, target.NewCommit, target.NewFile, ReviewPOFile); err != nil {
+	log.Infof("preparing review data: %s", reviewPOFile)
+	if err := PrepareReviewData(target.OldCommit, target.OldFile, target.NewCommit, target.NewFile, reviewPOFile); err != nil {
 		return result, fmt.Errorf("failed to prepare review data: %w", err)
 	}
 
@@ -1654,7 +1667,7 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 	}
 	log.Debugf("using review prompt: %s", prompt)
 
-	totalEntries, err := countMsgidEntries(ReviewPOFile)
+	totalEntries, err := countMsgidEntries(reviewPOFile)
 	if err != nil {
 		log.Errorf("failed to count msgid entries in review input file: %v", err)
 		return result, fmt.Errorf("failed to count entries: %w", err)
@@ -1666,27 +1679,27 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 
 	if entryCount <= 100 {
 		// Single run: review entire file
-		reviewJSON, err = runReviewSingleBatch(selectedAgent, prompt, ReviewPOFile, workDir, result, entryCount)
+		reviewJSON, err = runReviewSingleBatch(selectedAgent, prompt, reviewPOFile, workDir, result, entryCount)
 		if err != nil {
 			return result, err
 		}
 	} else {
 		// Batch mode: iterate with msg-select
-		reviewJSON, err = runReviewBatched(selectedAgent, prompt, ReviewPOFile, workDir, result, entryCount)
+		reviewJSON, err = runReviewBatched(selectedAgent, prompt, reviewPOFile, workDir, result, entryCount)
 		if err != nil {
 			return result, err
 		}
 	}
 
 	// Save JSON to file
-	log.Infof("saving review JSON to %s", ReviewJSONFile)
-	if err := saveReviewJSON(reviewJSON); err != nil {
+	log.Infof("saving review JSON to %s", reviewJSONFile)
+	if err := saveReviewJSON(reviewJSON, reviewJSONFile); err != nil {
 		log.Errorf("failed to save review JSON: %v", err)
 		log.Debugf("PO file path: %s", poFile)
 		return result, fmt.Errorf("failed to save review JSON: %w", err)
 	}
 	result.ReviewJSON = reviewJSON
-	result.ReviewJSONPath = ReviewJSONFile
+	result.ReviewJSONPath = reviewJSONFile
 
 	// Calculate review score
 	log.Infof("calculating review score")
@@ -1698,10 +1711,10 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 	}
 	result.ReviewScore = reviewScore
 	result.Score = reviewScore
-	result.ReviewedFilePath = ReviewPOFile
+	result.ReviewedFilePath = reviewPOFile
 
 	log.Infof("review completed successfully (score: %d/100, total entries: %d, issues: %d, reviewed file: %s)",
-		reviewScore, reviewJSON.TotalEntries, len(reviewJSON.Issues), ReviewPOFile)
+		reviewScore, reviewJSON.TotalEntries, len(reviewJSON.Issues), reviewPOFile)
 
 	// Record execution time
 	result.ExecutionTime = time.Since(startTime)
@@ -1711,7 +1724,8 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 
 // CmdAgentRunReview implements the agent-run review command logic.
 // It loads configuration and calls RunAgentReview, then handles errors appropriately.
-func CmdAgentRunReview(agentName string, target *CompareTarget) error {
+// outputBase: base path for review output files (e.g. "po/review"); empty uses default.
+func CmdAgentRunReview(agentName string, target *CompareTarget, outputBase string) error {
 	// Load configuration
 	log.Debugf("loading agent configuration")
 	cfg, err := config.LoadAgentConfig()
@@ -1722,7 +1736,7 @@ func CmdAgentRunReview(agentName string, target *CompareTarget) error {
 
 	startTime := time.Now()
 
-	result, err := RunAgentReview(cfg, agentName, target, false)
+	result, err := RunAgentReview(cfg, agentName, target, false, outputBase)
 	if err != nil {
 		log.Errorf("failed to run agent review: %v", err)
 		return err

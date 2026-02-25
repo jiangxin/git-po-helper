@@ -878,7 +878,9 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 // It reuses RunAgentReview for each run, aggregates JSON results (for same msgid
 // takes lowest score), and saves one aggregated JSON at the end. No per-run backup.
 // Returns scores for each run, aggregated score (from merged JSON), and error.
-func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, runs int) ([]RunResult, int, error) {
+// outputBase: base path for review output files (e.g. "po/review"); empty uses default.
+func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, runs int, outputBase string) ([]RunResult, int, error) {
+	_, reviewJSONFile := ReviewOutputPaths(outputBase)
 	// Determine the agent to use
 	_, err := SelectAgent(cfg, agentName)
 	if err != nil {
@@ -913,7 +915,7 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 		}
 
 		// Reuse RunAgentReview for each run
-		agentResult, err := RunAgentReview(cfg, agentName, target, true)
+		agentResult, err := RunAgentReview(cfg, agentName, target, true, outputBase)
 
 		// Calculate execution time for this iteration
 		iterExecutionTime := time.Since(iterStartTime)
@@ -973,7 +975,7 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 		} else {
 			log.Infof("aggregated review: score=%d/100 (from %d runs, %d unique issues)",
 				aggregatedScore, len(reviewJSONs), len(aggregated.Issues))
-			if err := saveReviewJSON(aggregated); err != nil {
+			if err := saveReviewJSON(aggregated, reviewJSONFile); err != nil {
 				log.Warnf("failed to save aggregated review JSON: %v", err)
 			}
 		}
@@ -1089,7 +1091,8 @@ func displayTranslateTestResults(results []RunResult, averageScore float64, tota
 
 // CmdAgentTestReview implements the agent-test review command logic.
 // It runs the agent-run review operation multiple times and calculates an average score.
-func CmdAgentTestReview(agentName string, target *CompareTarget, runs int, skipConfirmation bool) error {
+// outputBase: base path for review output files (e.g. "po/review"); empty uses default.
+func CmdAgentTestReview(agentName string, target *CompareTarget, runs int, skipConfirmation bool, outputBase string) error {
 	// Require user confirmation before proceeding
 	if err := ConfirmAgentTestExecution(skipConfirmation); err != nil {
 		return err
@@ -1121,7 +1124,7 @@ func CmdAgentTestReview(agentName string, target *CompareTarget, runs int, skipC
 	startTime := time.Now()
 
 	// Run the test
-	results, aggregatedScore, err := RunAgentTestReview(cfg, agentName, target, runs)
+	results, aggregatedScore, err := RunAgentTestReview(cfg, agentName, target, runs, outputBase)
 	if err != nil {
 		log.Errorf("agent-test execution failed: %v", err)
 		return fmt.Errorf("agent-test failed: %w", err)

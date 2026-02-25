@@ -17,6 +17,7 @@ type agentTestCommand struct {
 		Commit                 string
 		Since                  string
 		Prompt                 string
+		Output                 string
 	}
 }
 
@@ -278,10 +279,12 @@ With two file arguments, compare worktree files (revisions not allowed).`,
 			if err != nil {
 				return newUserErrorF("%v", err)
 			}
-			return util.CmdAgentTestReview(v.O.Agent, target, v.O.Runs, v.O.DangerouslyRemovePoDir)
+			return util.CmdAgentTestReview(v.O.Agent, target, v.O.Runs, v.O.DangerouslyRemovePoDir, v.O.Output)
 		},
 	}
 
+	reviewCmd.Flags().StringVarP(&v.O.Output, "output", "o", "",
+		"base path for review output files (default: po/review); .po/.json are appended")
 	reviewCmd.Flags().StringVar(&v.O.Agent,
 		"agent",
 		"",
@@ -304,6 +307,7 @@ With two file arguments, compare worktree files (revisions not allowed).`,
 	_ = viper.BindPFlag("agent-test--agent", reviewCmd.Flags().Lookup("agent"))
 	_ = viper.BindPFlag("agent-test--runs", reviewCmd.Flags().Lookup("runs"))
 	_ = viper.BindPFlag("agent-test--range", reviewCmd.Flags().Lookup("range"))
+	_ = viper.BindPFlag("agent-test--output", reviewCmd.Flags().Lookup("output"))
 
 	// Add show-config subcommand
 	showConfigCmd := &cobra.Command{
