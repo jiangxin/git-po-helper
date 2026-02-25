@@ -130,6 +130,7 @@ Available Commands:
   help          Help about any command
   init          Create XX.po file
   msg-select    Extract entries from PO/POT file by index range
+  stat          Report statistics for a PO file
   team          Show team leader/members
   update        Update XX.po file
   version       Display the version of git-po-helper
@@ -162,6 +163,7 @@ Use "git-po-helper [command] --help" for more information about a command.
 | `compare` | Show changes between two PO files or versions. Default: output new or changed entries to stdout. With `--stat`: show diff statistics. Use `-r`, `--commit`, or `--since` for revision range. Usage: `compare [-r range] [[<src>] <target>]`. |
 | `init` | Create XX.po file. Usage: `init <XX.po>`. Option: `--core` (generate from po/git-core.pot). |
 | `msg-select` | Extract entries from PO/POT file by index range. Usage: `msg-select --range "3,5,9-13" <po-file>`. Range format: `3,5` (entries 3 and 5), `9-13` (entries 9–13), `-5` (first 5), `50-` (from 50 to end). |
+| `stat` | Report statistics for a PO file. Usage: `stat <po-file>`. Outputs: translated, untranslated, same (msgstr equals msgid), fuzzy, obsolete. |
 | `update` | Update XX.po file. Usage: `update <XX.po>...`. Options: `--no-file-location`, `--no-location`. |
 
 ### Team and version
