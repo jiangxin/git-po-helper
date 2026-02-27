@@ -227,9 +227,8 @@ func validatePoFileInternal(potFile string, checkFormatOnly bool) error {
 }
 
 // GetPoFileAbsPath determines the absolute path of a PO file.
-// If poFile is empty, it uses cfg.DefaultLangCode to construct the path.
+// If poFile is empty, it uses the effective default_lang_code (config or system locale) to construct the path.
 // If poFile is provided but not absolute, it's treated as relative to the repository root.
-// Returns the absolute path and an error if default_lang_code is not configured when needed.
 func GetPoFileAbsPath(cfg *config.AgentConfig, poFile string) (string, error) {
 	workDir := repository.WorkDir()
 	if poFile == "" {
@@ -247,7 +246,7 @@ func GetPoFileAbsPath(cfg *config.AgentConfig, poFile string) (string, error) {
 }
 
 // GetPoFileRelPath determines the relative path of a PO file in "po/XX.po" format.
-// If poFile is empty, it uses cfg.DefaultLangCode to construct the path.
+// If poFile is empty, it uses the effective default_lang_code (config or system locale) to construct the path.
 // If poFile is an absolute path, it converts it to a relative path.
 // If poFile is already a relative path, it normalizes it to "po/XX.po" format.
 // Returns the relative path and an error if default_lang_code is not configured when needed.

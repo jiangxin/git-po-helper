@@ -112,14 +112,15 @@ func TestExecutePromptTemplate(t *testing.T) {
 
 func TestGetPrompt(t *testing.T) {
 	tests := []struct {
-		name            string
-		action          string
-		cfg             *config.AgentConfig
-		agentRunPrompt  string
-		agentTestPrompt string
-		expected        string
-		expectError     bool
-		errorContains   string
+		name             string
+		action           string
+		cfg              *config.AgentConfig
+		agentRunPrompt   string
+		agentTestPrompt  string
+		expected         string
+		expectedContains string // if set and expected is empty, check result contains this
+		expectError      bool
+		errorContains    string
 	}{
 		{
 			name:   "use config prompt when no override",
@@ -280,7 +281,11 @@ func TestGetPrompt(t *testing.T) {
 				return
 			}
 
-			if result != tt.expected {
+			if tt.expectedContains != "" {
+				if !strings.Contains(result, tt.expectedContains) {
+					t.Errorf("Expected result to contain %q, got %q", tt.expectedContains, result)
+				}
+			} else if result != tt.expected {
 				t.Errorf("Expected prompt %q, got %q", tt.expected, result)
 			}
 		})

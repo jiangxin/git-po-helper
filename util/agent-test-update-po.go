@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/git-l10n/git-po-helper/config"
+	"github.com/git-l10n/git-po-helper/flag"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -19,7 +20,7 @@ func CmdAgentTestUpdatePo(agentName, poFile string, runs int, skipConfirmation b
 
 	// Load configuration
 	log.Debugf("loading agent configuration")
-	cfg, err := config.LoadAgentConfig()
+	cfg, err := config.LoadAgentConfig(flag.AgentConfigFile())
 	if err != nil {
 		log.Errorf("failed to load agent configuration: %v", err)
 		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)

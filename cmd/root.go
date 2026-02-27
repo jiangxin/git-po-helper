@@ -142,6 +142,9 @@ func (v *rootCommand) Command() *cobra.Command {
 	v.cmd.PersistentFlags().String("pot-file",
 		"auto",
 		"way to get latest pot file: 'auto', 'download', 'build', 'no' or filename such as po/git.pot")
+	v.cmd.PersistentFlags().String("config",
+		"",
+		"load agent configuration from this file (overrides ~/.git-po-helper.yaml and repo git-po-helper.yaml)")
 	_ = v.cmd.PersistentFlags().MarkHidden("dryrun")
 	_ = v.cmd.PersistentFlags().MarkHidden("no-special-gettext-versions")
 	_ = v.cmd.PersistentFlags().MarkHidden("github-action-event")
@@ -164,6 +167,9 @@ func (v *rootCommand) Command() *cobra.Command {
 	_ = viper.BindPFlag(
 		"pot-file",
 		v.cmd.PersistentFlags().Lookup("pot-file"))
+	_ = viper.BindPFlag(
+		"config",
+		v.cmd.PersistentFlags().Lookup("config"))
 
 	return v.cmd
 }

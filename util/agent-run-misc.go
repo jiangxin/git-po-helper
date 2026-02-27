@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/git-l10n/git-po-helper/config"
+	"github.com/git-l10n/git-po-helper/flag"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
@@ -17,7 +18,7 @@ import (
 func CmdAgentRunShowConfig() error {
 	// Load configuration
 	log.Debugf("loading agent configuration")
-	cfg, err := config.LoadAgentConfig()
+	cfg, err := config.LoadAgentConfig(flag.AgentConfigFile())
 	if err != nil {
 		log.Errorf("failed to load agent configuration: %v", err)
 		return fmt.Errorf("failed to load agent configuration: %w", err)
