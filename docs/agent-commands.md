@@ -180,11 +180,12 @@ Review translations in a PO file using a configured agent. The agent reviews tra
 
 **Usage:**
 ```bash
-git-po-helper agent-run review [--agent <agent-name>] [-r range | --commit <commit> | --since <commit>] [[<src>] <target>]
+git-po-helper agent-run review [--agent <agent-name>] [--use-agent-md] [-r range | --commit <commit> | --since <commit>] [[<src>] <target>]
 ```
 
 **Options:**
 - `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
+- `--use-agent-md`: Use agent with po/AGENTS.md: agent does extraction, review, and writes review.json (no programmatic batching)
 - `-r`, `--range <range>`: Revision range: `a..b` (compare a with b), `a..` (compare a with working tree), or `a` (compare a~ with a)
 - `--commit <commit>`: Equivalent to `-r <commit>^..<commit>` (review changes in the specified commit)
 - `--since <commit>`: Equivalent to `-r <commit>..` (compare commit with working tree)
@@ -214,6 +215,9 @@ git-po-helper agent-run review po/zh_CN.po po/zh_TW.po
 
 # Use a specific agent
 git-po-helper agent-run review --agent claude po/zh_CN.po
+
+# Use agent with po/AGENTS.md (agent does extraction, review, and writes review.json)
+git-po-helper agent-run review --use-agent-md po/zh_CN.po
 ```
 
 **What it does:**
@@ -432,11 +436,12 @@ Test the `review` operation multiple times and calculate an average score. Aggre
 
 **Usage:**
 ```bash
-git-po-helper agent-test review [--agent <agent-name>] [--runs <n>] [-r range | --commit <commit> | --since <commit>] [[<src>] <target>]
+git-po-helper agent-test review [--agent <agent-name>] [--use-agent-md] [--runs <n>] [-r range | --commit <commit> | --since <commit>] [[<src>] <target>]
 ```
 
 **Options:**
 - `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
+- `--use-agent-md`: Use agent with po/AGENTS.md (same as agent-run review)
 - `--runs <n>`: Number of test runs (default: 1, or from config file)
 - `-r`, `--range <range>`: Revision range (same as agent-run review)
 - `--commit <commit>`: Review changes in the specified commit
@@ -458,6 +463,9 @@ git-po-helper agent-test review --agent claude --runs 10 po/zh_CN.po
 
 # Run tests reviewing changes since a specific commit
 git-po-helper agent-test review --since abc123 po/zh_CN.po
+
+# Run tests with --use-agent-md (agent uses po/AGENTS.md)
+git-po-helper agent-test review --use-agent-md --runs 3 po/zh_CN.po
 ```
 
 **What it does:**

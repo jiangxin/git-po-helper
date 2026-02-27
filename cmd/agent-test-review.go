@@ -36,15 +36,15 @@ With two file arguments, compare worktree files (revisions not allowed).`,
 			if err != nil {
 				return newUserErrorF("%v", err)
 			}
-			if err := util.CmdAgentTestReview(opts.Agent, target, opts.Runs, opts.DangerouslyRemovePoDir, opts.Output, opts.AllWithLLM); err != nil {
+			if err := util.CmdAgentTestReview(opts.Agent, target, opts.Runs, opts.DangerouslyRemovePoDir, opts.Output, opts.UseAgentMd); err != nil {
 				return errExecute
 			}
 			return nil
 		},
 	}
 
-	cmd.Flags().BoolVar(&opts.AllWithLLM, "all-with-llm", false,
-		"use pure LLM approach: agent does extraction, review, and writes review.json")
+	cmd.Flags().BoolVar(&opts.UseAgentMd, "use-agent-md", false,
+		"use agent with po/AGENTS.md: agent does extraction, review, and writes review.json")
 	cmd.Flags().StringVarP(&opts.Output, "output", "o", "",
 		"base path for review output files (default: po/review); .po/.json are appended")
 	cmd.Flags().StringVar(&opts.Agent,

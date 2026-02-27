@@ -14,7 +14,7 @@ type agentTestOptions struct {
 	Since                  string
 	Prompt                 string
 	Output                 string
-	AllWithLLM             bool
+	UseAgentMd             bool
 }
 
 type agentTestCommand struct {

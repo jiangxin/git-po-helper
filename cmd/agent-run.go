@@ -12,7 +12,7 @@ type agentRunOptions struct {
 	Since      string
 	Prompt     string
 	Output     string
-	AllWithLLM bool
+	UseAgentMd bool
 }
 
 type agentRunCommand struct {

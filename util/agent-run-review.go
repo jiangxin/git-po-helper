@@ -226,8 +226,8 @@ func parseAndAccumulateReviewJSON(stdout []byte, entryCount int) (*ReviewJSONRes
 	return reviewJSON, nil
 }
 
-// buildReviewAllWithLLMPrompt constructs a dynamic prompt for RunAgentReviewAllWithLLM
-func buildReviewAllWithLLMPrompt(target *CompareTarget) string {
+// buildReviewUseAgentMdPrompt constructs a dynamic prompt for RunAgentReviewUseAgentMd
+func buildReviewUseAgentMdPrompt(target *CompareTarget) string {
 	var taskDesc string
 	if target.OldFile != target.NewFile {
 		taskDesc = fmt.Sprintf("Review %s changes between %s and %s", target.NewFile, target.OldFile, target.NewFile)
@@ -250,10 +250,10 @@ func buildReviewAllWithLLMPrompt(target *CompareTarget) string {
 	return taskDesc + " according to @po/AGENTS.md."
 }
 
-// RunAgentReviewAllWithLLM executes review using a pure LLM approach (--all-with-llm).
-// No programmatic extraction or batching; the LLM does everything and writes review.json.
+// RunAgentReviewUseAgentMd executes review using agent with po/AGENTS.md (--use-agent-md).
+// No programmatic extraction or batching; the agent does everything and writes review.json.
 // Before execution: deletes review.po and review.json. After: expects review.json to exist.
-func RunAgentReviewAllWithLLM(cfg *config.AgentConfig, agentName string, target *CompareTarget, agentTest bool, outputBase string) (*AgentRunResult, error) {
+func RunAgentReviewUseAgentMd(cfg *config.AgentConfig, agentName string, target *CompareTarget, agentTest bool, outputBase string) (*AgentRunResult, error) {
 	reviewPOFile, reviewJSONFile := ReviewOutputPaths(outputBase)
 	workDir := repository.WorkDir()
 	startTime := time.Now()
@@ -283,7 +283,7 @@ func RunAgentReviewAllWithLLM(cfg *config.AgentConfig, agentName string, target 
 	if rel, err := filepath.Rel(workDir, poFile); err == nil && rel != "" && rel != "." {
 		poFileRel = filepath.ToSlash(rel)
 	}
-	prompt := buildReviewAllWithLLMPrompt(target)
+	prompt := buildReviewUseAgentMdPrompt(target)
 	agentCmd, err := BuildAgentCommand(selectedAgent, PlaceholderVars{"prompt": prompt, "source": poFileRel})
 	if err != nil {
 		return result, fmt.Errorf("failed to build agent command: %w", err)
@@ -294,7 +294,7 @@ func RunAgentReviewAllWithLLM(cfg *config.AgentConfig, agentName string, target 
 		outputFormat = "default"
 	}
 
-	log.Infof("executing agent command (all-with-llm, output=%s): %s", outputFormat, truncateCommandDisplay(strings.Join(agentCmd, " ")))
+	log.Infof("executing agent command (use-agent-md, output=%s): %s", outputFormat, truncateCommandDisplay(strings.Join(agentCmd, " ")))
 	result.AgentExecuted = true
 
 	kind := selectedAgent.Kind
@@ -484,10 +484,10 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 }
 
 // CmdAgentRunReview implements the agent-run review command logic.
-// It loads configuration and calls RunAgentReview or RunAgentReviewAllWithLLM.
+// It loads configuration and calls RunAgentReview or RunAgentReviewUseAgentMd.
 // outputBase: base path for review output files (e.g. "po/review"); empty uses default.
-// allWithLLM: if true, use pure LLM approach (--all-with-llm).
-func CmdAgentRunReview(agentName string, target *CompareTarget, outputBase string, allWithLLM bool) error {
+// useAgentMd: if true, use agent with po/AGENTS.md (--use-agent-md).
+func CmdAgentRunReview(agentName string, target *CompareTarget, outputBase string, useAgentMd bool) error {
 	// Load configuration
 	log.Debugf("loading agent configuration")
 	cfg, err := config.LoadAgentConfig(flag.AgentConfigFile())
@@ -499,8 +499,8 @@ func CmdAgentRunReview(agentName string, target *CompareTarget, outputBase strin
 	startTime := time.Now()
 
 	var result *AgentRunResult
-	if allWithLLM {
-		result, err = RunAgentReviewAllWithLLM(cfg, agentName, target, false, outputBase)
+	if useAgentMd {
+		result, err = RunAgentReviewUseAgentMd(cfg, agentName, target, false, outputBase)
 	} else {
 		result, err = RunAgentReview(cfg, agentName, target, false, outputBase)
 	}
