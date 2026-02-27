@@ -163,7 +163,7 @@ Use "git-po-helper [command] --help" for more information about a command.
 | `compare` | Show changes between two PO files or versions. Default: output new or changed entries to stdout. With `--stat`: show diff statistics. Use `-r`, `--commit`, or `--since` for revision range. Usage: `compare [-r range] [[<src>] <target>]`. |
 | `init` | Create XX.po file. Usage: `init <XX.po>`. Option: `--core` (generate from po/git-core.pot). |
 | `msg-select` | Extract entries from PO/POT file by index range. Usage: `msg-select --range "3,5,9-13" <po-file>`. Range format: `3,5` (entries 3 and 5), `9-13` (entries 9–13), `-5` (first 5), `50-` (from 50 to end). |
-| `stat` | Report statistics for a PO file. Usage: `stat <po-file>`. Outputs: translated, untranslated, same (msgstr equals msgid), fuzzy, obsolete. |
+| `stat` | Report statistics for a PO file. Usage: `stat <po-file>`. Outputs: translated, untranslated, same (msgstr equals msgid), fuzzy, obsolete. For review JSON report use `agent-run report`. |
 | `update` | Update XX.po file. Usage: `update <XX.po>...`. Options: `--no-file-location`, `--no-location`. |
 
 ### Team and version
@@ -177,7 +177,7 @@ Use "git-po-helper [command] --help" for more information about a command.
 
 | Command | Description |
 |---------|-------------|
-| `agent-run` | Run agent commands for automation. Subcommands: `update-pot`, `update-po`, `translate`, `review`, `parse-log`, `show-config`. Uses git-po-helper.yaml for configuration. Option: `--prompt` (override prompt). |
+| `agent-run` | Run agent commands for automation. Subcommands: `update-pot`, `update-po`, `translate`, `review`, `report`, `parse-log`, `show-config`. Uses git-po-helper.yaml for configuration. Option: `--prompt` (override prompt). |
 | `agent-test` | Test agent commands with multiple runs and calculate average scores. Subcommands: `update-pot`, `update-po`, `translate`, `review`, `show-config`. Options: `--runs` (number of runs, default 5), `--dangerously-remove-po-directory`. |
 
 See [docs/agent-commands.md](docs/agent-commands.md) for agent configuration and detailed usage.

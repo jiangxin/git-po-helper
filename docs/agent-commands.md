@@ -271,6 +271,35 @@ The command displays:
 - Number of issues found (broken down by score: critical, minor, perfect)
 - Path to saved JSON file
 
+### agent-run report
+
+Report aggregated review statistics from batch or single review JSON. Use this after running `agent-run review` or `agent-test review` to display total entries, issues, and score. When multiple batch JSON files exist (e.g. `po/review-batch-*.json`), they are aggregated; otherwise the single review JSON is used.
+
+**Usage:**
+```bash
+git-po-helper agent-run report [path]
+```
+
+**Options:**
+- `path`: Base path for review files (default: `po/review.po`). May end with `.json` or `.po`; the tool derives both `<base>.json` and `<base>.po`. If any files match `po/review-batch-*.json`, they are loaded and aggregated into one result; otherwise `po/review.json` is used.
+
+**Examples:**
+```bash
+# Report from default path (po/review.po → po/review.json)
+git-po-helper agent-run report
+
+# Report from a specific path
+git-po-helper agent-run report po/zh_CN.po
+git-po-helper agent-run report po/review.json
+```
+
+**Output:**
+- Review JSON path
+- Total entries
+- Issues found (count)
+- Review score (0-100)
+- Critical (score 0), Major (score 2), Minor (score 1), Perfect (no issue) counts
+
 ### agent-run parse-log
 
 Parse an agent JSONL log file and display formatted output. Auto-detects format (Claude, Codex, OpenCode, Gemini/Qwen) and displays with type-specific icons.

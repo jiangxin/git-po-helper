@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/git-l10n/git-po-helper/flag"
@@ -13,9 +12,6 @@ import (
 
 type statCommand struct {
 	cmd *cobra.Command
-	O   struct {
-		Review string
-	}
 }
 
 func (v *statCommand) Command() *cobra.Command {
@@ -25,7 +21,7 @@ func (v *statCommand) Command() *cobra.Command {
 
 	v.cmd = &cobra.Command{
 		Use:   "stat [po-file]",
-		Short: "Report statistics for a PO file or review JSON",
+		Short: "Report statistics for a PO file",
 		Long: `Report entry statistics for a PO file:
   translated   - entries with non-empty translation
   untranslated - entries with empty msgstr
@@ -33,29 +29,18 @@ func (v *statCommand) Command() *cobra.Command {
   fuzzy        - entries with fuzzy flag
   obsolete     - obsolete entries (#~ format)
 
-With --review <json-file>: report review results from agent-run review JSON.
-Both files are derived from the path: strip .json or .po if present, then use <base>.json and <base>.po.
-No args required.`,
+For review JSON report, use: git-po-helper agent-run report [path]`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return v.Execute(args)
 		},
 	}
 
-	v.cmd.Flags().StringVar(&v.O.Review, "review", "", "report from review; path may end with .json or .po (both <base>.json and <base>.po are used)")
-
 	return v.cmd
 }
 
 func (v statCommand) Execute(args []string) error {
 	repository.ChdirProjectRoot()
-
-	if v.O.Review != "" {
-		if len(args) > 0 {
-			fmt.Fprintf(os.Stderr, "warning: in --review mode, args are ignored\n")
-		}
-		return v.executeReviewReport(args)
-	}
 
 	if len(args) != 1 {
 		return newUserError("stat requires exactly one argument: <po-file>")
@@ -82,25 +67,6 @@ func (v statCommand) Execute(args []string) error {
 		fmt.Printf("  obsolete:     %d\n", stats.Obsolete)
 	} else {
 		fmt.Print(util.FormatStatLine(stats))
-	}
-
-	return nil
-}
-
-func (v statCommand) executeReviewReport(args []string) error {
-	result, err := util.ReportReviewFromJSON(v.O.Review)
-	if err != nil {
-		return newUserErrorF("%v", err)
-	}
-
-	jsonFile, _ := util.DeriveReviewPaths(v.O.Review)
-	fmt.Printf("Review JSON: %s\n", jsonFile)
-	fmt.Printf("  Total entries: %d\n", result.Review.TotalEntries)
-	fmt.Printf("  Issues found: %d\n", len(result.Review.Issues))
-	fmt.Printf("  Review score: %d/100\n", result.Score)
-	if len(result.Review.Issues) > 0 {
-		fmt.Printf("  Critical (score 0): %d\n", result.CriticalCount)
-		fmt.Printf("  Minor (score 2):   %d\n", result.MinorCount)
 	}
 
 	return nil

@@ -139,7 +139,7 @@ The project uses automatically generated version files:
 
 #### Command List
 
-- `agent-run` - Run agent commands for automation (update-pot, update-po, translate, review)
+- `agent-run` - Run agent commands for automation (update-pot, update-po, translate, review, report)
 - `agent-test` - Test agent commands with multiple runs
 - `check` - Check all .po files and commits
 - `check-commits` - Check if commits comply with l10n conventions

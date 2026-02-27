@@ -47,6 +47,7 @@ read from git-po-helper.yaml in the repository root or user home directory.`,
 	v.cmd.AddCommand(newAgentRunUpdatePoCmd(&v.O))
 	v.cmd.AddCommand(newAgentRunTranslateCmd(&v.O))
 	v.cmd.AddCommand(newAgentRunReviewCmd(&v.O))
+	v.cmd.AddCommand(newAgentRunReportCmd())
 	v.cmd.AddCommand(newAgentRunParseLogCmd())
 	v.cmd.AddCommand(newAgentRunShowConfigCmd())
 
