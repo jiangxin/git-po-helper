@@ -43,12 +43,12 @@ func TestLoadConfigFromFile_ValidFile(t *testing.T) {
 	validYAML := `default_lang_code: "zh_CN"
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
-  update_po: "update {source} according to po/README.md"
+  update_po: "update {{.source}} according to po/README.md"
 agents:
   claude:
-    cmd: ["claude", "-p", "{prompt}"]
+    cmd: ["claude", "-p", "{{.prompt}}"]
   gemini:
-    cmd: ["gemini", "--prompt", "{prompt}"]
+    cmd: ["gemini", "--prompt", "{{.prompt}}"]
 `
 
 	if err := os.WriteFile(configPath, []byte(validYAML), 0644); err != nil {
@@ -92,7 +92,7 @@ prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agents:
   claude:
-    cmd: ["claude", "-p", "{prompt}"]
+    cmd: ["claude", "-p", "{{.prompt}}"]
     invalid: [unclosed bracket
 `
 
@@ -118,11 +118,11 @@ func TestMergeConfigs(t *testing.T) {
 		},
 		Agents: map[string]Agent{
 			"claude": {
-				Cmd:  []string{"claude", "-p", "{prompt}"},
+				Cmd:  []string{"claude", "-p", "{{.prompt}}"},
 				Kind: AgentKindClaude,
 			},
 			"gemini": {
-				Cmd:  []string{"gemini", "--prompt", "{prompt}"},
+				Cmd:  []string{"gemini", "--prompt", "{{.prompt}}"},
 				Kind: AgentKindGemini,
 			},
 		},
@@ -135,7 +135,7 @@ func TestMergeConfigs(t *testing.T) {
 		},
 		Agents: map[string]Agent{
 			"claude": {
-				Cmd:  []string{"claude", "--new-flag", "{prompt}"},
+				Cmd:  []string{"claude", "--new-flag", "{{.prompt}}"},
 				Kind: AgentKindClaude,
 			},
 		},
@@ -320,7 +320,7 @@ func TestApplyDefaults_ConfigAgentsOverrideDefaultTest(t *testing.T) {
 	config := &AgentConfig{
 		Agents: map[string]Agent{
 			"claude": {
-				Cmd:  []string{"claude", "-p", "{prompt}"},
+				Cmd:  []string{"claude", "-p", "{{.prompt}}"},
 				Kind: AgentKindClaude,
 			},
 		},
@@ -407,7 +407,7 @@ func TestMergeConfigs_DefaultMergeOverwritesNonAgents(t *testing.T) {
 		DefaultLangCode: "fr_FR",
 		Prompt:          PromptConfig{UpdatePot: "base pot", UpdatePo: "base po"},
 		Agents: map[string]Agent{
-			"custom": {Cmd: []string{"custom", "{prompt}"}, Kind: AgentKindEcho},
+			"custom": {Cmd: []string{"custom", "{{.prompt}}"}, Kind: AgentKindEcho},
 		},
 	}
 	defaultCfg := getDefaultConfig()
@@ -475,7 +475,7 @@ prompt:
   update_pot: "custom update pot"
 agents:
   my-agent:
-    cmd: ["my-agent", "{prompt}"]
+    cmd: ["my-agent", "{{.prompt}}"]
     kind: echo
 `
 	if err := os.WriteFile(configPath, []byte(yaml), 0644); err != nil {

@@ -24,8 +24,8 @@ The repository config takes precedence over the user config when both exist.
 default_lang_code: "zh_CN"   # or system locale (LC_ALL/LC_MESSAGES/LANG)
 prompt:
   update_pot: "update po/git.pot according to po/README.md"
-  update_po: "update {source} according to po/README.md"
-  translate: "translate {source} according to po/README.md"
+  update_po: "update {{.source}} according to po/README.md"
+  translate: "translate {{.source}} according to po/README.md"
   review:
 agent-test:
   runs: 1
@@ -37,23 +37,23 @@ agent-test:
   po_fuzzy_entries_after_update: null
 agents:
   claude:
-    cmd: ["claude", "--dangerously-skip-permissions", "-p", "{prompt}"]
+    cmd: ["claude", "--dangerously-skip-permissions", "-p", "{{.prompt}}"]
     kind: claude
     output: json
   codex:
-    cmd: ["codex", "exec", "--yolo", "{prompt}"]
+    cmd: ["codex", "exec", "--yolo", "{{.prompt}}"]
     kind: codex
     output: json
   opencode:
-    cmd: ["opencode", "run", "--thinking", "{prompt}"]
+    cmd: ["opencode", "run", "--thinking", "{{.prompt}}"]
     kind: opencode
     output: json
   gemini:
-    cmd: ["gemini", "--yolo", "{prompt}"]
+    cmd: ["gemini", "--yolo", "{{.prompt}}"]
     kind: gemini
     output: json
   echo:
-    cmd: ["echo", "{prompt}"]
+    cmd: ["echo", "{{.prompt}}"]
     kind: echo
 ```
 
@@ -62,9 +62,9 @@ agents:
 #### Prompt Templates
 
 - `prompt.update_pot`: Prompt for updating the POT file
-- `prompt.update_po`: Prompt for updating a PO file (uses `{source}` placeholder)
-- `prompt.translate`: Prompt for translating a PO file (uses `{source}` placeholder)
-- `prompt.review`: Prompt for reviewing translations in a PO file (uses `{source}` placeholder)
+- `prompt.update_po`: Prompt for updating a PO file (uses `{{.source}}` placeholder)
+- `prompt.translate`: Prompt for translating a PO file (uses `{{.source}}` placeholder)
+- `prompt.review`: Prompt for reviewing translations in a PO file (uses `{{.source}}` placeholder)
 
 #### Agent Test Configuration
 
@@ -85,8 +85,8 @@ Each agent is defined with a name and a command. Supported agent kinds: `claude`
 - `output`: Output format: `default`, `json`, or `stream_json` (optional; `json` enables real-time streaming display)
 
 Placeholders in commands:
-- `{prompt}`: Replaced with the actual prompt text
-- `{source}`: Replaced with the source file path (PO file)
+- `{{.prompt}}`: Replaced with the actual prompt text
+- `{{.source}}`: Replaced with the source file path (PO file)
 - `{commit}`: Replaced with the commit ID (default: HEAD)
 
 ## Commands
@@ -162,7 +162,7 @@ git-po-helper agent-run update-po --agent claude po/zh_CN.po
 4. Performs pre-validation (if `po_entries_before_update` is configured):
    - Counts entries in the target `po/XX.po`
    - Verifies count matches expected value
-5. Executes the agent command with the `prompt.update_po` template and `{source}` pointing to the PO file
+5. Executes the agent command with the `prompt.update_po` template and `{{.source}}` pointing to the PO file
 6. Performs post-validation (if `po_entries_after_update` is configured):
    - Counts entries in the target `po/XX.po`
    - Verifies count matches expected value
@@ -570,7 +570,7 @@ prompt:
   update_pot: "update po/git.pot according to po/README.md"
 agents:
   my-agent:
-    cmd: ["my-agent", "--prompt", "{prompt}"]
+    cmd: ["my-agent", "--prompt", "{{.prompt}}"]
 ```
 
 2. Run the agent:
@@ -592,7 +592,7 @@ agent-test:
   pot_entries_after_update: 5100
 agents:
   my-agent:
-    cmd: ["my-agent", "--prompt", "{prompt}"]
+    cmd: ["my-agent", "--prompt", "{{.prompt}}"]
 ```
 
 2. Run tests:

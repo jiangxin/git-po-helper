@@ -14,7 +14,7 @@ import (
 )
 
 // PlaceholderVars holds key-value pairs for placeholder replacement.
-// Keys correspond to placeholder names in template (e.g. {prompt}, {source}).
+// Keys correspond to placeholder names in template (e.g. {{.prompt}}, {{.source}}).
 type PlaceholderVars map[string]string
 
 // ExecutePromptTemplate executes a Go text template with the given data.

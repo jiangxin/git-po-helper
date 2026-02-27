@@ -129,9 +129,9 @@ func TestExecuteAgentCommand_PlaceholderReplacement(t *testing.T) {
 		// (that's the caller's responsibility)
 		var cmd []string
 		if runtime.GOOS == "windows" {
-			cmd = []string{"cmd", "/c", "echo", "{prompt}"}
+			cmd = []string{"cmd", "/c", "echo", "{{.prompt}}"}
 		} else {
-			cmd = []string{"sh", "-c", "echo '{prompt}'"}
+			cmd = []string{"sh", "-c", "echo '{{.prompt}}'"}
 		}
 
 		stdout, _, err := ExecuteAgentCommand(cmd)
@@ -140,8 +140,8 @@ func TestExecuteAgentCommand_PlaceholderReplacement(t *testing.T) {
 		}
 
 		output := strings.TrimSpace(string(stdout))
-		if !strings.Contains(output, "{prompt}") {
-			t.Errorf("Expected literal {prompt} in output, got %q", output)
+		if !strings.Contains(output, "{{.prompt}}") {
+			t.Errorf("Expected literal {{.prompt}} in output, got %q", output)
 		}
 	})
 }

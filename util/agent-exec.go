@@ -23,7 +23,7 @@ func flushStdout() {
 // The command is executed in the specified working directory.
 //
 // Parameters:
-//   - cmd: Command and arguments as a slice (e.g., []string{"claude", "-p", "{prompt}"})
+//   - cmd: Command and arguments as a slice (e.g., []string{"claude", "-p", "{{.prompt}}"})
 //   - workDir: Working directory for command execution (empty string uses current working directory).
 //     To use repository root, pass repository.WorkDir() explicitly.
 //
