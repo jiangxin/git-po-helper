@@ -52,10 +52,9 @@ type RunResult struct {
 	PreValidationPass   bool
 	PostValidationPass  bool
 	AgentExecuted       bool
-	AgentSuccess        bool
 	PreValidationError  string
 	PostValidationError string
-	AgentError          string
+	AgentError          error
 	BeforeCount         int
 	AfterCount          int
 	BeforeNewCount      int // For translate: new (untranslated) entries before
@@ -267,10 +266,10 @@ func displayTestResults(results []RunResult, averageScore float64, totalRuns int
 		}
 
 		if result.AgentExecuted {
-			if result.AgentSuccess {
+			if result.AgentError == nil {
 				fmt.Printf("  Agent execution: PASS\n")
 			} else {
-				fmt.Printf("  Agent execution: FAIL - %s\n", result.AgentError)
+				fmt.Printf("  Agent execution: FAIL - %v\n", result.AgentError)
 			}
 		} else {
 			fmt.Printf("  Agent execution: SKIPPED (pre-validation failed)\n")

@@ -22,7 +22,7 @@ import (
 // executeReviewAgent executes the agent command for reviewing the given file.
 // vars contains placeholder values (e.g. "prompt", "source" for the file to review).
 // Returns stdout (for JSON extraction), stderr, originalStdout (raw before parsing), streamResult.
-// Updates result with AgentExecuted, AgentSuccess, AgentError, AgentStdout, AgentStderr.
+// Updates result with AgentExecuted, AgentError, AgentStdout, AgentStderr.
 func executeReviewAgent(selectedAgent config.Agent, vars PlaceholderVars, result *AgentRunResult) (stdout, stderr, originalStdout []byte, streamResult AgentStreamResult, err error) {
 	agentCmd, err := BuildAgentCommand(selectedAgent, vars)
 	if err != nil {
@@ -63,11 +63,10 @@ func executeReviewAgent(selectedAgent config.Agent, vars PlaceholderVars, result
 			if len(stderr) > 0 {
 				log.Debugf("agent command stderr: %s", string(stderr))
 			}
-			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", waitErr)
+			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", waitErr)
 			log.Errorf("agent command execution failed: %v", waitErr)
 			return nil, stderr, originalStdout, streamResult, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", waitErr)
 		}
-		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 	} else {
 		var execErr error
@@ -83,11 +82,10 @@ func executeReviewAgent(selectedAgent config.Agent, vars PlaceholderVars, result
 			if len(stdout) > 0 {
 				log.Debugf("agent command stdout: %s", string(stdout))
 			}
-			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", execErr)
+			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", execErr)
 			log.Errorf("agent command execution failed: %v", execErr)
 			return nil, stderr, originalStdout, streamResult, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", execErr)
 		}
-		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 
 		if !isCodex && !isOpencode {
@@ -321,7 +319,7 @@ func RunAgentReviewUseAgentMd(cfg *config.AgentConfig, agentName string, target 
 
 	selectedAgent, err := SelectAgent(cfg, agentName)
 	if err != nil {
-		result.AgentError = err.Error()
+		result.AgentError = err
 		return result, err
 	}
 
@@ -334,7 +332,7 @@ func RunAgentReviewUseAgentMd(cfg *config.AgentConfig, agentName string, target 
 		return result, err
 	}
 	if !Exist(poFile) {
-		result.AgentError = fmt.Sprintf("PO file does not exist: %s", poFile)
+		result.AgentError = fmt.Errorf("PO file does not exist: %s", poFile)
 		return result, fmt.Errorf("PO file does not exist: %s\nHint: Ensure the PO file exists before running review", poFile)
 	}
 
@@ -364,14 +362,14 @@ func RunAgentReviewUseAgentMd(cfg *config.AgentConfig, agentName string, target 
 	if outputFormat == "json" {
 		stdoutReader, stderrBuf, cmdProcess, err := ExecuteAgentCommandStream(agentCmd)
 		if err != nil {
-			result.AgentError = err.Error()
+			result.AgentError = err
 			return result, fmt.Errorf("agent command failed: %w", err)
 		}
 		defer stdoutReader.Close()
 		_, streamResult, _ := parseStreamByKind(kind, stdoutReader)
 		applyAgentDiagnostics(result, streamResult)
 		if waitErr := cmdProcess.Wait(); waitErr != nil {
-			result.AgentError = waitErr.Error()
+			result.AgentError = waitErr
 			return result, fmt.Errorf("agent command failed: %w", waitErr)
 		}
 		stderr = stderrBuf.Bytes()
@@ -379,7 +377,7 @@ func RunAgentReviewUseAgentMd(cfg *config.AgentConfig, agentName string, target 
 		var err error
 		stdout, stderr, err = ExecuteAgentCommand(agentCmd)
 		if err != nil {
-			result.AgentError = err.Error()
+			result.AgentError = err
 			return result, err
 		}
 		if !isCodex && !isOpencode {
@@ -389,7 +387,6 @@ func RunAgentReviewUseAgentMd(cfg *config.AgentConfig, agentName string, target 
 		}
 	}
 
-	result.AgentSuccess = true
 	log.Infof("agent command completed successfully")
 
 	if len(stdout) > 0 {
@@ -438,7 +435,7 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 
 	selectedAgent, err := SelectAgent(cfg, agentName)
 	if err != nil {
-		result.AgentError = err.Error()
+		result.AgentError = err
 		return result, err
 	}
 	log.Debugf("using agent: %s (%s)", agentName, selectedAgent.Kind)
@@ -564,10 +561,10 @@ func CmdAgentRunReview(agentName string, target *CompareTarget, outputBase strin
 		return err
 	}
 
-	// For agent-run, we require agent execution to succeed
-	if !result.AgentSuccess {
-		log.Errorf("agent execution failed: %s", result.AgentError)
-		return fmt.Errorf("agent execution failed: %s", result.AgentError)
+	// For agent-run, we require agent execution to succeed (no error set)
+	if result.AgentError != nil {
+		log.Errorf("agent execution failed: %v", result.AgentError)
+		return fmt.Errorf("agent execution failed: %w", result.AgentError)
 	}
 
 	elapsed := time.Since(startTime)

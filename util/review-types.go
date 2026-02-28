@@ -14,10 +14,8 @@ type AgentRunResult struct {
 	PreValidationPass     bool
 	PostValidationPass    bool
 	AgentExecuted         bool
-	AgentSuccess          bool
 	PreValidationError    string
 	PostValidationError   string
-	AgentError            string
 	BeforeCount           int
 	AfterCount            int
 	BeforeNewCount        int // For translate: new (untranslated) entries before
@@ -39,6 +37,7 @@ type AgentRunResult struct {
 	AgentStderr []byte `json:"-"`
 
 	// Agent diagnostics
+	AgentError    error
 	NumTurns      int // Number of turns in the conversation
 	ExecutionTime time.Duration
 }

@@ -116,7 +116,6 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 			PreValidationPass:   agentResult.PreValidationPass,
 			PostValidationPass:  agentResult.PostValidationPass,
 			AgentExecuted:       agentResult.AgentExecuted,
-			AgentSuccess:        agentResult.AgentSuccess,
 			PreValidationError:  agentResult.PreValidationError,
 			PostValidationError: agentResult.PostValidationError,
 			AgentError:          agentResult.AgentError,
@@ -242,10 +241,10 @@ func displayTranslateTestResults(results []RunResult, averageScore float64, tota
 			fmt.Printf("  Fuzzy entries:   %d (before) -> %d (after)\n",
 				result.BeforeFuzzyCount, result.AfterFuzzyCount)
 
-			if result.AgentSuccess {
+			if result.AgentError == nil {
 				fmt.Printf("  Agent execution: PASS\n")
 			} else {
-				fmt.Printf("  Agent execution: FAIL - %s\n", result.AgentError)
+				fmt.Printf("  Agent execution: FAIL - %v\n", result.AgentError)
 			}
 
 			if result.PostValidationPass {

@@ -95,7 +95,6 @@ func RunAgentTestUpdatePot(agentName string, runs int, cfg *config.AgentConfig) 
 			PreValidationPass:   agentResult.PreValidationPass,
 			PostValidationPass:  agentResult.PostValidationPass,
 			AgentExecuted:       agentResult.AgentExecuted,
-			AgentSuccess:        agentResult.AgentSuccess,
 			PreValidationError:  agentResult.PreValidationError,
 			PostValidationError: agentResult.PostValidationError,
 			AgentError:          agentResult.AgentError,

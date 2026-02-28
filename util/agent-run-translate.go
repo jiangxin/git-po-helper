@@ -28,7 +28,7 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	// Determine agent to use
 	selectedAgent, err := SelectAgent(cfg, agentName)
 	if err != nil {
-		result.AgentError = err.Error()
+		result.AgentError = err
 		return result, err
 	}
 
@@ -146,11 +146,10 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 			if len(stderr) > 0 {
 				log.Debugf("agent command stderr: %s", string(stderr))
 			}
-			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", waitErr)
+			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", waitErr)
 			log.Errorf("agent command execution failed: %v", waitErr)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", waitErr)
 		}
-		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 	} else {
 		var err error
@@ -162,11 +161,10 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 			if len(stdout) > 0 {
 				log.Debugf("agent command stdout: %s", string(stdout))
 			}
-			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", err)
+			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", err)
 			log.Errorf("agent command execution failed: %v", err)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 		}
-		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 
 		if !isCodex && !isOpencode {
@@ -217,7 +215,7 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	log.Infof("post-validation passed: all entries translated")
 
 	// Validate PO file syntax (only if agent succeeded)
-	if result.AgentSuccess {
+	if result.AgentError == nil {
 		log.Infof("validating file syntax: %s", poFile)
 		if err := ValidatePoFile(poFile); err != nil {
 			log.Errorf("file syntax validation failed: %v", err)
@@ -258,8 +256,8 @@ func CmdAgentRunTranslate(agentName, poFile string) error {
 	if !result.PreValidationPass {
 		return fmt.Errorf("pre-validation failed: %s", result.PreValidationError)
 	}
-	if !result.AgentSuccess {
-		return fmt.Errorf("agent execution failed: %s", result.AgentError)
+	if result.AgentError != nil {
+		return fmt.Errorf("agent execution failed: %w", result.AgentError)
 	}
 	if !result.PostValidationPass {
 		return fmt.Errorf("post-validation failed: %s", result.PostValidationError)

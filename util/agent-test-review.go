@@ -113,7 +113,6 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 			PreValidationPass:   agentResult.PreValidationPass,
 			PostValidationPass:  agentResult.PostValidationPass,
 			AgentExecuted:       agentResult.AgentExecuted,
-			AgentSuccess:        agentResult.AgentSuccess,
 			PreValidationError:  agentResult.PreValidationError,
 			PostValidationError: agentResult.PostValidationError,
 			AgentError:          agentResult.AgentError,
@@ -135,7 +134,7 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 			reviewJSONs = append(reviewJSONs, agentResult.ReviewJSON)
 			log.Debugf("run %d: review score from JSON: %d (total_entries=%d, issues=%d)",
 				runNum, agentResult.ReviewScore, agentResult.ReviewJSON.TotalEntries, len(agentResult.ReviewJSON.Issues))
-		} else if agentResult.AgentSuccess {
+		} else if agentResult.AgentError == nil {
 			log.Debugf("run %d: agent succeeded but no review JSON found, score=0", runNum)
 			result.Score = 0
 		} else {
@@ -277,10 +276,10 @@ func displayReviewTestResults(results []RunResult, aggregatedScore int, totalRun
 		fmt.Printf("Run %d: %s (Score: %d/100)\n", result.RunNumber, status, result.Score)
 
 		if result.AgentExecuted {
-			if result.AgentSuccess {
+			if result.AgentError == nil {
 				fmt.Printf("  Agent execution: PASS\n")
 			} else {
-				fmt.Printf("  Agent execution: FAIL - %s\n", result.AgentError)
+				fmt.Printf("  Agent execution: FAIL - %v\n", result.AgentError)
 			}
 
 			if result.Score > 0 {

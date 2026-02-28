@@ -99,7 +99,6 @@ func RunAgentTestUpdatePo(agentName, poFile string, runs int, cfg *config.AgentC
 			PreValidationPass:   agentResult.PreValidationPass,
 			PostValidationPass:  agentResult.PostValidationPass,
 			AgentExecuted:       agentResult.AgentExecuted,
-			AgentSuccess:        agentResult.AgentSuccess,
 			PreValidationError:  agentResult.PreValidationError,
 			PostValidationError: agentResult.PostValidationError,
 			AgentError:          agentResult.AgentError,

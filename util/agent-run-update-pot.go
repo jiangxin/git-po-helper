@@ -26,7 +26,7 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 	// Determine agent to use
 	selectedAgent, err := SelectAgent(cfg, agentName)
 	if err != nil {
-		result.AgentError = err.Error()
+		result.AgentError = err
 		return result, err
 	}
 
@@ -124,11 +124,10 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 			if len(stderr) > 0 {
 				log.Debugf("agent command stderr: %s", string(stderr))
 			}
-			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", waitErr)
+			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", waitErr)
 			log.Errorf("agent command execution failed: %v", waitErr)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", waitErr)
 		}
-		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 	} else {
 		var err error
@@ -140,11 +139,10 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 			if len(stdout) > 0 {
 				log.Debugf("agent command stdout: %s", string(stdout))
 			}
-			result.AgentError = fmt.Sprintf("agent command failed: %v (see logs for agent stderr output)", err)
+			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", err)
 			log.Errorf("agent command execution failed: %v", err)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 		}
-		result.AgentSuccess = true
 		log.Infof("agent command completed successfully")
 
 		if !isCodex && !isOpencode {
@@ -196,7 +194,7 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 				result.AfterCount = stats.Total()
 			}
 		}
-		if result.AgentSuccess {
+		if result.AgentError == nil {
 			result.Score = 100
 			result.PostValidationPass = true // Consider it passed if agent succeeded
 		} else {
@@ -205,7 +203,7 @@ func RunAgentUpdatePot(cfg *config.AgentConfig, agentName string, agentTest bool
 	}
 
 	// Validate POT file syntax (only if agent succeeded)
-	if result.AgentSuccess {
+	if result.AgentError == nil {
 		log.Infof("validating file syntax: %s", potFile)
 		if err := ValidatePoFile(potFile); err != nil {
 			log.Errorf("file syntax validation failed: %v", err)
@@ -246,8 +244,8 @@ func CmdAgentRunUpdatePot(agentName string) error {
 	if !result.PreValidationPass {
 		return fmt.Errorf("pre-validation failed: %s", result.PreValidationError)
 	}
-	if !result.AgentSuccess {
-		return fmt.Errorf("agent execution failed: %s", result.AgentError)
+	if result.AgentError != nil {
+		return fmt.Errorf("agent execution failed: %w", result.AgentError)
 	}
 	if !result.PostValidationPass {
 		return fmt.Errorf("post-validation failed: %s", result.PostValidationError)
