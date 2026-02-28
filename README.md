@@ -129,6 +129,7 @@ Available Commands:
   compare       Show changes between two l10n files
   help          Help about any command
   init          Create XX.po file
+  msg-cat       Concatenate and merge PO/POT/JSON files
   msg-select    Extract entries from PO/POT file by index range
   stat          Report statistics for a PO file
   team          Show team leader/members
@@ -162,6 +163,7 @@ Use "git-po-helper [command] --help" for more information about a command.
 |---------|-------------|
 | `compare` | Show changes between two PO files or versions. Default: output new or changed entries to stdout. With `--stat`: show diff statistics. Use `-r`, `--commit`, or `--since` for revision range. Usage: `compare [-r range] [[<src>] <target>]`. |
 | `init` | Create XX.po file. Usage: `init <XX.po>`. Option: `--core` (generate from po/git-core.pot). |
+| `msg-cat` | Concatenate and merge PO/POT/JSON files. Usage: `msg-cat -o <output> [--json] [inputfile]...`. Output to file or stdout (`-o -`). Duplicate msgid: first occurrence by file order wins. |
 | `msg-select` | Extract entries from PO/POT file by index range. Usage: `msg-select --range "3,5,9-13" <po-file>`. Range format: `3,5` (entries 3 and 5), `9-13` (entries 9–13), `-5` (first 5), `50-` (from 50 to end). |
 | `stat` | Report statistics for a PO file. Usage: `stat <po-file>`. Outputs: translated, untranslated, same (msgstr equals msgid), fuzzy, obsolete. For review JSON report use `agent-run report`. |
 | `update` | Update XX.po file. Usage: `update <XX.po>...`. Options: `--no-file-location`, `--no-location`. |
