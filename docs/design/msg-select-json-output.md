@@ -368,3 +368,18 @@ Implement in the following order. Each step should be testable before moving on;
 | 5 | test + docs | Round-trip tests (Examples 2 & 3), CLI help |
 
 After approval, implementation can proceed in `cmd/msg_select.go` and `util/` as outlined above.
+
+---
+
+## 9. Real-world round-trip example (`zh_CN`)
+
+A sample from `po/zh_CN.po` (e.g. from git-l10n/git-po) is provided in
+**test/fixtures/zh_CN_example.po**. The integration test
+**test/t0120-msg-select-json-roundtrip.sh** verifies:
+
+1. **PO → JSON**: `msg-select --range "1-" --json` on the fixture → `sample.json`
+2. **JSON → PO**: `msg-select --range "1-"` on `sample.json` (no `--json`) → `roundtrip.po`
+3. **Normalize**: Run `msgcat` on both the original fixture and `roundtrip.po`
+4. **Compare**: The two formatted PO files must be identical (`test_cmp`)
+
+This ensures that round-trip (PO → gettext JSON → PO) preserves content; `msgcat` normalization accounts for minor formatting differences (e.g. line wrapping) so that only semantic differences would cause a diff.
