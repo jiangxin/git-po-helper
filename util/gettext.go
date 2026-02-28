@@ -506,3 +506,32 @@ func MsgSelect(poFile, rangeSpec string, w io.Writer, noHeader bool) error {
 
 	return nil
 }
+
+// WriteGettextJSONFromPOFile reads a PO/POT file, selects entries by the given range specification,
+// and writes a single JSON object to w (header_comment, header_meta, entries).
+// The file header is always included in the output; when no content entries match
+// the range, entries is an empty array.
+func WriteGettextJSONFromPOFile(poFile, rangeSpec string, w io.Writer) error {
+	data, err := os.ReadFile(poFile)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", poFile, err)
+	}
+	entries, header, err := ParsePoEntries(data)
+	if err != nil {
+		return fmt.Errorf("failed to parse %s: %w", poFile, err)
+	}
+	headerComment, headerMeta, err := SplitHeader(header)
+	if err != nil {
+		return fmt.Errorf("split header: %w", err)
+	}
+	maxEntry := len(entries)
+	indices, err := ParseEntryRange(rangeSpec, maxEntry)
+	if err != nil {
+		return fmt.Errorf("invalid range %q: %w", rangeSpec, err)
+	}
+	var selected []*PoEntry
+	for _, idx := range indices {
+		selected = append(selected, entries[idx-1])
+	}
+	return BuildGettextJSON(headerComment, headerMeta, selected, w)
+}

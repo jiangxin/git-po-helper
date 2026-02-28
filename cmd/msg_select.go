@@ -14,6 +14,7 @@ type msgSelectCommand struct {
 		Range    string
 		NoHeader bool
 		Output   string
+		JSON     bool
 	}
 }
 
@@ -52,6 +53,7 @@ Examples:
 
 	v.cmd.Flags().StringVar(&v.O.Range, "range", "", "entry range to extract (e.g. 3,5,9-13)")
 	v.cmd.Flags().BoolVar(&v.O.NoHeader, "no-header", false, "omit header entry from output")
+	v.cmd.Flags().BoolVar(&v.O.JSON, "json", false, "output JSON instead of PO text")
 	v.cmd.Flags().StringVarP(&v.O.Output, "output", "o", "",
 		"write output to file (use - for stdout); empty output overwrites file")
 	_ = v.cmd.MarkFlagRequired("range")
@@ -73,6 +75,9 @@ func (v msgSelectCommand) Execute(args []string) error {
 		}
 		defer f.Close()
 		w = f
+	}
+	if v.O.JSON {
+		return util.WriteGettextJSONFromPOFile(poFile, v.O.Range, w)
 	}
 	return util.MsgSelect(poFile, v.O.Range, w, v.O.NoHeader)
 }
