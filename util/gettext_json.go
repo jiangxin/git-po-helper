@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -190,6 +191,42 @@ func ParseGettextJSONBytes(data []byte) (*GettextJSON, error) {
 // maxEntry is len(entries). Returns indices in ascending order (1-based content indices).
 func EntryRangeForJSON(spec string, maxEntry int) ([]int, error) {
 	return ParseEntryRange(spec, maxEntry)
+}
+
+// SelectGettextJSONFromFile reads a gettext JSON file, applies the range specification to entries,
+// and writes either JSON (useJSON true) or PO text (useJSON false) to w.
+func SelectGettextJSONFromFile(jsonFile, rangeSpec string, w io.Writer, useJSON bool) error {
+	data, err := os.ReadFile(jsonFile)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", jsonFile, err)
+	}
+	j, err := ParseGettextJSONBytes(data)
+	if err != nil {
+		return fmt.Errorf("failed to parse JSON %s: %w", jsonFile, err)
+	}
+	maxEntry := len(j.Entries)
+	indices, err := EntryRangeForJSON(rangeSpec, maxEntry)
+	if err != nil {
+		return fmt.Errorf("invalid range %q: %w", rangeSpec, err)
+	}
+	var selected []GettextEntry
+	for _, idx := range indices {
+		selected = append(selected, j.Entries[idx-1])
+	}
+	out := &GettextJSON{
+		HeaderComment: j.HeaderComment,
+		HeaderMeta:    j.HeaderMeta,
+		Entries:       selected,
+	}
+	if useJSON {
+		enc := json.NewEncoder(w)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(out); err != nil {
+			return fmt.Errorf("encode JSON: %w", err)
+		}
+		return nil
+	}
+	return WriteGettextJSONToPO(out, w)
 }
 
 // WriteGettextJSONToPO writes the GettextJSON object as valid PO content to w.
