@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/git-l10n/git-po-helper/repository"
 	"github.com/git-l10n/git-po-helper/util"
 	"github.com/spf13/cobra"
 )
@@ -24,8 +23,6 @@ If no configuration files are found, an empty configuration structure
 will be displayed.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			repository.ChdirProjectRoot()
-
 			if len(args) != 0 {
 				return newUserError("show-config command needs no arguments")
 			}

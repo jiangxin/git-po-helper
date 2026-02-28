@@ -313,7 +313,7 @@ func buildReviewUseAgentMdPrompt(target *CompareTarget) string {
 // Before execution: deletes review.po and review.json. After: expects review.json to exist.
 func RunAgentReviewUseAgentMd(cfg *config.AgentConfig, agentName string, target *CompareTarget, agentTest bool, outputBase string) (*AgentRunResult, error) {
 	reviewPOFile, reviewJSONFile := ReviewOutputPaths(outputBase)
-	workDir := repository.WorkDir()
+	workDir := repository.WorkDirOrCwd()
 	startTime := time.Now()
 	result := &AgentRunResult{Score: 0}
 

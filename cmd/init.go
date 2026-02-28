@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/git-l10n/git-po-helper/repository"
 	"github.com/git-l10n/git-po-helper/util"
 	"github.com/spf13/cobra"
 )
@@ -37,9 +36,6 @@ func (v *initCommand) Command() *cobra.Command {
 }
 
 func (v initCommand) Execute(args []string) error {
-	// Execute in root of worktree.
-	repository.ChdirProjectRoot()
-
 	if len(args) != 1 {
 		return newUserError("must given 1 argument for init command")
 	}

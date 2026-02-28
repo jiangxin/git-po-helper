@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/git-l10n/git-po-helper/repository"
 	"github.com/git-l10n/git-po-helper/util"
 
 	log "github.com/sirupsen/logrus"
@@ -41,9 +40,6 @@ func (v *checkPotCommand) Command() *cobra.Command {
 }
 
 func (v checkPotCommand) Execute(args []string) error {
-	// Execute in root of worktree.
-	repository.ChdirProjectRoot()
-
 	n := 0
 	if v.OptShowAllConfigs {
 		n++

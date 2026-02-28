@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/git-l10n/git-po-helper/repository"
 	"github.com/git-l10n/git-po-helper/util"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -22,9 +21,6 @@ func (v *updateCommand) Command() *cobra.Command {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
-
-			// Execute in root of worktree.
-			repository.ChdirProjectRoot()
 
 			if len(args) == 0 {
 				return newUserError("no argument for update command")
@@ -50,9 +46,6 @@ func (v *updateCommand) Command() *cobra.Command {
 
 func (v updateCommand) Execute(args []string) error {
 	var err error
-
-	// Execute in root of worktree.
-	repository.ChdirProjectRoot()
 
 	if len(args) == 0 {
 		return newUserError("no argument for update command")

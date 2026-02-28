@@ -79,7 +79,7 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 		return result, err
 	}
 
-	workDir := repository.WorkDir()
+	workDir := repository.WorkDirOrCwd()
 	sourcePath := poFile
 	if rel, err := filepath.Rel(workDir, poFile); err == nil && rel != "" && rel != "." {
 		sourcePath = filepath.ToSlash(rel)

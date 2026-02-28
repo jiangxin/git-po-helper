@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/git-l10n/git-po-helper/flag"
-	"github.com/git-l10n/git-po-helper/repository"
 	"github.com/git-l10n/git-po-helper/util"
 	"github.com/spf13/cobra"
 )
@@ -29,6 +28,9 @@ func (v *statCommand) Command() *cobra.Command {
   fuzzy        - entries with fuzzy flag
   obsolete     - obsolete entries (#~ format)
 
+When run inside a git worktree, paths are relative to the project root (e.g. po/zh_CN.po).
+When run outside a git repository, paths are relative to the current directory or absolute.
+
 For review JSON report, use: git-po-helper agent-run report [path]`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -40,8 +42,6 @@ For review JSON report, use: git-po-helper agent-run report [path]`,
 }
 
 func (v statCommand) Execute(args []string) error {
-	repository.ChdirProjectRoot()
-
 	if len(args) < 1 {
 		return newUserError("stat requires at least one argument: <po-file> [po-file...]")
 	}

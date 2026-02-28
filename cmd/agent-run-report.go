@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/git-l10n/git-po-helper/repository"
 	"github.com/git-l10n/git-po-helper/util"
 	"github.com/spf13/cobra"
 )
@@ -19,8 +18,6 @@ into one result; otherwise po/review.json is used.
 Default path is ` + util.DefaultReviewPoPath + ` when omitted.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			repository.ChdirProjectRoot()
-
 			path := util.DefaultReviewPoPath
 			if len(args) > 0 {
 				path = args[0]

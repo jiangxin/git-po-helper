@@ -292,7 +292,7 @@ func BuildAgentCommand(agent config.Agent, vars PlaceholderVars) ([]string, erro
 
 // GetPotFilePath returns the full path to the POT file in the repository.
 func GetPotFilePath() string {
-	workDir := repository.WorkDir()
+	workDir := repository.WorkDirOrCwd()
 	return filepath.Join(workDir, PoDir, GitPot)
 }
 

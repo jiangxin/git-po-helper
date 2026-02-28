@@ -14,9 +14,11 @@ import (
 func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string) error {
 	var (
 		err                    error
-		workDir                = repository.WorkDir()
 		relOldFile, relNewFile string
 	)
+	if oldCommit != "" || newCommit != "" {
+		_ = repository.WorkDir() // assert repo when using revisions
+	}
 
 	// Use temp files for orig and new; they are deleted when the function returns
 	oldTmpFile, err := os.CreateTemp("", "review-old-*.po")
@@ -40,18 +42,21 @@ func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string
 	log.Debugf("preparing review data: orig=%s, new=%s, review-input=%s",
 		oldTmpFile.Name(), newTmpFile.Name(), outputFile)
 
-	// Get original file from git
+	// Get original file (from git when revision set, else from worktree)
 	log.Infof("getting old file from commit: %s", oldCommit)
-	// Convert absolute path to relative path for git show command
-	if filepath.IsAbs(oldFile) {
-		relOldFile, err = filepath.Rel(workDir, oldFile)
-		if err != nil {
-			return fmt.Errorf("failed to convert PO file path to relative: %w", err)
+	if oldCommit != "" {
+		workDir := repository.WorkDir()
+		if filepath.IsAbs(oldFile) {
+			relOldFile, err = filepath.Rel(workDir, oldFile)
+			if err != nil {
+				return fmt.Errorf("failed to convert PO file path to relative: %w", err)
+			}
+		} else {
+			relOldFile = oldFile
 		}
 	} else {
 		relOldFile = oldFile
 	}
-	// Normalize to use forward slashes (git uses forward slashes in paths)
 	relOldFile = filepath.ToSlash(relOldFile)
 	oldFileRevision := FileRevision{
 		Revision: oldCommit,
@@ -73,16 +78,19 @@ func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string
 	}
 
 	log.Infof("getting new file from commit: %s", newCommit)
-	// Convert absolute path to relative path for git show command
-	if filepath.IsAbs(newFile) {
-		relNewFile, err = filepath.Rel(workDir, newFile)
-		if err != nil {
-			return fmt.Errorf("failed to convert PO file path to relative: %w", err)
+	if newCommit != "" {
+		workDir := repository.WorkDir()
+		if filepath.IsAbs(newFile) {
+			relNewFile, err = filepath.Rel(workDir, newFile)
+			if err != nil {
+				return fmt.Errorf("failed to convert PO file path to relative: %w", err)
+			}
+		} else {
+			relNewFile = newFile
 		}
 	} else {
 		relNewFile = newFile
 	}
-	// Normalize to use forward slashes (git uses forward slashes in paths)
 	relNewFile = filepath.ToSlash(relNewFile)
 	newFileRevision := FileRevision{
 		Revision: newCommit,

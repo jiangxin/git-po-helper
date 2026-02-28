@@ -89,7 +89,7 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	}
 
 	// Build agent command with placeholders replaced
-	workDir := repository.WorkDir()
+	workDir := repository.WorkDirOrCwd()
 	sourcePath := poFile
 	if rel, err := filepath.Rel(workDir, poFile); err == nil && rel != "" && rel != "." {
 		sourcePath = filepath.ToSlash(rel)

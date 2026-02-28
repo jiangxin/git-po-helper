@@ -14,13 +14,17 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// getRelativePath converts an absolute path to a path relative to the repository root.
+// getRelativePath converts an absolute path to a path relative to the current directory.
 // If conversion fails, returns the original absolute path as fallback.
 func getRelativePath(absPath string) string {
 	if absPath == "" {
 		return ""
 	}
-	relPath, err := filepath.Rel(repository.WorkDir(), absPath)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return absPath // fallback to absolute path
+	}
+	relPath, err := filepath.Rel(cwd, absPath)
 	if err != nil {
 		return absPath // fallback to absolute path
 	}
@@ -122,7 +126,7 @@ func ValidatePoEntryCount(poFile string, expectedCount *int, stage string) error
 // For .po files, it uses msgfmt to validate.
 // Returns an error if the file is invalid, nil if valid.
 // If the file path is absolute, it doesn't require repository context.
-// If the file path is relative, it uses repository.WorkDir() as the working directory.
+// If the file path is relative, it uses repository.WorkDirOrCwd() as the working directory.
 func ValidatePoFile(potFile string) error {
 	return validatePoFileInternal(potFile, false)
 }
@@ -133,7 +137,7 @@ func ValidatePoFile(potFile string) error {
 // For .po files, it uses msgfmt --check-format to validate (only checks format, not completeness).
 // Returns an error if the file format is invalid, nil if valid.
 // If the file path is absolute, it doesn't require repository context.
-// If the file path is relative, it uses repository.WorkDir() as the working directory.
+// If the file path is relative, it uses repository.WorkDirOrCwd() as the working directory.
 func ValidatePoFileFormat(potFile string) error {
 	return validatePoFileInternal(potFile, true)
 }
@@ -181,14 +185,10 @@ func validatePoFileInternal(potFile string, checkFormatOnly bool) error {
 		}
 	}
 
-	// Only set working directory if file path is relative
-	// For absolute paths, we don't need repository context
+	// For absolute paths, use the directory containing the file as working directory.
+	// For relative paths, cmd.Dir is not set and the command uses process CWD.
 	if filepath.IsAbs(potFile) {
-		// For absolute paths, use the directory containing the file as working directory
 		cmd.Dir = filepath.Dir(potFile)
-	} else {
-		// For relative paths, use repository working directory
-		cmd.Dir = repository.WorkDir()
 	}
 
 	// Capture stderr for error messages
@@ -230,7 +230,7 @@ func validatePoFileInternal(potFile string, checkFormatOnly bool) error {
 // If poFile is empty, it uses the effective default_lang_code (config or system locale) to construct the path.
 // If poFile is provided but not absolute, it's treated as relative to the repository root.
 func GetPoFileAbsPath(cfg *config.AgentConfig, poFile string) (string, error) {
-	workDir := repository.WorkDir()
+	workDir := repository.WorkDirOrCwd()
 	if poFile == "" {
 		lang := cfg.DefaultLangCode
 		if lang == "" {
@@ -251,7 +251,7 @@ func GetPoFileAbsPath(cfg *config.AgentConfig, poFile string) (string, error) {
 // If poFile is already a relative path, it normalizes it to "po/XX.po" format.
 // Returns the relative path and an error if default_lang_code is not configured when needed.
 func GetPoFileRelPath(cfg *config.AgentConfig, poFile string) (string, error) {
-	workDir := repository.WorkDir()
+	workDir := repository.WorkDirOrCwd()
 	var absPath string
 	var err error
 

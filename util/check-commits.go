@@ -256,6 +256,11 @@ func fetchBlobsInPartialClone(args []string) error {
 
 // CmdCheckCommits implements check-commits sub command.
 func CmdCheckCommits(args ...string) bool {
+	if err := repository.RequireOpened(); err != nil {
+		log.Errorf("check-commits requires a git repository: %s", err)
+		return false
+	}
+
 	var (
 		commits = []string{}
 		cmdArgs = []string{

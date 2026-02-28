@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/git-l10n/git-po-helper/repository"
 	"github.com/git-l10n/git-po-helper/util"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -33,8 +32,6 @@ Examples:
   git-po-helper agent-run update-pot --agent claude`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			repository.ChdirProjectRoot()
-
 			if len(args) != 0 {
 				return newUserError("update-pot command needs no arguments")
 			}

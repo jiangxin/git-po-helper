@@ -160,7 +160,7 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 // and execution logs to preserve translation results for later review.
 func SaveTranslateResults(agentName string, runNumber int, poFile string, stdout, stderr []byte) error {
 	// Determine output directory path
-	workDir := repository.WorkDir()
+	workDir := repository.WorkDirOrCwd()
 	outputDir := filepath.Join(workDir, "output", agentName, fmt.Sprintf("%d", runNumber))
 
 	log.Debugf("saving translation results to %s", outputDir)

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/git-l10n/git-po-helper/repository"
 	"github.com/git-l10n/git-po-helper/util"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -47,8 +46,6 @@ Examples:
   git-po-helper agent-test update-po --agent claude --runs 10 po/zh_CN.po`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			repository.ChdirProjectRoot()
-
 			if len(args) > 1 {
 				return newUserError("update-po command expects at most one argument: po/XX.po")
 			}

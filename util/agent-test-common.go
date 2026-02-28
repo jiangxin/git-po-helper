@@ -98,7 +98,7 @@ func ConfirmAgentTestExecution(skipConfirmation bool) error {
 // This is useful for agent-test operations to ensure a clean state before each test run.
 // Returns an error if the git restore command fails.
 func CleanPoDirectory(paths ...string) error {
-	workDir := repository.WorkDir()
+	workDir := repository.WorkDirOrCwd()
 
 	// If no paths provided, use default "po/"
 	targetPaths := paths

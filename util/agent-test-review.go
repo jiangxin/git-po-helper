@@ -177,7 +177,7 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 // Returns error if any operation fails.
 func SaveReviewResults(agentName string, runNumber int, poFile string, jsonFile string, stdout, stderr []byte) error {
 	// Determine output directory path
-	workDir := repository.WorkDir()
+	workDir := repository.WorkDirOrCwd()
 	outputDir := filepath.Join(workDir, "output", agentName, fmt.Sprintf("%d", runNumber))
 
 	log.Debugf("saving review results to %s", outputDir)

@@ -61,8 +61,6 @@ func ResolveRevisionsAndFiles(rangeStr, commitStr, sinceStr string, args []strin
 		return nil, fmt.Errorf("too many arguments (%d > 2)", len(args))
 	}
 
-	repository.ChdirProjectRoot()
-
 	var (
 		oldCommit, newCommit string
 		oldFile, newFile     string
@@ -94,8 +92,11 @@ func ResolveRevisionsAndFiles(rangeStr, commitStr, sinceStr string, args []strin
 		}
 	}
 
-	// Resolve poFile when not specified
+	// Resolve poFile when not specified (requires git)
 	if len(args) == 0 {
+		if !repository.Opened() {
+			return nil, fmt.Errorf("comparing changed files requires a git repository")
+		}
 		changedPoFiles, err := GetChangedPoFilesRange(oldCommit, newCommit)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get changed po files: %w", err)
@@ -106,6 +107,10 @@ func ResolveRevisionsAndFiles(rangeStr, commitStr, sinceStr string, args []strin
 			return nil, fmt.Errorf("failed to resolve default po file: %w", err)
 		}
 		newFile = oldFile
+	}
+
+	if (oldCommit != "" || newCommit != "") && !repository.Opened() {
+		return nil, fmt.Errorf("comparing by revision requires a git repository")
 	}
 
 	return &CompareTarget{

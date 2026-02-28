@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/git-l10n/git-po-helper/repository"
 	"github.com/git-l10n/git-po-helper/util"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -34,8 +33,6 @@ Exactly one of --range, --commit and --since may be specified.
 With two file arguments, compare worktree files (revisions not allowed).`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			repository.ChdirProjectRoot()
-
 			target, err := util.ResolveRevisionsAndFiles(opts.Range, opts.Commit, opts.Since, args)
 			if err != nil {
 				return newUserErrorF("%v", err)
