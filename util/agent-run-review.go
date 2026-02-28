@@ -265,6 +265,10 @@ func RunAgentReviewUseAgentMd(cfg *config.AgentConfig, agentName string, target 
 		return result, err
 	}
 
+	if Exist(reviewPOFile) {
+		log.Warnf("review PO file already exists: %s", reviewPOFile)
+	}
+
 	poFile, err := GetPoFileAbsPath(cfg, target.NewFile)
 	if err != nil {
 		return result, err
@@ -273,11 +277,6 @@ func RunAgentReviewUseAgentMd(cfg *config.AgentConfig, agentName string, target 
 		result.AgentError = fmt.Sprintf("PO file does not exist: %s", poFile)
 		return result, fmt.Errorf("PO file does not exist: %s\nHint: Ensure the PO file exists before running review", poFile)
 	}
-
-	// Delete existing review output files
-	os.Remove(reviewPOFile)
-	os.Remove(reviewJSONFile)
-	log.Infof("removed existing %s and %s", reviewPOFile, reviewJSONFile)
 
 	poFileRel := target.NewFile
 	if rel, err := filepath.Rel(workDir, poFile); err == nil && rel != "" && rel != "." {
