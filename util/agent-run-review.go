@@ -343,7 +343,7 @@ func RunAgentReviewUseAgentMd(cfg *config.AgentConfig, agentName string, target 
 		return result, fmt.Errorf("review JSON not generated at %s\nHint: The agent must write the review result to this file", reviewJSONFile)
 	}
 
-	reportResult, err := ReportReviewFromJSON(reviewJSONFile)
+	_, reportResult, err := ReportReviewFromJSON(reviewJSONFile)
 	if err != nil {
 		return result, fmt.Errorf("failed to read review JSON: %w", err)
 	}

@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/git-l10n/git-po-helper/repository"
 	"github.com/git-l10n/git-po-helper/util"
 	"github.com/spf13/cobra"
@@ -28,20 +26,11 @@ Default path is ` + defaultPath + ` when omitted.`,
 			if len(args) > 0 {
 				path = args[0]
 			}
-			result, err := util.ReportReviewFromPathWithBatches(path)
+			jsonFile, result, err := util.ReportReviewFromPathWithBatches(path)
 			if err != nil {
 				return newUserErrorF("%v", err)
 			}
-
-			jsonFile, _ := util.DeriveReviewPaths(path)
-			fmt.Printf("Review JSON: %s\n", jsonFile)
-			fmt.Printf("  Total entries: %d\n", result.Review.TotalEntries)
-			fmt.Printf("  Issues found: %d\n", len(result.Review.Issues))
-			fmt.Printf("  Review score: %d/100\n", result.Score)
-			fmt.Printf("  Critical (score 0): %d\n", result.CriticalCount)
-			fmt.Printf("  Major (score 2):   %d\n", result.MajorCount)
-			fmt.Printf("  Minor (score 1):   %d\n", result.MinorCount)
-			fmt.Printf("  Perfect (no issue): %d\n", result.PerfectCount())
+			util.PrintReviewReportResult(jsonFile, result)
 			return nil
 		},
 	}
