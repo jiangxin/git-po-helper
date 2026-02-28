@@ -808,7 +808,7 @@ msgstr "第三个"
 	}
 
 	var buf bytes.Buffer
-	err := MsgSelect(poFile, "1,3", &buf, false)
+	err := MsgSelect(poFile, "1,3", &buf, false, nil)
 	if err != nil {
 		t.Fatalf("MsgSelect failed: %v", err)
 	}
@@ -852,7 +852,7 @@ msgstr "三"
 
 	t.Run("-2 means entries 1-2", func(t *testing.T) {
 		var buf bytes.Buffer
-		err := MsgSelect(poFile, "-2", &buf, false)
+		err := MsgSelect(poFile, "-2", &buf, false, nil)
 		if err != nil {
 			t.Fatalf("MsgSelect failed: %v", err)
 		}
@@ -867,7 +867,7 @@ msgstr "三"
 
 	t.Run("2- means entries 2 to last", func(t *testing.T) {
 		var buf bytes.Buffer
-		err := MsgSelect(poFile, "2-", &buf, false)
+		err := MsgSelect(poFile, "2-", &buf, false, nil)
 		if err != nil {
 			t.Fatalf("MsgSelect failed: %v", err)
 		}
@@ -901,7 +901,7 @@ msgstr "二"
 
 	// Range selects only out-of-range entries (file has 2 content entries)
 	var buf bytes.Buffer
-	err := MsgSelect(poFile, "10-20", &buf, false)
+	err := MsgSelect(poFile, "10-20", &buf, false, nil)
 	if err != nil {
 		t.Fatalf("MsgSelect failed: %v", err)
 	}
@@ -929,7 +929,7 @@ msgstr "二"
 	}
 
 	var buf bytes.Buffer
-	err := MsgSelect(poFile, "1-2", &buf, true)
+	err := MsgSelect(poFile, "1-2", &buf, true, nil)
 	if err != nil {
 		t.Fatalf("MsgSelect failed: %v", err)
 	}
@@ -959,7 +959,7 @@ msgstr "第二个"
 		t.Fatalf("failed to write test file: %v", err)
 	}
 	var buf bytes.Buffer
-	err := WriteGettextJSONFromPOFile(poFile, "1", &buf)
+	err := WriteGettextJSONFromPOFile(poFile, "1", &buf, nil)
 	if err != nil {
 		t.Fatalf("WriteGettextJSONFromPOFile failed: %v", err)
 	}
@@ -995,7 +995,7 @@ msgstr "二"
 		t.Fatalf("failed to write test file: %v", err)
 	}
 	var buf bytes.Buffer
-	err := WriteGettextJSONFromPOFile(poFile, "99-100", &buf)
+	err := WriteGettextJSONFromPOFile(poFile, "99-100", &buf, nil)
 	if err != nil {
 		t.Fatalf("WriteGettextJSONFromPOFile failed: %v", err)
 	}

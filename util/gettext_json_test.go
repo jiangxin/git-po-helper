@@ -598,7 +598,7 @@ func TestSelectGettextJSONFromFile_JSONInputToPO(t *testing.T) {
 		t.Fatalf("write JSON file: %v", err)
 	}
 	var buf bytes.Buffer
-	err := SelectGettextJSONFromFile(jsonFile, "1", &buf, false)
+	err := SelectGettextJSONFromFile(jsonFile, "1", &buf, false, nil)
 	if err != nil {
 		t.Fatalf("SelectGettextJSONFromFile: %v", err)
 	}
@@ -622,7 +622,7 @@ func TestSelectGettextJSONFromFile_JSONInputToJSON(t *testing.T) {
 		t.Fatalf("write JSON file: %v", err)
 	}
 	var buf bytes.Buffer
-	err := SelectGettextJSONFromFile(jsonFile, "2", &buf, true)
+	err := SelectGettextJSONFromFile(jsonFile, "2", &buf, true, nil)
 	if err != nil {
 		t.Fatalf("SelectGettextJSONFromFile: %v", err)
 	}
@@ -644,7 +644,7 @@ func TestSelectGettextJSONFromFile_Range(t *testing.T) {
 	}
 	t.Run("range 1", func(t *testing.T) {
 		var buf bytes.Buffer
-		if err := SelectGettextJSONFromFile(jsonFile, "1", &buf, true); err != nil {
+		if err := SelectGettextJSONFromFile(jsonFile, "1", &buf, true, nil); err != nil {
 			t.Fatal(err)
 		}
 		var j GettextJSON
@@ -657,7 +657,7 @@ func TestSelectGettextJSONFromFile_Range(t *testing.T) {
 	})
 	t.Run("range 1-2", func(t *testing.T) {
 		var buf bytes.Buffer
-		if err := SelectGettextJSONFromFile(jsonFile, "1-2", &buf, true); err != nil {
+		if err := SelectGettextJSONFromFile(jsonFile, "1-2", &buf, true, nil); err != nil {
 			t.Fatal(err)
 		}
 		var j GettextJSON
