@@ -253,7 +253,7 @@ func prepareReviewBatches(reviewPOFile string, minBatchSize int) (batchPOPaths [
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to create batch file %s: %w", batchPath, err)
 		}
-		if err := MsgSelect(reviewPOFile, rangeSpec, f, false); err != nil {
+		if err := MsgSelect(reviewPOFile, rangeSpec, f, false, nil); err != nil {
 			f.Close()
 			os.Remove(batchPath)
 			return nil, 0, fmt.Errorf("msg-select failed for batch %d: %w", i, err)

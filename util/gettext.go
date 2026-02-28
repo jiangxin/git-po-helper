@@ -562,12 +562,11 @@ func ParseEntryRange(spec string, maxEntry int) ([]int, error) {
 	return result, nil
 }
 
-// MsgSelect reads a PO/POT file, selects entries by the given range specification,
+// MsgSelect reads a PO/POT file, selects entries by state filter and range,
 // and writes the result to w. Entry 0 (header) is included when content entries
-// are selected, unless noHeader is true. If no content entries match the range,
-// outputs nothing (empty). Range spec format: comma-separated numbers or ranges,
-// e.g. "3,5,9-13".
-func MsgSelect(poFile, rangeSpec string, w io.Writer, noHeader bool) error {
+// are selected, unless noHeader is true. If filter is nil, DefaultFilter() is used.
+// Range applies to the filtered entry list (1 = first matching, etc.).
+func MsgSelect(poFile, rangeSpec string, w io.Writer, noHeader bool, filter *EntryStateFilter) error {
 	data, err := os.ReadFile(poFile)
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", poFile, err)
@@ -578,15 +577,29 @@ func MsgSelect(poFile, rangeSpec string, w io.Writer, noHeader bool) error {
 		return fmt.Errorf("failed to parse %s: %w", poFile, err)
 	}
 
-	// Entry 0 = header, entry 1..N = entries[0..N-1]
-	maxEntry := len(entries)
+	f := DefaultFilter()
+	if filter != nil {
+		f = *filter
+	}
+
+	// Filter by state first
+	filteredIndices := FilterPoEntries(entries, f)
+	maxEntry := len(filteredIndices)
 	indices, err := ParseEntryRange(rangeSpec, maxEntry)
 	if err != nil {
 		return fmt.Errorf("invalid range %q: %w", rangeSpec, err)
 	}
 
+	// Map range indices to original entry indices
+	var finalIndices []int
+	for _, idx := range indices {
+		if idx > 0 && idx <= len(filteredIndices) {
+			finalIndices = append(finalIndices, filteredIndices[idx-1])
+		}
+	}
+
 	// If no content entries, output empty
-	if len(indices) == 0 {
+	if len(finalIndices) == 0 {
 		return nil
 	}
 
@@ -608,7 +621,7 @@ func MsgSelect(poFile, rangeSpec string, w io.Writer, noHeader bool) error {
 	}
 
 	// Write selected entries (entries[idx-1])
-	for _, idx := range indices {
+	for _, idx := range finalIndices {
 		entry := entries[idx-1]
 		for _, line := range entry.RawLines {
 			if _, err := io.WriteString(w, line); err != nil {
@@ -628,11 +641,9 @@ func MsgSelect(poFile, rangeSpec string, w io.Writer, noHeader bool) error {
 	return nil
 }
 
-// WriteGettextJSONFromPOFile reads a PO/POT file, selects entries by the given range specification,
-// and writes a single JSON object to w (header_comment, header_meta, entries).
-// The file header is always included in the output; when no content entries match
-// the range, entries is an empty array.
-func WriteGettextJSONFromPOFile(poFile, rangeSpec string, w io.Writer) error {
+// WriteGettextJSONFromPOFile reads a PO/POT file, selects entries by state filter and range,
+// and writes a single JSON object to w. If filter is nil, DefaultFilter() is used.
+func WriteGettextJSONFromPOFile(poFile, rangeSpec string, w io.Writer, filter *EntryStateFilter) error {
 	data, err := os.ReadFile(poFile)
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", poFile, err)
@@ -645,14 +656,21 @@ func WriteGettextJSONFromPOFile(poFile, rangeSpec string, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("split header: %w", err)
 	}
-	maxEntry := len(entries)
+	f := DefaultFilter()
+	if filter != nil {
+		f = *filter
+	}
+	filteredIndices := FilterPoEntries(entries, f)
+	maxEntry := len(filteredIndices)
 	indices, err := ParseEntryRange(rangeSpec, maxEntry)
 	if err != nil {
 		return fmt.Errorf("invalid range %q: %w", rangeSpec, err)
 	}
 	var selected []*PoEntry
 	for _, idx := range indices {
-		selected = append(selected, entries[idx-1])
+		if idx > 0 && idx <= len(filteredIndices) {
+			selected = append(selected, entries[filteredIndices[idx-1]-1])
+		}
 	}
 	return BuildGettextJSON(headerComment, headerMeta, selected, w)
 }

@@ -336,9 +336,9 @@ func ReadFileToGettextJSON(path string) (*GettextJSON, error) {
 	return PoEntriesToGettextJSON(headerComment, headerMeta, entries), nil
 }
 
-// SelectGettextJSONFromFile reads a gettext JSON file, applies the range specification to entries,
-// and writes either JSON (useJSON true) or PO text (useJSON false) to w.
-func SelectGettextJSONFromFile(jsonFile, rangeSpec string, w io.Writer, useJSON bool) error {
+// SelectGettextJSONFromFile reads a gettext JSON file, applies state filter and range.
+// If filter is nil, DefaultFilter() is used. Range applies to the filtered list.
+func SelectGettextJSONFromFile(jsonFile, rangeSpec string, w io.Writer, useJSON bool, filter *EntryStateFilter) error {
 	data, err := os.ReadFile(jsonFile)
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", jsonFile, err)
@@ -347,14 +347,21 @@ func SelectGettextJSONFromFile(jsonFile, rangeSpec string, w io.Writer, useJSON 
 	if err != nil {
 		return fmt.Errorf("failed to parse JSON %s: %w", jsonFile, err)
 	}
-	maxEntry := len(j.Entries)
+	f := DefaultFilter()
+	if filter != nil {
+		f = *filter
+	}
+	filtered := FilterGettextEntries(j.Entries, f)
+	maxEntry := len(filtered)
 	indices, err := EntryRangeForJSON(rangeSpec, maxEntry)
 	if err != nil {
 		return fmt.Errorf("invalid range %q: %w", rangeSpec, err)
 	}
 	var selected []GettextEntry
 	for _, idx := range indices {
-		selected = append(selected, j.Entries[idx-1])
+		if idx > 0 && idx <= len(filtered) {
+			selected = append(selected, filtered[idx-1])
+		}
 	}
 	out := &GettextJSON{
 		HeaderComment: j.HeaderComment,
