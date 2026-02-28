@@ -9,6 +9,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	log "github.com/sirupsen/logrus"
+	"github.com/tidwall/gjson"
 )
 
 // GettextJSON is the top-level structure for msg-select --json output.
@@ -188,6 +191,52 @@ func WriteGettextJSONToJSON(j *GettextJSON, w io.Writer) error {
 	return nil
 }
 
+// parseGettextJSONWithGjson parses gettext JSON using gjson, which can tolerate
+// some malformed LLM output (e.g. missing colons). Returns nil if parsing fails.
+func parseGettextJSONWithGjson(data []byte, err error) *GettextJSON {
+	log.Warnf("fall back to gjson to fix gettext JSON: %v", err)
+	headerComment := gjson.GetBytes(data, "header_comment").String()
+	headerMeta := gjson.GetBytes(data, "header_meta").String()
+	entriesResult := gjson.GetBytes(data, "entries")
+	if !entriesResult.Exists() {
+		return &GettextJSON{
+			HeaderComment: headerComment,
+			HeaderMeta:    headerMeta,
+			Entries:       []GettextEntry{},
+		}
+	}
+	var entries []GettextEntry
+	for _, r := range entriesResult.Array() {
+		ent := GettextEntry{
+			MsgID:    r.Get("msgid").String(),
+			MsgStr:   r.Get("msgstr").String(),
+			Fuzzy:    r.Get("fuzzy").Bool(),
+			Comments: []string{},
+		}
+		if r.Get("msgid_plural").Exists() {
+			ent.MsgIDPlural = r.Get("msgid_plural").String()
+		}
+		if arr := r.Get("msgstr_plural").Array(); len(arr) > 0 {
+			ent.MsgStrPlural = make([]string, len(arr))
+			for i, v := range arr {
+				ent.MsgStrPlural[i] = v.String()
+			}
+		}
+		if arr := r.Get("comments").Array(); len(arr) > 0 {
+			ent.Comments = make([]string, len(arr))
+			for i, v := range arr {
+				ent.Comments[i] = v.String()
+			}
+		}
+		entries = append(entries, ent)
+	}
+	return &GettextJSON{
+		HeaderComment: headerComment,
+		HeaderMeta:    headerMeta,
+		Entries:       entries,
+	}
+}
+
 // ParseGettextJSON decodes gettext JSON from r into GettextJSON.
 func ParseGettextJSON(r io.Reader) (*GettextJSON, error) {
 	var out GettextJSON
@@ -198,10 +247,20 @@ func ParseGettextJSON(r io.Reader) (*GettextJSON, error) {
 }
 
 // ParseGettextJSONBytes decodes gettext JSON from data.
+// Uses PrepareJSONForParse and gjson fallback for malformed LLM-generated JSON.
 func ParseGettextJSONBytes(data []byte) (*GettextJSON, error) {
 	var out GettextJSON
 	if err := json.Unmarshal(data, &out); err != nil {
-		return nil, fmt.Errorf("decode gettext JSON: %w", err)
+		prepared := PrepareJSONForParse(data, err)
+		if err2 := json.Unmarshal(prepared, &out); err2 != nil {
+			if parsed := parseGettextJSONWithGjson(prepared, err2); parsed != nil {
+				return parsed, nil
+			}
+			return nil, fmt.Errorf("decode gettext JSON: %w", err)
+		}
+	}
+	if out.Entries == nil {
+		out.Entries = []GettextEntry{}
 	}
 	return &out, nil
 }
