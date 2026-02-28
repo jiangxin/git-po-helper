@@ -2,6 +2,7 @@
 package util
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -132,10 +133,9 @@ func SplitHeader(header []string) (headerComment, headerMeta string, err error) 
 	return headerComment, headerMeta, nil
 }
 
-// BuildGettextJSON builds the JSON object from header comment, header meta, and selected entries,
-// and writes it to w. Entries should already be range-selected (e.g. from MsgSelect flow).
-func BuildGettextJSON(headerComment, headerMeta string, entries []*PoEntry, w io.Writer) error {
-	out := GettextJSON{
+// PoEntriesToGettextJSON builds a GettextJSON from header and PO entries (all entries, no range).
+func PoEntriesToGettextJSON(headerComment, headerMeta string, entries []*PoEntry) *GettextJSON {
+	out := &GettextJSON{
 		HeaderComment: headerComment,
 		HeaderMeta:    headerMeta,
 		Entries:       make([]GettextEntry, 0, len(entries)),
@@ -166,9 +166,23 @@ func BuildGettextJSON(headerComment, headerMeta string, entries []*PoEntry, w io
 		}
 		out.Entries = append(out.Entries, ent)
 	}
+	return out
+}
+
+// BuildGettextJSON builds the JSON object from header comment, header meta, and selected entries,
+// and writes it to w. Entries should already be range-selected (e.g. from MsgSelect flow).
+func BuildGettextJSON(headerComment, headerMeta string, entries []*PoEntry, w io.Writer) error {
+	return WriteGettextJSONToJSON(PoEntriesToGettextJSON(headerComment, headerMeta, entries), w)
+}
+
+// WriteGettextJSONToJSON writes a GettextJSON value as JSON to w (same schema as --json output).
+func WriteGettextJSONToJSON(j *GettextJSON, w io.Writer) error {
+	if j == nil {
+		j = &GettextJSON{}
+	}
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
-	if err := enc.Encode(out); err != nil {
+	if err := enc.Encode(j); err != nil {
 		return fmt.Errorf("encode gettext JSON: %w", err)
 	}
 	return nil
@@ -196,6 +210,65 @@ func ParseGettextJSONBytes(data []byte) (*GettextJSON, error) {
 // maxEntry is len(entries). Returns indices in ascending order (1-based content indices).
 func EntryRangeForJSON(spec string, maxEntry int) ([]int, error) {
 	return ParseEntryRange(spec, maxEntry)
+}
+
+// entryKey returns a key for deduplication: same key means same logical entry (msgid + msgid_plural).
+func entryKey(e GettextEntry) string {
+	if e.MsgIDPlural != "" {
+		return e.MsgID + "\x00" + e.MsgIDPlural
+	}
+	return e.MsgID + "\x00"
+}
+
+// MergeGettextJSON merges multiple GettextJSON sources. Header is taken from the first source.
+// For entries, the first occurrence of each msgid (and msgid_plural for plurals) wins by file order.
+func MergeGettextJSON(sources []*GettextJSON) *GettextJSON {
+	if len(sources) == 0 {
+		return &GettextJSON{}
+	}
+	seen := make(map[string]bool)
+	var merged []GettextEntry
+	for _, j := range sources {
+		if j == nil {
+			continue
+		}
+		for _, e := range j.Entries {
+			k := entryKey(e)
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			merged = append(merged, e)
+		}
+	}
+	return &GettextJSON{
+		HeaderComment: sources[0].HeaderComment,
+		HeaderMeta:    sources[0].HeaderMeta,
+		Entries:       merged,
+	}
+}
+
+// ReadFileToGettextJSON reads a single file (PO, POT, or gettext JSON) and returns GettextJSON.
+// Format is detected by extension (.json) or by content (starts with '{' after whitespace).
+func ReadFileToGettextJSON(path string) (*GettextJSON, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	trimmed := bytes.TrimLeft(data, " \t\r\n")
+	if len(trimmed) > 0 && trimmed[0] == '{' {
+		return ParseGettextJSONBytes(data)
+	}
+	// PO/POT
+	entries, header, err := ParsePoEntries(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse PO %s: %w", path, err)
+	}
+	headerComment, headerMeta, err := SplitHeader(header)
+	if err != nil {
+		return nil, fmt.Errorf("split header %s: %w", path, err)
+	}
+	return PoEntriesToGettextJSON(headerComment, headerMeta, entries), nil
 }
 
 // SelectGettextJSONFromFile reads a gettext JSON file, applies the range specification to entries,

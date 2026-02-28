@@ -581,3 +581,188 @@ func TestSelectGettextJSONFromFile_Range(t *testing.T) {
 		}
 	})
 }
+
+func TestMergeGettextJSON(t *testing.T) {
+	// First occurrence of each msgid wins.
+	a := &GettextJSON{
+		HeaderComment: "# first",
+		HeaderMeta:    "H: A\n",
+		Entries: []GettextEntry{
+			{MsgID: "one", MsgStr: "uno"},
+			{MsgID: "two", MsgStr: "due"},
+		},
+	}
+	b := &GettextJSON{
+		HeaderComment: "# second",
+		HeaderMeta:    "H: B\n",
+		Entries: []GettextEntry{
+			{MsgID: "two", MsgStr: "ZWEI"},
+			{MsgID: "three", MsgStr: "tre"},
+		},
+	}
+	merged := MergeGettextJSON([]*GettextJSON{a, b})
+	if merged.HeaderComment != "# first" || merged.HeaderMeta != "H: A\n" {
+		t.Errorf("header from first: got comment=%q meta=%q", merged.HeaderComment, merged.HeaderMeta)
+	}
+	if len(merged.Entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(merged.Entries))
+	}
+	if merged.Entries[0].MsgID != "one" || merged.Entries[0].MsgStr != "uno" {
+		t.Errorf("entry 0: got %q / %q", merged.Entries[0].MsgID, merged.Entries[0].MsgStr)
+	}
+	if merged.Entries[1].MsgID != "two" || merged.Entries[1].MsgStr != "due" {
+		t.Errorf("entry 1 (first occurrence): got %q / %q", merged.Entries[1].MsgID, merged.Entries[1].MsgStr)
+	}
+	if merged.Entries[2].MsgID != "three" || merged.Entries[2].MsgStr != "tre" {
+		t.Errorf("entry 2: got %q / %q", merged.Entries[2].MsgID, merged.Entries[2].MsgStr)
+	}
+	// Empty and nil
+	empty := MergeGettextJSON(nil)
+	if empty == nil || len(empty.Entries) != 0 {
+		t.Errorf("MergeGettextJSON(nil): got %v", empty)
+	}
+	single := MergeGettextJSON([]*GettextJSON{a})
+	if len(single.Entries) != 2 || single.HeaderComment != "# first" {
+		t.Errorf("MergeGettextJSON([a]): got %d entries", len(single.Entries))
+	}
+}
+
+func TestReadFileToGettextJSON(t *testing.T) {
+	dir := t.TempDir()
+	poPath := filepath.Join(dir, "x.po")
+	poContent := `# header
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Hello"
+msgstr "Ciao"
+`
+	if err := os.WriteFile(poPath, []byte(poContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	j, err := ReadFileToGettextJSON(poPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(j.Entries) != 1 || j.Entries[0].MsgID != "Hello" || j.Entries[0].MsgStr != "Ciao" {
+		t.Errorf("PO: got %v", j.Entries)
+	}
+	jsonPath := filepath.Join(dir, "x.json")
+	jsonContent := `{"header_comment":"","header_meta":"","entries":[{"msgid":"Hi","msgstr":"Salut"}]}`
+	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	j2, err := ReadFileToGettextJSON(jsonPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(j2.Entries) != 1 || j2.Entries[0].MsgID != "Hi" || j2.Entries[0].MsgStr != "Salut" {
+		t.Errorf("JSON: got %v", j2.Entries)
+	}
+	_, err = ReadFileToGettextJSON(filepath.Join(dir, "nonexistent"))
+	if err == nil {
+		t.Error("expected error for nonexistent file")
+	}
+}
+
+func TestWriteGettextJSONToJSON(t *testing.T) {
+	j := &GettextJSON{
+		HeaderComment: "#",
+		HeaderMeta:    "H\n",
+		Entries:       []GettextEntry{{MsgID: "x", MsgStr: "y"}},
+	}
+	var buf bytes.Buffer
+	if err := WriteGettextJSONToJSON(j, &buf); err != nil {
+		t.Fatal(err)
+	}
+	var decoded GettextJSON
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.HeaderComment != "#" || len(decoded.Entries) != 1 || decoded.Entries[0].MsgID != "x" {
+		t.Errorf("round-trip: got %+v", decoded)
+	}
+}
+
+// TestFuzzySingleSource verifies fuzzy state lives only in GettextEntry.Fuzzy:
+// PO with "#, fuzzy" or "#, fuzzy, c-format" -> JSON has Fuzzy=true and Comments without fuzzy line;
+// when writing PO, fuzzy is restored (standalone or merged into flag line).
+func TestFuzzySingleSource(t *testing.T) {
+	// PO with standalone "#, fuzzy"
+	poStandalone := `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#, fuzzy
+msgid "Fuzzy only"
+msgstr ""
+`
+	entries, header, err := ParsePoEntries([]byte(poStandalone))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, headerMeta, _ := SplitHeader(header)
+	j := PoEntriesToGettextJSON("", headerMeta, entries)
+	if len(j.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(j.Entries))
+	}
+	e := &j.Entries[0]
+	if !e.Fuzzy {
+		t.Error("expected Fuzzy=true for #, fuzzy entry")
+	}
+	for _, c := range e.Comments {
+		if strings.Contains(c, "fuzzy") {
+			t.Errorf("fuzzy should not appear in Comments, got %q", c)
+		}
+	}
+	var poBuf bytes.Buffer
+	if err := WriteGettextJSONToPO(j, &poBuf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(poBuf.String(), "#, fuzzy\n") {
+		t.Error("expected #, fuzzy to be restored in PO output")
+	}
+
+	// PO with "#, fuzzy, c-format"
+	poMerged := `msgid ""
+msgstr ""
+
+#, fuzzy, c-format
+msgid "Fuzzy and c-format"
+msgstr ""
+`
+	entries2, header2, err := ParsePoEntries([]byte(poMerged))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, headerMeta2, _ := SplitHeader(header2)
+	j2 := PoEntriesToGettextJSON("", headerMeta2, entries2)
+	if len(j2.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(j2.Entries))
+	}
+	e2 := &j2.Entries[0]
+	if !e2.Fuzzy {
+		t.Error("expected Fuzzy=true")
+	}
+	hasCFormat := false
+	for _, c := range e2.Comments {
+		if strings.Contains(c, "c-format") {
+			hasCFormat = true
+		}
+		if strings.TrimSpace(c) == "#, fuzzy" {
+			t.Error("standalone #, fuzzy should be removed from Comments")
+		}
+	}
+	if !hasCFormat {
+		t.Error("expected #, c-format to remain in Comments")
+	}
+	var poBuf2 bytes.Buffer
+	if err := WriteGettextJSONToPO(j2, &poBuf2); err != nil {
+		t.Fatal(err)
+	}
+	out := poBuf2.String()
+	if !strings.Contains(out, "fuzzy") || !strings.Contains(out, "c-format") {
+		t.Errorf("expected fuzzy and c-format restored in PO, got %q", out)
+	}
+}
