@@ -27,7 +27,7 @@ test_expect_success "setup: fixture with entries exists" '
 test_expect_success "PO -> JSON: msg-select --range 1- --json" '
 	$HELPER msg-select --range "1-" --json "$FIXTURE" >sample.json &&
 	test -s sample.json &&
-	head -c 1 sample.json | grep -q "{"
+	test_copy_bytes 1 <sample.json | grep -q "{"
 '
 
 test_expect_success "JSON -> PO: msg-select --range 1- (input is JSON)" '

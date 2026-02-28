@@ -596,6 +596,49 @@ func TestStrDeQuote(t *testing.T) {
 	}
 }
 
+func TestStripFuzzyFromCommentLine(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{"#, fuzzy", ""},
+		{"#, fuzzy\n", ""},
+		{"  #, fuzzy  ", ""},
+		{"#, fuzzy, c-format", "#, c-format"},
+		{"#, c-format, fuzzy", "#, c-format"},
+		{"#, fuzzy, c-format, no-wrap", "#, c-format, no-wrap"},
+		{"#, c-format", "#, c-format"},
+		{"#: file.c", "#: file.c"},
+		{"# normal comment", "# normal comment"},
+	}
+	for _, tt := range tests {
+		got := StripFuzzyFromCommentLine(tt.line)
+		if got != tt.want {
+			t.Errorf("StripFuzzyFromCommentLine(%q) = %q, want %q", tt.line, got, tt.want)
+		}
+	}
+}
+
+func TestMergeFuzzyIntoFlagLine(t *testing.T) {
+	tests := []struct {
+		line     string
+		addFuzzy bool
+		want     string
+	}{
+		{"#, c-format", true, "#, fuzzy, c-format"},
+		{"#, c-format", false, "#, c-format"},
+		{"#, no-wrap", true, "#, fuzzy, no-wrap"},
+		{"#, fuzzy", true, "#, fuzzy"},
+		{"#: file.c", true, "#: file.c"},
+	}
+	for _, tt := range tests {
+		got := MergeFuzzyIntoFlagLine(tt.line, tt.addFuzzy)
+		if got != tt.want {
+			t.Errorf("MergeFuzzyIntoFlagLine(%q, %v) = %q, want %q", tt.line, tt.addFuzzy, got, tt.want)
+		}
+	}
+}
+
 func TestParseEntryRange(t *testing.T) {
 	tests := []struct {
 		spec     string

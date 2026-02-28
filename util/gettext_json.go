@@ -142,10 +142,15 @@ func BuildGettextJSON(headerComment, headerMeta string, entries []*PoEntry, w io
 	}
 	for _, e := range entries {
 		ent := GettextEntry{
-			MsgID:    poUnescape(e.MsgID),
-			MsgStr:   poUnescape(e.MsgStr),
-			Comments: e.Comments,
-			Fuzzy:    e.IsFuzzy,
+			MsgID:  poUnescape(e.MsgID),
+			MsgStr: poUnescape(e.MsgStr),
+			Fuzzy:  e.IsFuzzy,
+		}
+		// Strip fuzzy from comments; fuzzy state lives only in ent.Fuzzy. Drop empty lines.
+		for _, c := range e.Comments {
+			if stripped := StripFuzzyFromCommentLine(c); stripped != "" {
+				ent.Comments = append(ent.Comments, stripped)
+			}
 		}
 		if e.MsgIDPlural != "" {
 			ent.MsgIDPlural = poUnescape(e.MsgIDPlural)
@@ -280,22 +285,30 @@ func WriteGettextJSONToPO(j *GettextJSON, w io.Writer) error {
 		}
 	}
 	for ei, entry := range j.Entries {
-		// Comments
-		hasFuzzyComment := false
+		// Comments: restore fuzzy from entry.Fuzzy (merge into flag line or add standalone)
+		wroteFuzzyFlag := false
 		for _, c := range entry.Comments {
-			if strings.Contains(c, "fuzzy") {
-				hasFuzzyComment = true
-			}
-			if _, err := io.WriteString(w, c); err != nil {
-				return err
-			}
-			if !strings.HasSuffix(c, "\n") {
-				if _, err := io.WriteString(w, "\n"); err != nil {
+			trimmed := strings.TrimSpace(c)
+			if strings.HasPrefix(trimmed, "#,") {
+				line := MergeFuzzyIntoFlagLine(c, entry.Fuzzy)
+				if entry.Fuzzy {
+					wroteFuzzyFlag = true
+				}
+				if _, err := io.WriteString(w, line+"\n"); err != nil {
 					return err
+				}
+			} else {
+				if _, err := io.WriteString(w, c); err != nil {
+					return err
+				}
+				if !strings.HasSuffix(c, "\n") {
+					if _, err := io.WriteString(w, "\n"); err != nil {
+						return err
+					}
 				}
 			}
 		}
-		if entry.Fuzzy && !hasFuzzyComment {
+		if entry.Fuzzy && !wroteFuzzyFlag {
 			if _, err := io.WriteString(w, "#, fuzzy\n"); err != nil {
 				return err
 			}
