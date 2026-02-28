@@ -651,10 +651,10 @@ func TestParseEntryRange(t *testing.T) {
 		{"1-3", 10, []int{1, 2, 3}, false},
 		{"3,5,9-13", 20, []int{3, 5, 9, 10, 11, 12, 13}, false},
 		{"1-3,5", 10, []int{1, 2, 3, 5}, false},
-		{"0,2,4", 5, []int{2, 4}, false},  // 0 excluded
-		{"15", 10, []int{}, false},        // Out of range, silently skipped
-		{"1-5", 3, []int{1, 2, 3}, false}, // Range clipped
-		{"", 10, nil, true},
+		{"0,2,4", 5, []int{2, 4}, false},                      // 0 excluded
+		{"15", 10, []int{}, false},                            // Out of range, silently skipped
+		{"1-5", 3, []int{1, 2, 3}, false},                     // Range clipped
+		{"", 10, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, false}, // Empty = select all
 		{"abc", 10, nil, true},
 		{"1-2", 10, []int{1, 2}, false},
 		{"2-1", 10, nil, true},                  // Invalid: start > end

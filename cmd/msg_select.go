@@ -38,7 +38,8 @@ Entry 0 is the header entry; it is included when content entries are selected
 Entry numbers 1, 2, 3, ... refer to the first, second, third content entries.
 If no content entries match the range, PO output is empty; JSON output has entries: [].
 
-Range format (--range): comma-separated numbers or ranges, e.g. "3,5,9-13"
+Range format (--range): comma-separated numbers or ranges, e.g. "3,5,9-13".
+Omit --range to select all entries.
   - Single numbers: 3, 5 (extract entries 3 and 5)
   - Ranges: 9-13 (extract entries 9 through 13 inclusive)
   - -N: entries 1 through N (e.g. -5 for first 5 entries)
@@ -56,12 +57,11 @@ Examples:
 		},
 	}
 
-	v.cmd.Flags().StringVar(&v.O.Range, "range", "", "entry range to extract (e.g. 3,5,9-13)")
+	v.cmd.Flags().StringVar(&v.O.Range, "range", "", "entry range to extract (e.g. 3,5,9-13); omit to select all")
 	v.cmd.Flags().BoolVar(&v.O.NoHeader, "no-header", false, "omit header entry from output")
 	v.cmd.Flags().BoolVar(&v.O.JSON, "json", false, "output JSON instead of PO text")
 	v.cmd.Flags().StringVarP(&v.O.Output, "output", "o", "",
 		"write output to file (use - for stdout); empty output overwrites file")
-	_ = v.cmd.MarkFlagRequired("range")
 
 	return v.cmd
 }

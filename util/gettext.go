@@ -399,13 +399,15 @@ func BuildPoContent(header []string, entries []*PoEntry) []byte {
 // into a set of entry indices. Entry 0 (header) is handled by MsgSelect; this
 // returns only content entry indices (1 to maxEntry). Returns indices in
 // ascending order, deduplicated.
+// Empty spec selects all entries (equivalent to "1-").
 // Range formats:
 //   - N-M: entries N through M
 //   - -N: entries 1 through N (omit start)
 //   - N-: entries N through last (omit end)
 func ParseEntryRange(spec string, maxEntry int) ([]int, error) {
 	if spec == "" {
-		return nil, fmt.Errorf("empty entry range specification")
+		// Select all entries (1 through maxEntry)
+		spec = "1-"
 	}
 
 	seen := make(map[int]bool)
