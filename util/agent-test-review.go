@@ -74,23 +74,11 @@ func CmdAgentTestReview(agentName string, target *CompareTarget, runs int, skipC
 // outputBase: base path for review output files (e.g. "po/review"); empty uses default.
 // useAgentMd: if true, use agent with po/AGENTS.md (--use-agent-md).
 func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, runs int, outputBase string, useAgentMd bool) ([]RunResult, int, error) {
-	_, reviewJSONFile := ReviewOutputPaths(outputBase)
+	reviewPOFile, reviewJSONFile := ReviewOutputPaths(outputBase)
 	// Determine the agent to use
 	_, err := SelectAgent(cfg, agentName)
 	if err != nil {
 		return nil, 0, err
-	}
-
-	// Determine PO file path (use newFile as the file being reviewed)
-	poFile, err := GetPoFileAbsPath(cfg, target.NewFile)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// Will clean poFile using relative path
-	relPoFile, err := GetPoFileRelPath(cfg, poFile)
-	if err != nil {
-		log.Warnf("failed to get relative path of poFile: %v", err)
 	}
 
 	// Run the test multiple times
@@ -104,9 +92,9 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 		// Start timing for this iteration
 		iterStartTime := time.Now()
 
-		if err := CleanPoDirectory(relPoFile); err != nil {
-			log.Warnf("run %d: failed to clean po/ directory: %v", runNum, err)
-		}
+		// Remove review output files before each run
+		_ = os.Remove(reviewPOFile)
+		_ = os.Remove(reviewJSONFile)
 
 		// Reuse RunAgentReview or RunAgentReviewUseAgentMd for each run
 		var agentResult *AgentRunResult
