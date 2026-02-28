@@ -57,6 +57,21 @@ type ReviewJSONResult struct {
 	Issues       []ReviewIssue `json:"issues"`
 }
 
+// IssueCount returns the number of issues that count as problems (score < 3).
+// Issues with score 3 are not counted as problems.
+func (r *ReviewJSONResult) IssueCount() int {
+	if r == nil {
+		return 0
+	}
+	n := 0
+	for _, issue := range r.Issues {
+		if issue.Score < 3 {
+			n++
+		}
+	}
+	return n
+}
+
 var (
 	ReviewDefaultOutputFile = filepath.Join(PoDir, "review.json")
 	ReviewDefaultBatchFile  = filepath.Join(PoDir, "review-batch.po")

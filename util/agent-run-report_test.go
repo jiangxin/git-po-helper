@@ -27,6 +27,41 @@ func TestCountReviewIssueScores(t *testing.T) {
 	}
 }
 
+func TestIssueCount(t *testing.T) {
+	t.Run("nil receiver", func(t *testing.T) {
+		var r *ReviewJSONResult
+		if got := r.IssueCount(); got != 0 {
+			t.Errorf("(*ReviewJSONResult)(nil).IssueCount() = %d; want 0", got)
+		}
+	})
+	t.Run("empty issues", func(t *testing.T) {
+		r := &ReviewJSONResult{TotalEntries: 5, Issues: []ReviewIssue{}}
+		if got := r.IssueCount(); got != 0 {
+			t.Errorf("IssueCount() = %d; want 0", got)
+		}
+	})
+	t.Run("only score 3 excluded", func(t *testing.T) {
+		r := &ReviewJSONResult{
+			TotalEntries: 10,
+			Issues: []ReviewIssue{
+				{Score: 0}, {Score: 1}, {Score: 2}, {Score: 3}, {Score: 3},
+			},
+		}
+		if got := r.IssueCount(); got != 3 {
+			t.Errorf("IssueCount() = %d; want 3 (score 0,1,2 count; score 3 does not)", got)
+		}
+	})
+	t.Run("all scores 0-2 count", func(t *testing.T) {
+		r := &ReviewJSONResult{
+			TotalEntries: 4,
+			Issues:       []ReviewIssue{{Score: 0}, {Score: 1}, {Score: 2}, {Score: 2}},
+		}
+		if got := r.IssueCount(); got != 4 {
+			t.Errorf("IssueCount() = %d; want 4", got)
+		}
+	})
+}
+
 // minimalPoWithEntries returns a valid PO file content with n translatable entries
 // (header plus n msgid/msgstr pairs). CountPoReportStats(.).Total() will be n.
 func minimalPoWithEntries(n int) string {

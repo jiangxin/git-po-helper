@@ -276,7 +276,7 @@ func PrintReviewReportResult(jsonFile string, result *ReviewReportResult) {
 	fmt.Printf("  %-22s %d/100\n", "Review score:", result.Score)
 	fmt.Printf("  %-22s %d\n", "Total entries:", result.Review.TotalEntries)
 	fmt.Printf("  %-22s %d\n", "Perfect (no issue):", result.PerfectCount())
-	fmt.Printf("  %-22s %d\n", "With issues:", len(result.Review.Issues))
+	fmt.Printf("  %-22s %d\n", "With issues:", result.Review.IssueCount())
 	fmt.Println()
 	fmt.Printf("  %-22s %d\n", "Critical (score 0):", result.CriticalCount)
 	fmt.Printf("  %-22s %d\n", "Major (score 1):", result.MajorCount)
