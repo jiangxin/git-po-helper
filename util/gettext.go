@@ -36,6 +36,53 @@ func commentHasFuzzyFlag(line string) bool {
 	return false
 }
 
+// StripFuzzyFromCommentLine removes the "fuzzy" flag from a "#," comment line.
+// If the line is "#, fuzzy" only, returns "". If the line is "#, fuzzy, c-format" or similar,
+// returns "#, c-format" (other flags preserved). Non-flag lines are returned unchanged.
+func StripFuzzyFromCommentLine(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "#,") {
+		return line
+	}
+	flagsStr := strings.TrimPrefix(trimmed, "#,")
+	var rest []string
+	for _, f := range strings.Split(flagsStr, ",") {
+		if strings.TrimSpace(f) != "fuzzy" {
+			rest = append(rest, strings.TrimSpace(f))
+		}
+	}
+	if len(rest) == 0 {
+		return ""
+	}
+	return "#, " + strings.Join(rest, ", ")
+}
+
+// MergeFuzzyIntoFlagLine returns a "#," flag line with "fuzzy" prepended to existing flags.
+// If addFuzzy is false, returns line unchanged. If addFuzzy is true, any existing "fuzzy"
+// in the line is not duplicated (input may be "#, c-format" or legacy "#, fuzzy").
+func MergeFuzzyIntoFlagLine(line string, addFuzzy bool) string {
+	if !addFuzzy {
+		return line
+	}
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "#,") {
+		return line
+	}
+	flagsStr := strings.TrimPrefix(trimmed, "#,")
+	var flags []string
+	for _, f := range strings.Split(flagsStr, ",") {
+		s := strings.TrimSpace(f)
+		if s != "" && s != "fuzzy" {
+			flags = append(flags, s)
+		}
+	}
+	out := "#, fuzzy"
+	if len(flags) > 0 {
+		out += ", " + strings.Join(flags, ", ")
+	}
+	return out
+}
+
 // strDeQuote removes one quote character from each end of s if both ends have a quote.
 // Returns s unchanged otherwise.
 func strDeQuote(s string) string {
