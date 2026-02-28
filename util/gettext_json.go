@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -23,6 +24,29 @@ type GettextEntry struct {
 	MsgStrPlural []string `json:"msgstr_plural,omitempty"`
 	Comments     []string `json:"comments,omitempty"`
 	Fuzzy        bool     `json:"fuzzy"`
+}
+
+// poEscape encodes a string for PO quoted output: backslash, quote, newline, tab, carriage return.
+func poEscape(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) * 2)
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\r':
+			b.WriteString(`\r`)
+		default:
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
 }
 
 // poUnescape decodes PO escape sequences in s into real characters.
@@ -166,4 +190,128 @@ func ParseGettextJSONBytes(data []byte) (*GettextJSON, error) {
 // maxEntry is len(entries). Returns indices in ascending order (1-based content indices).
 func EntryRangeForJSON(spec string, maxEntry int) ([]int, error) {
 	return ParseEntryRange(spec, maxEntry)
+}
+
+// WriteGettextJSONToPO writes the GettextJSON object as valid PO content to w.
+// Header comment is written as raw lines (split on newline); header meta is written
+// as msgid "" / msgstr "" with PO-escaped continuation lines. Each entry is written
+// with comments, msgid/msgstr (multi-line with PO escaping when needed), and #, fuzzy if set.
+func WriteGettextJSONToPO(j *GettextJSON, w io.Writer) error {
+	if j == nil {
+		return nil
+	}
+	// Header comment: lines above first msgid ""
+	if j.HeaderComment != "" {
+		lines := strings.Split(strings.TrimSuffix(j.HeaderComment, "\n"), "\n")
+		for _, line := range lines {
+			if _, err := io.WriteString(w, line); err != nil {
+				return err
+			}
+			if !strings.HasSuffix(line, "\n") {
+				if _, err := io.WriteString(w, "\n"); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	// Header block: msgid "" and msgstr "" with continuation lines
+	if _, err := io.WriteString(w, "msgid \"\"\n"); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, "msgstr \"\"\n"); err != nil {
+		return err
+	}
+	if j.HeaderMeta != "" {
+		parts := strings.Split(j.HeaderMeta, "\n")
+		for i, part := range parts {
+			var content string
+			if i < len(parts)-1 {
+				content = part + "\n"
+			} else if part != "" {
+				content = part
+			} else {
+				continue
+			}
+			if _, err := io.WriteString(w, "\""+poEscape(content)+"\"\n"); err != nil {
+				return err
+			}
+		}
+	}
+	if len(j.Entries) > 0 || j.HeaderComment != "" || j.HeaderMeta != "" {
+		if _, err := io.WriteString(w, "\n"); err != nil {
+			return err
+		}
+	}
+	for ei, entry := range j.Entries {
+		// Comments
+		hasFuzzyComment := false
+		for _, c := range entry.Comments {
+			if strings.Contains(c, "fuzzy") {
+				hasFuzzyComment = true
+			}
+			if _, err := io.WriteString(w, c); err != nil {
+				return err
+			}
+			if !strings.HasSuffix(c, "\n") {
+				if _, err := io.WriteString(w, "\n"); err != nil {
+					return err
+				}
+			}
+		}
+		if entry.Fuzzy && !hasFuzzyComment {
+			if _, err := io.WriteString(w, "#, fuzzy\n"); err != nil {
+				return err
+			}
+		}
+		// msgid (single- or multi-line)
+		if err := writePoString(w, "msgid", entry.MsgID); err != nil {
+			return err
+		}
+		if entry.MsgIDPlural != "" {
+			if err := writePoString(w, "msgid_plural", entry.MsgIDPlural); err != nil {
+				return err
+			}
+		}
+		if len(entry.MsgStrPlural) > 0 {
+			for i, s := range entry.MsgStrPlural {
+				if err := writePoString(w, "msgstr["+strconv.Itoa(i)+"]", s); err != nil {
+					return err
+				}
+			}
+		} else {
+			if err := writePoString(w, "msgstr", entry.MsgStr); err != nil {
+				return err
+			}
+		}
+		if ei < len(j.Entries)-1 {
+			if _, err := io.WriteString(w, "\n"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// writePoString writes a keyword and value as single- or multi-line PO format.
+func writePoString(w io.Writer, keyword, value string) error {
+	parts := strings.Split(value, "\n")
+	if len(parts) == 1 {
+		_, err := io.WriteString(w, keyword+" \""+poEscape(value)+"\"\n")
+		return err
+	}
+	if _, err := io.WriteString(w, keyword+" \"\"\n"); err != nil {
+		return err
+	}
+	for i, p := range parts {
+		if i < len(parts)-1 {
+			if _, err := io.WriteString(w, "\""+poEscape(p)+"\\n\"\n"); err != nil {
+				return err
+			}
+		} else if p != "" {
+			if _, err := io.WriteString(w, "\""+poEscape(p)+"\"\n"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
