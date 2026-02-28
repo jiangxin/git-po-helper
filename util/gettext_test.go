@@ -158,6 +158,59 @@ msgstr "正常"
 	}
 }
 
+func TestParsePoEntriesObsolete(t *testing.T) {
+	// Minimal test for obsolete parsing
+	po := "msgid \"\"\n" +
+		"msgstr \"\"\n" +
+		"\"Content-Type: text/plain; charset=UTF-8\\n\"\n" +
+		"\n" +
+		"msgid \"Active\"\n" +
+		"msgstr \"活跃\"\n" +
+		"#~ msgid \"Obsolete\"\n" +
+		"#~ msgstr \"已废弃\"\n" +
+		"\n"
+	entries, _, err := ParsePoEntries([]byte(po))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0].MsgID != "Active" || entries[0].IsObsolete {
+		t.Errorf("entry 0: got MsgID=%q IsObsolete=%v", entries[0].MsgID, entries[0].IsObsolete)
+	}
+	if entries[1].MsgID != "Obsolete" || !entries[1].IsObsolete {
+		t.Errorf("entry 1: got MsgID=%q IsObsolete=%v", entries[1].MsgID, entries[1].IsObsolete)
+	}
+}
+
+func TestParsePoEntriesObsoleteHashTildePipe(t *testing.T) {
+	// #~| msgid format (gettext 0.19.8+): previous untranslated string
+	po := "msgid \"\"\n" +
+		"msgstr \"\"\n" +
+		"\"Content-Type: text/plain; charset=UTF-8\\n\"\n" +
+		"\n" +
+		"msgid \"Active\"\n" +
+		"msgstr \"活跃\"\n" +
+		"#~| msgid \"Old source\"\n" +
+		"#~ msgid \"Obsolete\"\n" +
+		"#~ msgstr \"已废弃\"\n" +
+		"\n"
+	entries, _, err := ParsePoEntries([]byte(po))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[1].MsgID != "Obsolete" || !entries[1].IsObsolete {
+		t.Errorf("entry 1: got MsgID=%q IsObsolete=%v", entries[1].MsgID, entries[1].IsObsolete)
+	}
+	if entries[1].MsgIDPrevious != "Old source" {
+		t.Errorf("entry 1 MsgIDPrevious: got %q, want %q", entries[1].MsgIDPrevious, "Old source")
+	}
+}
+
 func TestParsePoEntries(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -508,6 +561,39 @@ msgstr "正常字符串"
 				}
 				if len(entries[1].Comments) != 0 {
 					t.Errorf("expected second entry to have no comments, got %d comments", len(entries[1].Comments))
+				}
+			},
+		},
+		{
+			name: "PO file with obsolete entries (#~ and #~| format)",
+			poContent: `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Active"
+msgstr "活跃"
+
+#~ msgid "Obsolete"
+#~ msgstr "已废弃"
+`,
+			expectedHeader: []string{
+				`msgid ""`,
+				`msgstr ""`,
+				`"Content-Type: text/plain; charset=UTF-8\n"`,
+			},
+			expectedCount: 2,
+			validateEntry: func(t *testing.T, entries []*PoEntry) {
+				if len(entries) != 2 {
+					for i, e := range entries {
+						t.Logf("entry %d: MsgID=%q IsObsolete=%v", i, e.MsgID, e.IsObsolete)
+					}
+					t.Fatalf("expected 2 entries, got %d", len(entries))
+				}
+				if entries[0].MsgID != "Active" || entries[0].IsObsolete {
+					t.Errorf("entry 0: expected active, got MsgID=%q IsObsolete=%v", entries[0].MsgID, entries[0].IsObsolete)
+				}
+				if entries[1].MsgID != "Obsolete" || !entries[1].IsObsolete {
+					t.Errorf("entry 1: expected obsolete, got MsgID=%q IsObsolete=%v", entries[1].MsgID, entries[1].IsObsolete)
 				}
 			},
 		},
