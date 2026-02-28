@@ -249,3 +249,121 @@ msgstr "你好"
 		t.Errorf("comments: %v", decoded.Entries[0].Comments)
 	}
 }
+
+func TestWriteGettextJSONToPO_Example2RoundTrip(t *testing.T) {
+	jsonStr := `{
+  "header_comment": "",
+  "header_meta": "Project-Id-Version: git\nContent-Type: text/plain; charset=UTF-8\n",
+  "entries": [
+    {
+      "msgid": "Line one\nLine two\twith tab, padding for line 2.",
+      "msgstr": "第一行\n第二行\t带制表符, 第二行的填充。",
+      "comments": ["#, c-format\n"],
+      "fuzzy": false
+    }
+  ]
+}`
+	j, err := ParseGettextJSONBytes([]byte(jsonStr))
+	if err != nil {
+		t.Fatalf("parse JSON: %v", err)
+	}
+	var poBuf bytes.Buffer
+	if err := WriteGettextJSONToPO(j, &poBuf); err != nil {
+		t.Fatalf("WriteGettextJSONToPO: %v", err)
+	}
+	poBytes := poBuf.Bytes()
+	entries, header, err := ParsePoEntries(poBytes)
+	if err != nil {
+		t.Fatalf("ParsePoEntries of converted PO: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry after round-trip, got %d", len(entries))
+	}
+	e := entries[0]
+	wantMsgid := "Line one\nLine two\twith tab, padding for line 2."
+	wantMsgstr := "第一行\n第二行\t带制表符, 第二行的填充。"
+	if poUnescape(e.MsgID) != wantMsgid {
+		t.Errorf("msgid round-trip: got %q", poUnescape(e.MsgID))
+	}
+	if poUnescape(e.MsgStr) != wantMsgstr {
+		t.Errorf("msgstr round-trip: got %q", poUnescape(e.MsgStr))
+	}
+	headerComment, headerMeta, _ := SplitHeader(header)
+	var jsonBuf bytes.Buffer
+	if err := BuildGettextJSON(headerComment, headerMeta, entries, &jsonBuf); err != nil {
+		t.Fatalf("BuildGettextJSON: %v", err)
+	}
+	var j2 GettextJSON
+	if err := json.Unmarshal(jsonBuf.Bytes(), &j2); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if j2.Entries[0].MsgID != j.Entries[0].MsgID || j2.Entries[0].MsgStr != j.Entries[0].MsgStr {
+		t.Errorf("round-trip JSON: msgid %q vs %q, msgstr %q vs %q",
+			j2.Entries[0].MsgID, j.Entries[0].MsgID, j2.Entries[0].MsgStr, j.Entries[0].MsgStr)
+	}
+}
+
+func TestWriteGettextJSONToPO_Example3PluralRoundTrip(t *testing.T) {
+	jsonStr := `{
+  "header_comment": "",
+  "header_meta": "Project-Id-Version: git\nContent-Type: text/plain; charset=UTF-8\nPlural-Forms: nplurals=2; plural=(n != 1);\n",
+  "entries": [
+    {
+      "msgid": "One file",
+      "msgstr": "",
+      "msgid_plural": "%d files",
+      "msgstr_plural": ["一个文件", "%d 个文件"],
+      "comments": ["#, c-format\n"],
+      "fuzzy": false
+    }
+  ]
+}`
+	j, err := ParseGettextJSONBytes([]byte(jsonStr))
+	if err != nil {
+		t.Fatalf("parse JSON: %v", err)
+	}
+	var poBuf bytes.Buffer
+	if err := WriteGettextJSONToPO(j, &poBuf); err != nil {
+		t.Fatalf("WriteGettextJSONToPO: %v", err)
+	}
+	entries, _, err := ParsePoEntries(poBuf.Bytes())
+	if err != nil {
+		t.Fatalf("ParsePoEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	e := entries[0]
+	if e.MsgID != "One file" || e.MsgStr != "" || e.MsgIDPlural != "%d files" ||
+		len(e.MsgStrPlural) != 2 || e.MsgStrPlural[0] != "一个文件" || e.MsgStrPlural[1] != "%d 个文件" {
+		t.Errorf("plural entry: msgid=%q msgstr=%q msgid_plural=%q msgstr_plural=%v",
+			e.MsgID, e.MsgStr, e.MsgIDPlural, e.MsgStrPlural)
+	}
+}
+
+func TestWriteGettextJSONToPO_SpecialChars(t *testing.T) {
+	j := &GettextJSON{
+		HeaderComment: "",
+		HeaderMeta:    "",
+		Entries: []GettextEntry{{
+			MsgID:  "Quote \" and backslash \\ and tab\t and newline\n",
+			MsgStr: "相同",
+			Fuzzy:  false,
+		}},
+	}
+	var buf bytes.Buffer
+	if err := WriteGettextJSONToPO(j, &buf); err != nil {
+		t.Fatalf("WriteGettextJSONToPO: %v", err)
+	}
+	entries, _, err := ParsePoEntries(buf.Bytes())
+	if err != nil {
+		t.Fatalf("ParsePoEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	want := "Quote \" and backslash \\ and tab\t and newline\n"
+	if poUnescape(entries[0].MsgID) != want {
+		t.Errorf("msgid: got %q", poUnescape(entries[0].MsgID))
+	}
+}
