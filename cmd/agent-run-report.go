@@ -7,7 +7,6 @@ import (
 )
 
 func newAgentRunReportCmd() *cobra.Command {
-	const defaultPath = "po/review.po"
 	return &cobra.Command{
 		Use:   "report [path]",
 		Short: "Report aggregated review statistics from batch or single JSON",
@@ -17,12 +16,12 @@ If path is given (e.g. po/review.po), derives po/review.json and po/review.po.
 If any files match po/review-batch-*.json, they are loaded and aggregated
 into one result; otherwise po/review.json is used.
 
-Default path is ` + defaultPath + ` when omitted.`,
+Default path is ` + util.DefaultReviewPoPath + ` when omitted.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repository.ChdirProjectRoot()
 
-			path := defaultPath
+			path := util.DefaultReviewPoPath
 			if len(args) > 0 {
 				path = args[0]
 			}

@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -115,85 +117,45 @@ func executeReviewAgent(selectedAgent config.Agent, vars PlaceholderVars, result
 	return stdout, stderr, originalStdout, streamResult, nil
 }
 
-// runReviewSingleBatch runs review on the full file (single batch).
-func runReviewSingleBatch(selectedAgent config.Agent, vars PlaceholderVars, result *AgentRunResult, entryCount int) (*ReviewJSONResult, error) {
-	stdout, _, _, _, err := executeReviewAgent(selectedAgent, vars, result)
+// runReviewBatched runs review for each batch in batchPOPaths, saves to po/review-batch-<N>.json (step 7),
+// deletes each po/review-batch-<N>.po (step 8), and does not merge; caller runs step 9.
+// reviewPOFile is the base path (e.g. po/review.po) used to derive batch JSON filenames.
+func runReviewBatched(cfg *config.AgentConfig, selectedAgent config.Agent, entryCount int, reviewPOFile string, batchPOPaths []string, result *AgentRunResult) error {
+	prompt, err := GetRawPrompt(cfg, "review")
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return parseAndAccumulateReviewJSON(stdout, entryCount)
-}
-
-// runReviewBatched runs review in batches using msg-select when entry count > 100.
-func runReviewBatched(selectedAgent config.Agent, vars PlaceholderVars, result *AgentRunResult, entryCount int) (*ReviewJSONResult, error) {
-	reviewPOFile := vars["source"]
-	num := 50
-	if entryCount > 500 {
-		num = 100
-	} else if entryCount > 200 {
-		num = 75
-	}
-
-	batchFile := ReviewDefaultBatchFile
-
-	var batchReviews []*ReviewJSONResult
-	for batchNum := 1; ; batchNum++ {
-		start := (batchNum-1)*num + 1
-		end := batchNum * num
-		if end > entryCount {
-			end = entryCount
-		}
-
-		rangeSpec := formatMsgSelectRange(batchNum, start, end, entryCount, num)
-		log.Infof("reviewing batch %d: entries %d-%d (of %d)", batchNum, start, end, entryCount)
-
-		// Extract batch with msg-select
-		f, err := os.Create(batchFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create batch file: %w", err)
-		}
-		if err := MsgSelect(reviewPOFile, rangeSpec, f, false); err != nil {
-			f.Close()
-			os.Remove(batchFile)
-			return nil, fmt.Errorf("msg-select failed: %w", err)
-		}
-		f.Close()
-
-		// Run agent on batch
+	for i, batchPOPath := range batchPOPaths {
+		batchNum := i + 1
+		batchJSONPath := reviewBatchJSONPath(reviewPOFile, batchNum)
 		batchVars := make(PlaceholderVars)
-		for k, v := range vars {
-			batchVars[k] = v
-		}
-		batchVars["source"] = batchFile
-		stdout, _, _, _, err := executeReviewAgent(selectedAgent, batchVars, result)
-		os.Remove(batchFile) // Clean up batch file
+		batchVars["prompt"] = prompt
+		batchVars["source"] = batchPOPath
+		batchVars["dest"] = reviewPOFile
+		batchVars["json"] = batchJSONPath
+		resolvedPrompt, err := ExecutePromptTemplate(prompt, batchVars)
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("failed to resolve prompt template: %w", err)
 		}
+		batchVars["prompt"] = resolvedPrompt
 
-		// Parse JSON and accumulate batch results
+		stdout, _, _, _, err := executeReviewAgent(selectedAgent, batchVars, result)
+		if err != nil {
+			return err
+		}
 		batchJSON, err := parseAndAccumulateReviewJSON(stdout, entryCount)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if batchJSON != nil {
-			batchReviews = append(batchReviews, batchJSON)
+			if err := saveReviewJSON(batchJSON, batchJSONPath); err != nil {
+				return fmt.Errorf("failed to save batch JSON to %s: %w", batchJSONPath, err)
+			}
 		}
-
-		if end >= entryCount {
-			break
-		}
+		os.Remove(batchPOPath)
+		log.Infof("saved review batch %d JSON and removed batch PO", batchNum)
 	}
-
-	// Merge issues using same logic as AggregateReviewJSON: keep the most severe
-	// (lowest score) per msgid. We do not use simple array append because the
-	// model may not follow instructions when executing; deduplication by msgid
-	// with severity preference is required for consistent results.
-	merged := AggregateReviewJSON(batchReviews, true)
-	if merged == nil {
-		return &ReviewJSONResult{TotalEntries: entryCount, Issues: []ReviewIssue{}}, nil
-	}
-	return merged, nil
+	return nil
 }
 
 // formatMsgSelectRange returns the range spec for msg-select (e.g. "-50", "51-100", "101-").
@@ -205,6 +167,104 @@ func formatMsgSelectRange(batchNum, start, end, entryCount, num int) string {
 		return fmt.Sprintf("%d-", start)
 	}
 	return fmt.Sprintf("%d-%d", start, end)
+}
+
+// reviewBatchPath returns the path for the N-th batch PO file (e.g. po/review-batch-1.po).
+func reviewBatchPath(reviewPOFile string, n int) string {
+	dir := filepath.Dir(reviewPOFile)
+	base := strings.TrimSuffix(filepath.Base(reviewPOFile), ".po")
+	return filepath.Join(dir, base+"-batch-"+strconv.Itoa(n)+".po")
+}
+
+// reviewBatchJSONPath returns the path for the N-th batch JSON file (e.g. po/review-batch-1.json).
+func reviewBatchJSONPath(reviewPOFile string, n int) string {
+	dir := filepath.Dir(reviewPOFile)
+	base := strings.TrimSuffix(filepath.Base(reviewPOFile), ".po")
+	return filepath.Join(dir, base+"-batch-"+strconv.Itoa(n)+".json")
+}
+
+// listReviewBatchPOPaths returns existing po/review-batch-*.po paths sorted by batch number (for resume).
+func listReviewBatchPOPaths(reviewPOFile string) ([]string, error) {
+	dir := filepath.Dir(reviewPOFile)
+	base := strings.TrimSuffix(filepath.Base(reviewPOFile), ".po")
+	pattern := filepath.Join(dir, base+"-batch-*.po")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		ni, _ := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(filepath.Base(matches[i]), base+"-batch-"), ".po"))
+		nj, _ := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(filepath.Base(matches[j]), base+"-batch-"), ".po"))
+		return ni < nj
+	})
+	return matches, nil
+}
+
+// prepareReviewBatches creates po/review-batch-<N>.po files per AGENTS.md step 3 and returns their paths.
+// Removes any existing po/review-batch-*.po and po/review-batch-*.json. Uses minBatchSize (e.g. 50)
+// and AGENTS.md formula for NUM. Returns batch POPaths and content entry count (excluding header).
+func prepareReviewBatches(reviewPOFile string, minBatchSize int) (batchPOPaths []string, entryCount int, err error) {
+	dir := filepath.Dir(reviewPOFile)
+	base := strings.TrimSuffix(filepath.Base(reviewPOFile), ".po")
+	poPattern := filepath.Join(dir, base+"-batch-*.po")
+	jsonPattern := filepath.Join(dir, base+"-batch-*.json")
+	aggregateJSONFile := filepath.Join(dir, base+".json")
+	for _, pattern := range []string{poPattern, jsonPattern} {
+		matches, _ := filepath.Glob(pattern)
+		for _, m := range matches {
+			os.Remove(m)
+		}
+	}
+	os.Remove(aggregateJSONFile)
+
+	totalEntries, err := countMsgidEntries(reviewPOFile)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count entries in %s: %w", reviewPOFile, err)
+	}
+	entryCount = totalEntries
+	if entryCount > 0 {
+		entryCount-- // Exclude header
+	}
+	if entryCount <= 0 {
+		return nil, entryCount, nil
+	}
+
+	var num int
+	if entryCount <= minBatchSize*2 {
+		num = entryCount
+	} else {
+		if entryCount > minBatchSize*8 {
+			num = minBatchSize * 2
+		} else if entryCount > minBatchSize*4 {
+			num = minBatchSize + minBatchSize/2
+		} else {
+			num = minBatchSize
+		}
+	}
+
+	batchCount := (entryCount + num - 1) / num
+	for i := 1; i <= batchCount; i++ {
+		start := (i-1)*num + 1
+		end := i * num
+		if end > entryCount {
+			end = entryCount
+		}
+		rangeSpec := formatMsgSelectRange(i, start, end, entryCount, num)
+		batchPath := reviewBatchPath(reviewPOFile, i)
+		f, err := os.Create(batchPath)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create batch file %s: %w", batchPath, err)
+		}
+		if err := MsgSelect(reviewPOFile, rangeSpec, f, false); err != nil {
+			f.Close()
+			os.Remove(batchPath)
+			return nil, 0, fmt.Errorf("msg-select failed for batch %d: %w", i, err)
+		}
+		f.Close()
+		batchPOPaths = append(batchPOPaths, batchPath)
+		log.Infof("prepared review batch %d: entries %d-%d (of %d)", i, start, end, entryCount)
+	}
+	return batchPOPaths, entryCount, nil
 }
 
 // parseAndAccumulateReviewJSON extracts and parses JSON from stdout, updates total_entries.
@@ -361,124 +421,117 @@ func RunAgentReviewUseAgentMd(cfg *config.AgentConfig, agentName string, target 
 	return result, nil
 }
 
-// RunAgentReview executes a single agent-run review operation with the new workflow:
-// 1. Prepare review data (orig.po, new.po, review-input.po)
-// 2. Copy review-input.po to review-output.po
-// 3. Execute agent to review and modify review-output.po
-// 4. Merge review-output.po with new.po using msgcat
-// 5. Parse JSON from agent output and calculate score
-// Returns a result structure with detailed information.
-// The agentTest parameter is provided for consistency, though this method
-// does not use AgentTest configuration.
+// RunAgentReview executes agent-run review following AGENTS.md Task 4 steps.
+// Step 1: Check existing review. Step 2: Extract entries (PrepareReviewData). Step 3: Prepare batches.
+// Steps 4–8: Run agent per batch, save JSON, delete batch PO. Step 9: Merge and summary.
 // outputBase: base path for review output files (e.g. "po/review"); empty uses default.
 func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, agentTest bool, outputBase string) (*AgentRunResult, error) {
 	var (
-		reviewPOFile, reviewJSONFile = ReviewOutputPaths(outputBase)
-		reviewJSON                   *ReviewJSONResult
+		batchPOPaths []string
+		entryCount   int
+		err          error
 	)
 
+	reviewPOFile, reviewJSONFile := ReviewOutputPaths(outputBase)
 	startTime := time.Now()
-	result := &AgentRunResult{
-		Score: 0,
-	}
+	result := &AgentRunResult{Score: 0}
 
-	// Determine agent to use
 	selectedAgent, err := SelectAgent(cfg, agentName)
 	if err != nil {
 		result.AgentError = err.Error()
 		return result, err
 	}
-
 	log.Debugf("using agent: %s (%s)", agentName, selectedAgent.Kind)
 
-	// Prepare review data
-	log.Infof("preparing review data: %s", reviewPOFile)
-	if err := PrepareReviewData(target.OldCommit, target.OldFile, target.NewCommit, target.NewFile, reviewPOFile); err != nil {
-		return result, fmt.Errorf("failed to prepare review data: %w", err)
+	// Step 1: Check for existing review
+	if Exist(reviewPOFile) && Exist(reviewJSONFile) {
+		// Merge and summary only (step 9)
+		log.Infof("both %s and %s exist; running merge and summary only", reviewPOFile, reviewJSONFile)
+		jsonFile, reportResult, err := ReportReviewFromPathWithBatches(outputBase)
+		if err != nil {
+			return result, err
+		}
+		result.ReviewJSON = reportResult.Review
+		result.ReviewJSONPath = jsonFile
+		result.ReviewScore = reportResult.Score
+		result.Score = reportResult.Score
+		result.ReviewedFilePath = reviewPOFile
+		result.ExecutionTime = time.Since(startTime)
+		return result, nil
+	}
+	if Exist(reviewPOFile) && !Exist(reviewJSONFile) {
+		// Resume: continue from step 4 (remaining batch PO files)
+		batchPOPaths, err = listReviewBatchPOPaths(reviewPOFile)
+		if err != nil {
+			return result, fmt.Errorf("failed to list batch files: %w", err)
+		}
+		if len(batchPOPaths) == 0 {
+			// No batch files left; merge any existing batch JSONs (step 9)
+			log.Infof("no batch PO files remaining; running merge and summary")
+			jsonFile, reportResult, err := ReportReviewFromPathWithBatches(outputBase)
+			if err != nil {
+				return result, err
+			}
+			result.ReviewJSON = reportResult.Review
+			result.ReviewJSONPath = jsonFile
+			result.ReviewScore = reportResult.Score
+			result.Score = reportResult.Score
+			result.ReviewedFilePath = reviewPOFile
+			result.ExecutionTime = time.Since(startTime)
+			return result, nil
+		}
+		entryCount = 0
+		if total, err := countMsgidEntries(reviewPOFile); err == nil && total > 0 {
+			entryCount = total - 1
+		}
+		// Continue to run remaining batches (steps 4–8) then step 9
+	} else {
+		// Step 2: Extract entries
+		log.Infof("preparing review data: %s", reviewPOFile)
+		if err := PrepareReviewData(target.OldCommit, target.OldFile, target.NewCommit, target.NewFile, reviewPOFile); err != nil {
+			return result, fmt.Errorf("failed to prepare review data: %w", err)
+		}
+
+		// Step 3: Prepare review batches
+		batchPOPaths, entryCount, err = prepareReviewBatches(reviewPOFile, 50)
+		if err != nil {
+			return result, err
+		}
+		if len(batchPOPaths) == 0 {
+			// Empty or no entries; go to step 9 (merge will use po/review.po for total count)
+			log.Infof("no review batches; running merge and summary")
+			jsonFile, reportResult, err := ReportReviewFromPathWithBatches(outputBase)
+			if err != nil {
+				return result, err
+			}
+			result.ReviewJSON = reportResult.Review
+			result.ReviewJSONPath = jsonFile
+			result.ReviewScore = reportResult.Score
+			result.Score = reportResult.Score
+			result.ReviewedFilePath = reviewPOFile
+			result.ExecutionTime = time.Since(startTime)
+			return result, nil
+		}
 	}
 
-	// Get prompt.review
-	prompt, err := GetRawPrompt(cfg, "review")
+	// Steps 4–8: Run agent per batch, save JSON, delete batch PO
+	if err := runReviewBatched(cfg, selectedAgent, entryCount, reviewPOFile, batchPOPaths, result); err != nil {
+		return result, err
+	}
+
+	// Step 9: Merge and summary
+	jsonFile, reportResult, err := ReportReviewFromPathWithBatches(outputBase)
 	if err != nil {
 		return result, err
 	}
-	log.Debugf("using review prompt: %s", prompt)
-
-	totalEntries, err := countMsgidEntries(reviewPOFile)
-	if err != nil {
-		log.Errorf("failed to count msgid entries in review input file: %v", err)
-		return result, fmt.Errorf("failed to count entries: %w", err)
-	}
-	entryCount := totalEntries
-	if entryCount > 0 {
-		entryCount-- // Exclude header
-	}
-
-	if entryCount <= 100 {
-		reviewVars := PlaceholderVars{
-			"prompt": prompt,
-			"source": reviewPOFile,
-			"dest":   reviewPOFile,
-			"json":   reviewJSONFile,
-		}
-		resolvedPrompt, err := ExecutePromptTemplate(prompt, reviewVars)
-		if err != nil {
-			return result, fmt.Errorf("failed to resolve prompt template: %w", err)
-		}
-		reviewVars["prompt"] = resolvedPrompt
-
-		// Single run: review entire file
-		reviewJSON, err = runReviewSingleBatch(selectedAgent, reviewVars, result, entryCount)
-		if err != nil {
-			return result, err
-		}
-	} else {
-		reviewVars := PlaceholderVars{
-			"prompt": prompt,
-			"source": ReviewDefaultBatchFile,
-			"dest":   reviewPOFile,
-			"json":   reviewJSONFile,
-		}
-		resolvedPrompt, err := ExecutePromptTemplate(prompt, reviewVars)
-		if err != nil {
-			return result, fmt.Errorf("failed to resolve prompt template: %w", err)
-		}
-		reviewVars["prompt"] = resolvedPrompt
-
-		// Batch mode: iterate with msg-select
-		reviewJSON, err = runReviewBatched(selectedAgent, reviewVars, result, entryCount)
-		if err != nil {
-			return result, err
-		}
-	}
-
-	// Save JSON to file
-	log.Infof("saving review JSON to %s", reviewJSONFile)
-	if err := saveReviewJSON(reviewJSON, reviewJSONFile); err != nil {
-		log.Errorf("failed to save review JSON: %v", err)
-		return result, fmt.Errorf("failed to save review JSON: %w", err)
-	}
-	result.ReviewJSON = reviewJSON
-	result.ReviewJSONPath = reviewJSONFile
-
-	// Calculate review score
-	log.Infof("calculating review score")
-	reviewScore, err := CalculateReviewScore(reviewJSON)
-	if err != nil {
-		log.Errorf("failed to calculate review score: %v", err)
-		log.Debugf("review JSON: total_entries=%d, issues=%d", reviewJSON.TotalEntries, len(reviewJSON.Issues))
-		return result, fmt.Errorf("failed to calculate review score: %w", err)
-	}
-	result.ReviewScore = reviewScore
-	result.Score = reviewScore
+	result.ReviewJSON = reportResult.Review
+	result.ReviewJSONPath = jsonFile
+	result.ReviewScore = reportResult.Score
+	result.Score = reportResult.Score
 	result.ReviewedFilePath = reviewPOFile
-
-	log.Infof("review completed successfully (score: %d/100, total entries: %d, issues: %d, reviewed file: %s)",
-		reviewScore, reviewJSON.TotalEntries, len(reviewJSON.Issues), reviewPOFile)
-
-	// Record execution time
 	result.ExecutionTime = time.Since(startTime)
-
+	log.Infof("review completed successfully (score: %d/100, total entries: %d, issues: %d)",
+		reportResult.Score, reportResult.Review.TotalEntries, len(reportResult.Review.Issues))
 	return result, nil
 }
 
@@ -516,52 +569,23 @@ func CmdAgentRunReview(agentName string, target *CompareTarget, outputBase strin
 
 	elapsed := time.Since(startTime)
 
-	// Display review results
-	if result.ReviewJSON != nil {
-		fmt.Printf("\nReview Results:\n")
-		fmt.Printf("  Total entries: %d\n", result.ReviewJSON.TotalEntries)
-		fmt.Printf("  Issues found: %d\n", len(result.ReviewJSON.Issues))
-		fmt.Printf("  Review score: %d/100\n", result.ReviewScore)
-
-		// Count issues by severity
-		criticalCount := 0
-		majorCount := 0
-		minorCount := 0
-		for _, issue := range result.ReviewJSON.Issues {
-			switch issue.Score {
-			case 0:
-				criticalCount++
-			case 1:
-				majorCount++
-			case 2:
-				minorCount++
-			}
+	// Display review report (same format as agent-run report)
+	if result.ReviewJSON != nil && result.ReviewJSONPath != "" {
+		critical, minor, major := CountReviewIssueScores(result.ReviewJSON)
+		reportResult := &ReviewReportResult{
+			Review:        result.ReviewJSON,
+			Score:         result.ReviewScore,
+			CriticalCount: critical,
+			MinorCount:    minor,
+			MajorCount:    major,
 		}
-
-		fmt.Printf("\n  Issue breakdown:\n")
-		if len(result.ReviewJSON.Issues) > 0 {
-			if criticalCount > 0 {
-				fmt.Printf("    Critical (must fix immediately): %d\n", criticalCount)
-			}
-			if majorCount > 0 {
-				fmt.Printf("    Major (should fix): %d\n", majorCount)
-			}
-			if minorCount > 0 {
-				fmt.Printf("    Minor (recommended to improve): %d\n", minorCount)
-			}
-		}
-		fmt.Printf("    Perfect entries: %d\n",
-			result.ReviewJSON.TotalEntries-criticalCount-minorCount)
-
-		if result.ReviewJSONPath != "" {
-			fmt.Printf("\n  JSON saved to: %s\n", getRelativePath(result.ReviewJSONPath))
-		}
-		if result.ReviewedFilePath != "" {
-			fmt.Printf("  Reviewed file: %s\n", getRelativePath(result.ReviewedFilePath))
-		}
+		PrintReviewReportResult(result.ReviewJSONPath, reportResult)
 	}
 
 	fmt.Printf("\nSummary:\n")
+	if result.ReviewJSONPath != "" {
+		fmt.Printf("  Review JSON: %s\n", getRelativePath(result.ReviewJSONPath))
+	}
 	if result.NumTurns > 0 {
 		fmt.Printf("  Turns: %d\n", result.NumTurns)
 	}

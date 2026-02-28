@@ -14,6 +14,8 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+var DefaultReviewPoPath = filepath.Join(PoDir, "review.po")
+
 // ReviewReportResult holds the result of reporting from a review JSON file.
 // Issue scores: 0 = critical, 1 = minor, 2 = major. Perfect = no issue.
 type ReviewReportResult struct {
@@ -188,6 +190,9 @@ func loadReviewJSONFromFile(jsonFile string) (*ReviewJSONResult, error) {
 // the result is saved to base+".json" then returned.
 // If no batch files exist, falls back to ReportReviewFromJSON(path).
 func ReportReviewFromPathWithBatches(path string) (string, *ReviewReportResult, error) {
+	if path == "" {
+		path = DefaultReviewPoPath
+	}
 	jsonFile, poFile := DeriveReviewPaths(path)
 	dir := filepath.Dir(jsonFile)
 	base := strings.TrimSuffix(filepath.Base(jsonFile), ".json")
@@ -198,6 +203,8 @@ func ReportReviewFromPathWithBatches(path string) (string, *ReviewReportResult, 
 	}
 	sort.Strings(matches)
 
+	log.Debugf("Call ReportReviewFromPathWithBatches(%s) with %d batch files",
+		path, len(matches))
 	if len(matches) == 0 {
 		return ReportReviewFromJSON(path)
 	}
