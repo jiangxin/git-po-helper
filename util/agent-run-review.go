@@ -425,7 +425,7 @@ func RunAgentReviewUseAgentMd(cfg *config.AgentConfig, agentName string, target 
 // Step 1: Check existing review. Step 2: Extract entries (PrepareReviewData). Step 3: Prepare batches.
 // Steps 4–8: Run agent per batch, save JSON, delete batch PO. Step 9: Merge and summary.
 // outputBase: base path for review output files (e.g. "po/review"); empty uses default.
-func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, agentTest bool, outputBase string) (*AgentRunResult, error) {
+func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, agentTest bool, outputBase string, batchSize int) (*AgentRunResult, error) {
 	var (
 		batchPOPaths []string
 		entryCount   int
@@ -493,7 +493,10 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 		}
 
 		// Step 3: Prepare review batches
-		batchPOPaths, entryCount, err = prepareReviewBatches(reviewPOFile, 50)
+		if batchSize <= 0 {
+			batchSize = 50
+		}
+		batchPOPaths, entryCount, err = prepareReviewBatches(reviewPOFile, batchSize)
 		if err != nil {
 			return result, err
 		}
@@ -539,7 +542,7 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 // It loads configuration and calls RunAgentReview or RunAgentReviewUseAgentMd.
 // outputBase: base path for review output files (e.g. "po/review"); empty uses default.
 // useAgentMd: if true, use agent with po/AGENTS.md (--use-agent-md).
-func CmdAgentRunReview(agentName string, target *CompareTarget, outputBase string, useAgentMd bool) error {
+func CmdAgentRunReview(agentName string, target *CompareTarget, outputBase string, useAgentMd bool, batchSize int) error {
 	// Load configuration
 	log.Debugf("loading agent configuration")
 	cfg, err := config.LoadAgentConfig(flag.AgentConfigFile())
@@ -554,7 +557,7 @@ func CmdAgentRunReview(agentName string, target *CompareTarget, outputBase strin
 	if useAgentMd {
 		result, err = RunAgentReviewUseAgentMd(cfg, agentName, target, false, outputBase)
 	} else {
-		result, err = RunAgentReview(cfg, agentName, target, false, outputBase)
+		result, err = RunAgentReview(cfg, agentName, target, false, outputBase, batchSize)
 	}
 	if err != nil {
 		log.Errorf("failed to run agent review: %v", err)

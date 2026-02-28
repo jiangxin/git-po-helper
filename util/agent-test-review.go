@@ -18,7 +18,7 @@ import (
 // It runs the agent-run review operation multiple times and calculates an average score.
 // outputBase: base path for review output files (e.g. "po/review"); empty uses default.
 // useAgentMd: if true, use agent with po/AGENTS.md (--use-agent-md).
-func CmdAgentTestReview(agentName string, target *CompareTarget, runs int, skipConfirmation bool, outputBase string, useAgentMd bool) error {
+func CmdAgentTestReview(agentName string, target *CompareTarget, runs int, skipConfirmation bool, outputBase string, useAgentMd bool, batchSize int) error {
 	// Require user confirmation before proceeding
 	if err := ConfirmAgentTestExecution(skipConfirmation); err != nil {
 		return err
@@ -50,7 +50,7 @@ func CmdAgentTestReview(agentName string, target *CompareTarget, runs int, skipC
 	startTime := time.Now()
 
 	// Run the test
-	results, aggregatedScore, err := RunAgentTestReview(cfg, agentName, target, runs, outputBase, useAgentMd)
+	results, aggregatedScore, err := RunAgentTestReview(cfg, agentName, target, runs, outputBase, useAgentMd, batchSize)
 	if err != nil {
 		log.Errorf("agent-test execution failed: %v", err)
 		return fmt.Errorf("agent-test failed: %w", err)
@@ -73,7 +73,7 @@ func CmdAgentTestReview(agentName string, target *CompareTarget, runs int, skipC
 // Returns scores for each run, aggregated score (from merged JSON), and error.
 // outputBase: base path for review output files (e.g. "po/review"); empty uses default.
 // useAgentMd: if true, use agent with po/AGENTS.md (--use-agent-md).
-func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, runs int, outputBase string, useAgentMd bool) ([]RunResult, int, error) {
+func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *CompareTarget, runs int, outputBase string, useAgentMd bool, batchSize int) ([]RunResult, int, error) {
 	reviewPOFile, reviewJSONFile := ReviewOutputPaths(outputBase)
 	// Determine the agent to use
 	_, err := SelectAgent(cfg, agentName)
@@ -101,7 +101,7 @@ func RunAgentTestReview(cfg *config.AgentConfig, agentName string, target *Compa
 		if useAgentMd {
 			agentResult, err = RunAgentReviewUseAgentMd(cfg, agentName, target, true, outputBase)
 		} else {
-			agentResult, err = RunAgentReview(cfg, agentName, target, true, outputBase)
+			agentResult, err = RunAgentReview(cfg, agentName, target, true, outputBase, batchSize)
 		}
 
 		// Calculate execution time for this iteration

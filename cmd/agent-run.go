@@ -13,6 +13,7 @@ type agentRunOptions struct {
 	Prompt     string
 	Output     string
 	UseAgentMd bool
+	BatchSize  int
 }
 
 type agentRunCommand struct {

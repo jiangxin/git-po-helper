@@ -40,7 +40,7 @@ With two file arguments, compare worktree files (revisions not allowed).`,
 			if err != nil {
 				return newUserErrorF("%v", err)
 			}
-			if err := util.CmdAgentRunReview(opts.Agent, target, opts.Output, opts.UseAgentMd); err != nil {
+			if err := util.CmdAgentRunReview(opts.Agent, target, opts.Output, opts.UseAgentMd, opts.BatchSize); err != nil {
 				return errExecute
 			}
 			return nil
@@ -55,6 +55,8 @@ With two file arguments, compare worktree files (revisions not allowed).`,
 		"agent",
 		"",
 		"agent name to use (required if multiple agents are configured)")
+	cmd.Flags().IntVar(&opts.BatchSize, "batch-size", 50,
+		"min entries per batch when splitting review (default: 50)")
 	cmd.Flags().StringVarP(&opts.Range, "range", "r", "",
 		"revision range: a..b (a and b), a.. (a and working tree), or a (a~ and a)")
 	cmd.Flags().StringVar(&opts.Commit,
@@ -67,6 +69,7 @@ With two file arguments, compare worktree files (revisions not allowed).`,
 		"equivalent to -r <commit>.. (compare commit with working tree)")
 
 	_ = viper.BindPFlag("agent-run--agent", cmd.Flags().Lookup("agent"))
+	_ = viper.BindPFlag("agent-run--batch-size", cmd.Flags().Lookup("batch-size"))
 	_ = viper.BindPFlag("agent-run--range", cmd.Flags().Lookup("range"))
 	_ = viper.BindPFlag("agent-run--output", cmd.Flags().Lookup("output"))
 
