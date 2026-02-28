@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"io"
 	"os"
 
@@ -75,6 +76,18 @@ func (v msgSelectCommand) Execute(args []string) error {
 		}
 		defer f.Close()
 		w = f
+	}
+	// Detect input format: JSON if file starts with '{' after whitespace
+	peek, err := os.ReadFile(poFile)
+	if err != nil {
+		return newUserErrorF("failed to read %s: %v", poFile, err)
+	}
+	if len(peek) > 512 {
+		peek = peek[:512]
+	}
+	trimmed := bytes.TrimLeft(peek, " \t\r\n")
+	if len(trimmed) > 0 && trimmed[0] == '{' {
+		return util.SelectGettextJSONFromFile(poFile, v.O.Range, w, v.O.JSON)
 	}
 	if v.O.JSON {
 		return util.WriteGettextJSONFromPOFile(poFile, v.O.Range, w)

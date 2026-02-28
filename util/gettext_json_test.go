@@ -3,6 +3,8 @@ package util
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -366,4 +368,95 @@ func TestWriteGettextJSONToPO_SpecialChars(t *testing.T) {
 	if poUnescape(entries[0].MsgID) != want {
 		t.Errorf("msgid: got %q", poUnescape(entries[0].MsgID))
 	}
+}
+
+func TestSelectGettextJSONFromFile_JSONInputToPO(t *testing.T) {
+	jsonContent := `{
+  "header_comment": "",
+  "header_meta": "Project-Id-Version: git\nContent-Type: text/plain; charset=UTF-8\n",
+  "entries": [
+    {
+      "msgid": "Line one",
+      "msgstr": "第一行",
+      "comments": ["#, c-format\n"],
+      "fuzzy": false
+    }
+  ]
+}`
+	tmpDir := t.TempDir()
+	jsonFile := filepath.Join(tmpDir, "input.json")
+	if err := os.WriteFile(jsonFile, []byte(jsonContent), 0644); err != nil {
+		t.Fatalf("write JSON file: %v", err)
+	}
+	var buf bytes.Buffer
+	err := SelectGettextJSONFromFile(jsonFile, "1", &buf, false)
+	if err != nil {
+		t.Fatalf("SelectGettextJSONFromFile: %v", err)
+	}
+	entries, _, err := ParsePoEntries(buf.Bytes())
+	if err != nil {
+		t.Fatalf("ParsePoEntries of PO output: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].MsgID != "Line one" || entries[0].MsgStr != "第一行" {
+		t.Errorf("entry: msgid=%q msgstr=%q", entries[0].MsgID, entries[0].MsgStr)
+	}
+}
+
+func TestSelectGettextJSONFromFile_JSONInputToJSON(t *testing.T) {
+	jsonContent := `{"header_comment":"","header_meta":"meta\n","entries":[{"msgid":"A","msgstr":"甲","fuzzy":false},{"msgid":"B","msgstr":"乙","fuzzy":false}]}`
+	tmpDir := t.TempDir()
+	jsonFile := filepath.Join(tmpDir, "input.json")
+	if err := os.WriteFile(jsonFile, []byte(jsonContent), 0644); err != nil {
+		t.Fatalf("write JSON file: %v", err)
+	}
+	var buf bytes.Buffer
+	err := SelectGettextJSONFromFile(jsonFile, "2", &buf, true)
+	if err != nil {
+		t.Fatalf("SelectGettextJSONFromFile: %v", err)
+	}
+	var decoded GettextJSON
+	if err := json.NewDecoder(&buf).Decode(&decoded); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+	if len(decoded.Entries) != 1 || decoded.Entries[0].MsgID != "B" {
+		t.Errorf("expected single entry B, got %d entries: %+v", len(decoded.Entries), decoded.Entries)
+	}
+}
+
+func TestSelectGettextJSONFromFile_Range(t *testing.T) {
+	jsonContent := `{"header_comment":"","header_meta":"","entries":[{"msgid":"One","msgstr":"一","fuzzy":false},{"msgid":"Two","msgstr":"二","fuzzy":false}]}`
+	tmpDir := t.TempDir()
+	jsonFile := filepath.Join(tmpDir, "input.json")
+	if err := os.WriteFile(jsonFile, []byte(jsonContent), 0644); err != nil {
+		t.Fatalf("write JSON file: %v", err)
+	}
+	t.Run("range 1", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := SelectGettextJSONFromFile(jsonFile, "1", &buf, true); err != nil {
+			t.Fatal(err)
+		}
+		var j GettextJSON
+		if err := json.Unmarshal(buf.Bytes(), &j); err != nil {
+			t.Fatal(err)
+		}
+		if len(j.Entries) != 1 || j.Entries[0].MsgID != "One" {
+			t.Errorf("got %v", j.Entries)
+		}
+	})
+	t.Run("range 1-2", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := SelectGettextJSONFromFile(jsonFile, "1-2", &buf, true); err != nil {
+			t.Fatal(err)
+		}
+		var j GettextJSON
+		if err := json.Unmarshal(buf.Bytes(), &j); err != nil {
+			t.Fatal(err)
+		}
+		if len(j.Entries) != 2 {
+			t.Errorf("got %d entries", len(j.Entries))
+		}
+	})
 }
