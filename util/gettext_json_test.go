@@ -491,6 +491,94 @@ func TestWriteGettextJSONToPO_EmptyEntries(t *testing.T) {
 	}
 }
 
+func TestWriteGettextJSONToPO_ObsoleteRoundTrip(t *testing.T) {
+	po := `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Active"
+msgstr "活跃"
+
+#~ msgid "Obsolete"
+#~ msgstr "已废弃"
+`
+	entries, header, err := ParsePoEntries([]byte(po))
+	if err != nil {
+		t.Fatalf("ParsePoEntries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	headerComment, headerMeta, _ := SplitHeader(header)
+	j := PoEntriesToGettextJSON(headerComment, headerMeta, entries)
+	if j.Entries[0].Obsolete || !j.Entries[1].Obsolete {
+		t.Errorf("Obsolete flags: entry0=%v entry1=%v", j.Entries[0].Obsolete, j.Entries[1].Obsolete)
+	}
+	var poBuf bytes.Buffer
+	if err := WriteGettextJSONToPO(j, &poBuf); err != nil {
+		t.Fatalf("WriteGettextJSONToPO: %v", err)
+	}
+	entries2, _, err := ParsePoEntries(poBuf.Bytes())
+	if err != nil {
+		t.Fatalf("ParsePoEntries round-trip: %v", err)
+	}
+	if len(entries2) != 2 {
+		t.Fatalf("round-trip: expected 2 entries, got %d", len(entries2))
+	}
+	if entries2[0].MsgID != "Active" || entries2[0].IsObsolete {
+		t.Errorf("round-trip entry0: MsgID=%q IsObsolete=%v", entries2[0].MsgID, entries2[0].IsObsolete)
+	}
+	if entries2[1].MsgID != "Obsolete" || !entries2[1].IsObsolete {
+		t.Errorf("round-trip entry1: MsgID=%q IsObsolete=%v", entries2[1].MsgID, entries2[1].IsObsolete)
+	}
+	if !strings.Contains(poBuf.String(), "#~ msgid \"Obsolete\"") {
+		t.Errorf("output should contain #~ msgid format: %s", poBuf.String())
+	}
+}
+
+func TestWriteGettextJSONToPO_ObsoleteWithMsgIDPreviousRoundTrip(t *testing.T) {
+	po := `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Active"
+msgstr "活跃"
+
+#~| msgid "Old source"
+#~ msgid "Obsolete"
+#~ msgstr "已废弃"
+`
+	entries, header, err := ParsePoEntries([]byte(po))
+	if err != nil {
+		t.Fatalf("ParsePoEntries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[1].MsgIDPrevious != "Old source" {
+		t.Errorf("MsgIDPrevious: got %q", entries[1].MsgIDPrevious)
+	}
+	headerComment, headerMeta, _ := SplitHeader(header)
+	j := PoEntriesToGettextJSON(headerComment, headerMeta, entries)
+	if j.Entries[1].MsgIDPrevious != "Old source" {
+		t.Errorf("JSON MsgIDPrevious: got %q", j.Entries[1].MsgIDPrevious)
+	}
+	var poBuf bytes.Buffer
+	if err := WriteGettextJSONToPO(j, &poBuf); err != nil {
+		t.Fatalf("WriteGettextJSONToPO: %v", err)
+	}
+	if !strings.Contains(poBuf.String(), "#~| msgid \"Old source\"") {
+		t.Errorf("output should contain #~| msgid format: %s", poBuf.String())
+	}
+	entries2, _, err := ParsePoEntries(poBuf.Bytes())
+	if err != nil {
+		t.Fatalf("ParsePoEntries round-trip: %v", err)
+	}
+	if entries2[1].MsgIDPrevious != "Old source" {
+		t.Errorf("round-trip MsgIDPrevious: got %q", entries2[1].MsgIDPrevious)
+	}
+}
+
 func TestSelectGettextJSONFromFile_JSONInputToPO(t *testing.T) {
 	jsonContent := `{
   "header_comment": "",

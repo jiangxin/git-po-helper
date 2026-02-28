@@ -2,7 +2,6 @@
 package util
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -34,16 +33,16 @@ func CountPoReportStats(poFile string) (*PoReportStats, error) {
 		return nil, fmt.Errorf("failed to parse %s: %w", poFile, err)
 	}
 
-	obsolete, err := countObsoleteEntries(poFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count obsolete entries: %w", err)
-	}
-
-	stats := &PoReportStats{Obsolete: obsolete}
+	stats := &PoReportStats{}
 
 	for _, e := range entries {
 		// Skip header (empty msgid)
 		if e.MsgID == "" {
+			continue
+		}
+		// Skip obsolete entries; count them separately
+		if e.IsObsolete {
+			stats.Obsolete++
 			continue
 		}
 
@@ -160,22 +159,4 @@ func FormatStatLine(stats *PoReportStats) string {
 		return "0 translated messages.\n"
 	}
 	return strings.Join(parts, ", ") + ".\n"
-}
-
-// countObsoleteEntries counts lines starting with "#~ msgid " in the file.
-func countObsoleteEntries(poFile string) (int, error) {
-	f, err := os.Open(poFile)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-
-	count := 0
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		if strings.HasPrefix(strings.TrimSpace(scanner.Text()), "#~ msgid ") {
-			count++
-		}
-	}
-	return count, scanner.Err()
 }

@@ -23,12 +23,14 @@ type GettextJSON struct {
 
 // GettextEntry represents one PO entry in the JSON format.
 type GettextEntry struct {
-	MsgID        string   `json:"msgid"`
-	MsgStr       string   `json:"msgstr"`
-	MsgIDPlural  string   `json:"msgid_plural,omitempty"`
-	MsgStrPlural []string `json:"msgstr_plural,omitempty"`
-	Comments     []string `json:"comments,omitempty"`
-	Fuzzy        bool     `json:"fuzzy"`
+	MsgID         string   `json:"msgid"`
+	MsgStr        string   `json:"msgstr"`
+	MsgIDPlural   string   `json:"msgid_plural,omitempty"`
+	MsgStrPlural  []string `json:"msgstr_plural,omitempty"`
+	Comments      []string `json:"comments,omitempty"`
+	Fuzzy         bool     `json:"fuzzy"`
+	Obsolete      bool     `json:"obsolete,omitempty"`       // True for #~ obsolete entries
+	MsgIDPrevious string   `json:"msgid_previous,omitempty"` // For #~| format (gettext 0.19.8+)
 }
 
 // poEscape encodes a string for PO quoted output: backslash, quote, newline, tab, carriage return.
@@ -145,9 +147,11 @@ func PoEntriesToGettextJSON(headerComment, headerMeta string, entries []*PoEntry
 	}
 	for _, e := range entries {
 		ent := GettextEntry{
-			MsgID:  poUnescape(e.MsgID),
-			MsgStr: poUnescape(e.MsgStr),
-			Fuzzy:  e.IsFuzzy,
+			MsgID:         poUnescape(e.MsgID),
+			MsgStr:        poUnescape(e.MsgStr),
+			Fuzzy:         e.IsFuzzy,
+			Obsolete:      e.IsObsolete,
+			MsgIDPrevious: poUnescape(e.MsgIDPrevious),
 		}
 		// Strip fuzzy from comments; fuzzy state lives only in ent.Fuzzy. Drop empty lines.
 		for _, c := range e.Comments {
@@ -208,10 +212,12 @@ func parseGettextJSONWithGjson(data []byte, err error) *GettextJSON {
 	var entries []GettextEntry
 	for _, r := range entriesResult.Array() {
 		ent := GettextEntry{
-			MsgID:    r.Get("msgid").String(),
-			MsgStr:   r.Get("msgstr").String(),
-			Fuzzy:    r.Get("fuzzy").Bool(),
-			Comments: []string{},
+			MsgID:         r.Get("msgid").String(),
+			MsgStr:        r.Get("msgstr").String(),
+			Fuzzy:         r.Get("fuzzy").Bool(),
+			Obsolete:      r.Get("obsolete").Bool(),
+			MsgIDPrevious: r.Get("msgid_previous").String(),
+			Comments:      []string{},
 		}
 		if r.Get("msgid_plural").Exists() {
 			ent.MsgIDPlural = r.Get("msgid_plural").String()
@@ -445,23 +451,33 @@ func WriteGettextJSONToPO(j *GettextJSON, w io.Writer) error {
 				return err
 			}
 		}
+		prefix := ""
+		if entry.Obsolete {
+			prefix = "#~ "
+		}
+		// #~| msgid (previous untranslated string, gettext 0.19.8+)
+		if entry.Obsolete && entry.MsgIDPrevious != "" {
+			if err := writePoStringWithPrefix(w, "#~| ", "msgid", entry.MsgIDPrevious); err != nil {
+				return err
+			}
+		}
 		// msgid (single- or multi-line)
-		if err := writePoString(w, "msgid", entry.MsgID); err != nil {
+		if err := writePoStringWithPrefix(w, prefix, "msgid", entry.MsgID); err != nil {
 			return err
 		}
 		if entry.MsgIDPlural != "" {
-			if err := writePoString(w, "msgid_plural", entry.MsgIDPlural); err != nil {
+			if err := writePoStringWithPrefix(w, prefix, "msgid_plural", entry.MsgIDPlural); err != nil {
 				return err
 			}
 		}
 		if len(entry.MsgStrPlural) > 0 {
 			for i, s := range entry.MsgStrPlural {
-				if err := writePoString(w, "msgstr["+strconv.Itoa(i)+"]", s); err != nil {
+				if err := writePoStringWithPrefix(w, prefix, "msgstr["+strconv.Itoa(i)+"]", s); err != nil {
 					return err
 				}
 			}
 		} else {
-			if err := writePoString(w, "msgstr", entry.MsgStr); err != nil {
+			if err := writePoStringWithPrefix(w, prefix, "msgstr", entry.MsgStr); err != nil {
 				return err
 			}
 		}
@@ -474,23 +490,23 @@ func WriteGettextJSONToPO(j *GettextJSON, w io.Writer) error {
 	return nil
 }
 
-// writePoString writes a keyword and value as single- or multi-line PO format.
-func writePoString(w io.Writer, keyword, value string) error {
+// writePoStringWithPrefix writes a keyword and value with optional prefix (e.g. "#~ " for obsolete).
+func writePoStringWithPrefix(w io.Writer, prefix, keyword, value string) error {
 	parts := strings.Split(value, "\n")
 	if len(parts) == 1 {
-		_, err := io.WriteString(w, keyword+" \""+poEscape(value)+"\"\n")
+		_, err := io.WriteString(w, prefix+keyword+" \""+poEscape(value)+"\"\n")
 		return err
 	}
-	if _, err := io.WriteString(w, keyword+" \"\"\n"); err != nil {
+	if _, err := io.WriteString(w, prefix+keyword+" \"\"\n"); err != nil {
 		return err
 	}
 	for i, p := range parts {
 		if i < len(parts)-1 {
-			if _, err := io.WriteString(w, "\""+poEscape(p)+"\\n\"\n"); err != nil {
+			if _, err := io.WriteString(w, prefix+"\""+poEscape(p)+"\\n\"\n"); err != nil {
 				return err
 			}
 		} else if p != "" {
-			if _, err := io.WriteString(w, "\""+poEscape(p)+"\"\n"); err != nil {
+			if _, err := io.WriteString(w, prefix+"\""+poEscape(p)+"\"\n"); err != nil {
 				return err
 			}
 		}

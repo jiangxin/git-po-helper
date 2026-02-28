@@ -11,13 +11,15 @@ import (
 
 // PoEntry represents a single PO file entry.
 type PoEntry struct {
-	Comments     []string
-	MsgID        string
-	MsgStr       string
-	MsgIDPlural  string
-	MsgStrPlural []string
-	RawLines     []string // Original lines for the entry
-	IsFuzzy      bool
+	Comments      []string
+	MsgID         string
+	MsgStr        string
+	MsgIDPlural   string
+	MsgStrPlural  []string
+	RawLines      []string // Original lines for the entry
+	IsFuzzy       bool
+	IsObsolete    bool   // True for #~ obsolete entries
+	MsgIDPrevious string // For #~| format: previous untranslated string (gettext 0.19.8+)
 }
 
 // commentHasFuzzyFlag returns true if the line is a flag comment (e.g. "#, fuzzy" or "#, fuzzy, c-format")
@@ -108,9 +110,71 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 	var msgstrPluralValues []strings.Builder
 	var inMsgid, inMsgstr, inMsgidPlural bool
 	var currentPluralIndex int = -1
+	var inObsolete bool
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
+
+		// Obsolete entry format: #~ msgid, #~ msgstr, #~| msgid (check first, before header/comment)
+		if strings.HasPrefix(trimmed, "#~ ") {
+			rest := trimmed[3:] // "#~ " = 3 chars
+			// Only set inObsolete for continuation lines; #~ msgid starts new entry, save previous first
+			if strings.HasPrefix(strings.TrimSpace(rest), `"`) || strings.HasPrefix(strings.TrimSpace(rest), "msgstr") {
+				inObsolete = true
+			}
+			if strings.HasPrefix(strings.TrimSpace(rest), `"`) && (inMsgid || inMsgstr || inMsgidPlural) {
+				value := strDeQuote(strings.TrimSpace(rest))
+				if inMsgid {
+					msgidValue.WriteString(value)
+				} else if inMsgidPlural {
+					msgidPluralValue.WriteString(value)
+				} else if inMsgstr {
+					if currentPluralIndex >= 0 {
+						msgstrPluralValues[currentPluralIndex].WriteString(value)
+					} else {
+						msgstrValue.WriteString(value)
+					}
+				}
+				entryLines = append(entryLines, line)
+				continue
+			}
+			trimmed = rest
+		} else if strings.HasPrefix(trimmed, "#~| ") {
+			rest := trimmed[4:] // "#~| " = 4 chars
+			if strings.HasPrefix(rest, "msgid ") {
+				value := strings.TrimPrefix(rest, "msgid ")
+				value = strings.TrimSpace(value)
+				value = strDeQuote(value)
+				if currentEntry != nil && (msgidValue.Len() > 0 || msgstrValue.Len() > 0) {
+					currentEntry.MsgID = msgidValue.String()
+					currentEntry.MsgStr = msgstrValue.String()
+					if msgidPluralValue.Len() > 0 {
+						currentEntry.MsgIDPlural = msgidPluralValue.String()
+						currentEntry.MsgStrPlural = make([]string, len(msgstrPluralValues))
+						for i, b := range msgstrPluralValues {
+							currentEntry.MsgStrPlural[i] = b.String()
+						}
+					}
+					currentEntry.RawLines = entryLines
+					currentEntry.IsFuzzy = entryHasFuzzyFlag(currentEntry.Comments)
+					currentEntry.IsObsolete = inObsolete
+					entries = append(entries, currentEntry)
+				}
+				if currentEntry == nil || msgidValue.Len() > 0 || msgstrValue.Len() > 0 {
+					currentEntry = &PoEntry{}
+					entryLines = []string{}
+					msgidValue.Reset()
+					msgstrValue.Reset()
+					msgidPluralValue.Reset()
+					msgstrPluralValues = []strings.Builder{}
+				}
+				currentEntry.MsgIDPrevious = value
+				currentEntry.IsObsolete = true
+				inObsolete = true
+				entryLines = append(entryLines, line)
+				continue
+			}
+		}
 
 		// Check for header (empty msgid entry)
 		if !hasSeenHeaderBlock && strings.HasPrefix(trimmed, "msgid ") {
@@ -207,26 +271,34 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			currentEntry.Comments = append(currentEntry.Comments, line)
 			entryLines = append(entryLines, line)
 		} else if strings.HasPrefix(trimmed, "msgid ") {
-			// Start of new entry
+			// Start of new entry (or obsolete #~ msgid)
 			// Save previous entry if we have one and it has content
-			// (either msgid with continuation lines or msgstr)
 			if currentEntry != nil && (msgidValue.Len() > 0 || msgstrValue.Len() > 0) {
-				// Save previous entry
 				currentEntry.MsgID = msgidValue.String()
 				currentEntry.MsgStr = msgstrValue.String()
+				if msgidPluralValue.Len() > 0 {
+					currentEntry.MsgIDPlural = msgidPluralValue.String()
+					currentEntry.MsgStrPlural = make([]string, len(msgstrPluralValues))
+					for i, b := range msgstrPluralValues {
+						currentEntry.MsgStrPlural[i] = b.String()
+					}
+				}
 				currentEntry.RawLines = entryLines
 				currentEntry.IsFuzzy = entryHasFuzzyFlag(currentEntry.Comments)
+				currentEntry.IsObsolete = inObsolete
 				entries = append(entries, currentEntry)
 			}
 			// Start new entry (or continue existing entry if it only has comments)
 			if currentEntry == nil {
-				// Create a new entry
 				currentEntry = &PoEntry{}
 				entryLines = []string{}
 			} else if msgidValue.Len() > 0 || msgstrValue.Len() > 0 {
-				// Previous entry was saved, create new entry
 				currentEntry = &PoEntry{}
 				entryLines = []string{}
+			}
+			// If this line came from #~ msgid, mark the new entry as obsolete
+			if strings.HasPrefix(strings.TrimSpace(line), "#~ ") {
+				inObsolete = true
 			}
 			// If currentEntry has comments but no msgid/msgstr, keep it and continue
 			// entryLines already contains the comments, so we don't reset it
@@ -313,6 +385,7 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 				}
 				currentEntry.RawLines = entryLines
 				currentEntry.IsFuzzy = entryHasFuzzyFlag(currentEntry.Comments)
+				currentEntry.IsObsolete = inObsolete
 				entries = append(entries, currentEntry)
 			}
 			currentEntry = nil
@@ -325,6 +398,7 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			inMsgstr = false
 			inMsgidPlural = false
 			currentPluralIndex = -1
+			inObsolete = false
 		} else {
 			// Other lines (continuation, etc.)
 			if currentEntry != nil {
@@ -338,9 +412,6 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 	}
 
 	// Handle last entry
-	// For entries with msgid starting with empty string, we need to check
-	// if we have collected any continuation lines (msgidValue.Len() > 0)
-	// or if we have a complete entry with msgstr
 	if currentEntry != nil && (msgidValue.Len() > 0 || msgstrValue.Len() > 0) {
 		currentEntry.MsgID = msgidValue.String()
 		currentEntry.MsgStr = msgstrValue.String()
@@ -353,6 +424,7 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 		}
 		currentEntry.RawLines = entryLines
 		currentEntry.IsFuzzy = entryHasFuzzyFlag(currentEntry.Comments)
+		currentEntry.IsObsolete = inObsolete
 		entries = append(entries, currentEntry)
 	}
 
