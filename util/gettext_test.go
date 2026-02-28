@@ -2,6 +2,7 @@ package util
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -809,5 +810,74 @@ msgstr "二"
 	}
 	if !strings.Contains(output, "First") || !strings.Contains(output, "Second") {
 		t.Errorf("output should contain First and Second, got:\n%s", output)
+	}
+}
+
+func TestWriteGettextJSONFromPOFile_SingleEntry(t *testing.T) {
+	poContent := `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "First"
+msgstr "第一个"
+
+msgid "Second"
+msgstr "第二个"
+`
+	tmpDir := t.TempDir()
+	poFile := filepath.Join(tmpDir, "test.po")
+	if err := os.WriteFile(poFile, []byte(poContent), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	var buf bytes.Buffer
+	err := WriteGettextJSONFromPOFile(poFile, "1", &buf)
+	if err != nil {
+		t.Fatalf("WriteGettextJSONFromPOFile failed: %v", err)
+	}
+	var decoded GettextJSON
+	if err := json.NewDecoder(&buf).Decode(&decoded); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+	if decoded.HeaderMeta != "Content-Type: text/plain; charset=UTF-8\n" {
+		t.Errorf("HeaderMeta: got %q", decoded.HeaderMeta)
+	}
+	if len(decoded.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(decoded.Entries))
+	}
+	if decoded.Entries[0].MsgID != "First" || decoded.Entries[0].MsgStr != "第一个" {
+		t.Errorf("entry: msgid=%q msgstr=%q", decoded.Entries[0].MsgID, decoded.Entries[0].MsgStr)
+	}
+}
+
+func TestWriteGettextJSONFromPOFile_EmptyRange(t *testing.T) {
+	poContent := `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "First"
+msgstr "一"
+
+msgid "Second"
+msgstr "二"
+`
+	tmpDir := t.TempDir()
+	poFile := filepath.Join(tmpDir, "test.po")
+	if err := os.WriteFile(poFile, []byte(poContent), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	var buf bytes.Buffer
+	err := WriteGettextJSONFromPOFile(poFile, "99-100", &buf)
+	if err != nil {
+		t.Fatalf("WriteGettextJSONFromPOFile failed: %v", err)
+	}
+	var decoded GettextJSON
+	if err := json.NewDecoder(&buf).Decode(&decoded); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+	if len(decoded.Entries) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(decoded.Entries))
+	}
+	if decoded.HeaderMeta != "Content-Type: text/plain; charset=UTF-8\n" {
+		t.Errorf("HeaderMeta: got %q", decoded.HeaderMeta)
 	}
 }
