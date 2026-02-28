@@ -766,3 +766,41 @@ msgstr ""
 		t.Errorf("expected fuzzy and c-format restored in PO, got %q", out)
 	}
 }
+
+func TestParseGettextJSONBytes_RepairMalformedLLMOutput(t *testing.T) {
+	validJSON := `{"header_comment":"","header_meta":"","entries":[{"msgid":"Hello","msgstr":"你好","fuzzy":false}]}`
+
+	t.Run("BOM prefix", func(t *testing.T) {
+		bom := []byte{0xEF, 0xBB, 0xBF}
+		data := append(bom, []byte(validJSON)...)
+		j, err := ParseGettextJSONBytes(data)
+		if err != nil {
+			t.Fatalf("ParseGettextJSONBytes with BOM: %v", err)
+		}
+		if len(j.Entries) != 1 || j.Entries[0].MsgID != "Hello" || j.Entries[0].MsgStr != "你好" {
+			t.Errorf("got %+v", j)
+		}
+	})
+
+	t.Run("markdown code block", func(t *testing.T) {
+		data := []byte("Here is the JSON:\n```json\n" + validJSON + "\n```\n")
+		j, err := ParseGettextJSONBytes(data)
+		if err != nil {
+			t.Fatalf("ParseGettextJSONBytes with markdown: %v", err)
+		}
+		if len(j.Entries) != 1 || j.Entries[0].MsgID != "Hello" {
+			t.Errorf("got %+v", j)
+		}
+	})
+
+	t.Run("leading and trailing text", func(t *testing.T) {
+		data := []byte("The result is: " + validJSON + " end of output")
+		j, err := ParseGettextJSONBytes(data)
+		if err != nil {
+			t.Fatalf("ParseGettextJSONBytes with extra text: %v", err)
+		}
+		if len(j.Entries) != 1 || j.Entries[0].MsgID != "Hello" {
+			t.Errorf("got %+v", j)
+		}
+	})
+}
