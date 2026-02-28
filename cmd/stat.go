@@ -20,8 +20,8 @@ func (v *statCommand) Command() *cobra.Command {
 	}
 
 	v.cmd = &cobra.Command{
-		Use:   "stat [po-file]",
-		Short: "Report statistics for a PO file",
+		Use:   "stat <po-file> [po-file...]",
+		Short: "Report statistics for PO file(s)",
 		Long: `Report entry statistics for a PO file:
   translated   - entries with non-empty translation
   untranslated - entries with empty msgstr
@@ -42,31 +42,35 @@ For review JSON report, use: git-po-helper agent-run report [path]`,
 func (v statCommand) Execute(args []string) error {
 	repository.ChdirProjectRoot()
 
-	if len(args) != 1 {
-		return newUserError("stat requires exactly one argument: <po-file>")
+	if len(args) < 1 {
+		return newUserError("stat requires at least one argument: <po-file> [po-file...]")
 	}
 
-	poFile := args[0]
-	if !util.Exist(poFile) {
-		return newUserError("file does not exist:", poFile)
-	}
+	for i, poFile := range args {
+		if !util.Exist(poFile) {
+			return newUserError("file does not exist:", poFile)
+		}
 
-	stats, err := util.CountPoReportStats(poFile)
-	if err != nil {
-		return newUserErrorF("%v", err)
-	}
+		stats, err := util.CountPoReportStats(poFile)
+		if err != nil {
+			return newUserErrorF("%v", err)
+		}
 
-	if flag.Verbose() > 0 {
-		title := fmt.Sprintf("PO file: %s", poFile)
-		fmt.Println(title)
-		fmt.Println(strings.Repeat("-", len(title)))
-		fmt.Printf("  translated:   %d\n", stats.Translated)
-		fmt.Printf("  untranslated: %d\n", stats.Untranslated)
-		fmt.Printf("  same:         %d\n", stats.Same)
-		fmt.Printf("  fuzzy:        %d\n", stats.Fuzzy)
-		fmt.Printf("  obsolete:     %d\n", stats.Obsolete)
-	} else {
-		fmt.Print(util.FormatStatLine(stats))
+		if flag.Verbose() > 0 {
+			if i > 0 {
+				fmt.Println()
+			}
+			title := fmt.Sprintf("PO file: %s", poFile)
+			fmt.Println(title)
+			fmt.Println(strings.Repeat("-", len(title)))
+			fmt.Printf("  translated:   %d\n", stats.Translated)
+			fmt.Printf("  untranslated: %d\n", stats.Untranslated)
+			fmt.Printf("  same:         %d\n", stats.Same)
+			fmt.Printf("  fuzzy:        %d\n", stats.Fuzzy)
+			fmt.Printf("  obsolete:     %d\n", stats.Obsolete)
+		} else {
+			fmt.Printf("%s: %s", poFile, util.FormatStatLine(stats))
+		}
 	}
 
 	return nil
