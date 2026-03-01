@@ -8,22 +8,24 @@ This document describes the design for extending `agent-run translate` with two 
 
 2. **--use-local-orchestration**: Use the new translation flow from [po/AGENTS.md Task 4](https://github.com/git-l10n/git-po/blob/master/po/AGENTS.md). git-po-helper orchestrates the workflow locally using `msg-select` and `msg-cat`; the agent is invoked **only** for translating each batch JSON file. Like `agent-run review`, this mode uses a **separate prompt** maintained in `config/prompts/local-orchestration-translation.md` (distinct from `config/prompts/translate.txt` used by `--use-agent-md`).
 
-## 2. Reference: AGENTS.md Task 4 Translation Flow
+## 2. Reference: AGENTS.md Task 3 Translation Flow (One Batch Per Iteration)
 
-The new flow (AGENTS.md lines 452-555) uses:
+The flow uses **one batch per iteration** (AGENTS.md Task 3):
 
-1. **Condition check**: Determine next step based on existing files
-2. **Generate pending file**: `msg-select --untranslated --fuzzy --no-obsolete` → `po/l10n-todo.po`
-3. **Generate batch files**: Split `l10n-todo.po` into `po/l10n-todo-batch-<N>.json` via `msg-select --json --range`
-4. **Translate each batch**: Agent reads `l10n-todo-batch-<N>.json`, writes `po/l10n-done-batch-<N>.json`
-5. **Merge batch results**: `msg-cat -o po/l10n-done.po po/l10n-done-batch-*.json`
-6. **Complete translation**: `msgcat --use-first po/l10n-done.po po/XX.po` → merge into target, validate with `msgfmt`
+1. **Extract pending**: `msg-select --untranslated --fuzzy --no-obsolete -o pending po/XX.po`
+2. **Prepare one batch**: `msg-select --json [--range "-$NUM"] pending -o l10n-todo.json` (first N entries)
+3. **Translate**: Agent reads `l10n-todo.json`, writes `l10n-done.json`
+4. **Merge**: `msg-cat --unset-fuzzy -o l10n-done.po l10n-done.json`, then `msgcat --use-first l10n-done.po po/XX.po -o merged`
+5. **Replace target**: `mv merged po/XX.po`
+6. **Repeat** until pending is empty
 
 Batch size formula (from AGENTS.md):
-- If `ENTRY_COUNT <= min_batch_size*2`: single batch
+- If `ENTRY_COUNT <= min_batch_size*2`: single batch (all entries)
 - If `ENTRY_COUNT > min_batch_size*8`: NUM = min_batch_size*2
 - Else if `ENTRY_COUNT > min_batch_size*4`: NUM = min_batch_size + min_batch_size/2
 - Else: NUM = min_batch_size
+
+`msg-cat --unset-fuzzy` is applied before merging so that fuzzy entries translated by the agent become normal entries (equivalent to `msg-cat --unset-fuzzy`).
 
 ## 3. Command Interface
 
@@ -67,9 +69,10 @@ git-po-helper agent-run translate --use-local-orchestration --batch-size 30 po/z
   [git-po-helper] → pre-validation → [Agent: full PO] → post-validation → done
 
 --use-local-orchestration (new):
-  [git-po-helper] → msg-select (todo.po) → msg-select (batch JSONs) →
-  [Agent: batch-1.json] → [Agent: batch-2.json] → ... →
-  [git-po-helper] → msg-cat (merge) → msgcat (into XX.po) → msgfmt (validate) → done
+  [git-po-helper] → msg-select (todo.po) → msg-select (todo.json, one batch) →
+  [Agent: todo.json → done.json] →
+  [git-po-helper] → msg-cat --unset-fuzzy (done.po) → msgcat (merge into XX.po) → msgfmt (validate) →
+  repeat until pending empty → done
 ```
 
 ### 4.2 Reference: agent-run review Implementation
@@ -82,21 +85,21 @@ git-po-helper agent-run translate --use-local-orchestration --batch-size 30 po/z
 For translate local orchestration:
 - Use **separate prompt** `config/prompts/local-orchestration-translation.md` (like review uses review.txt)
 - Use **JSON batches** (not PO batches) as in AGENTS.md
-- Agent receives `l10n-todo-batch-N.json`, writes `l10n-done-batch-N.json`
-- Placeholders: `{{.source}}` = input JSON path, `{{.dest}}` = output JSON path (or derive from source)
+- One batch per iteration: Agent receives `l10n-todo.json`, writes `l10n-done.json`
+- Placeholders: `{{.source}}` = input JSON path, `{{.dest}}` = output JSON path
 
 ## 5. Detailed Design
 
 ### 5.1 File Naming Convention
 
-For `po/XX.po` (e.g. `po/zh_CN.po`), use base `po/l10n`:
+For `po/XX.po` (e.g. `po/zh_CN.po`), use base `po/l10n` (one batch per iteration):
 
 | File | Purpose |
 |------|---------|
 | `po/l10n-todo.po` | Extracted untranslated + fuzzy entries |
-| `po/l10n-todo-batch-<N>.json` | Batch N to translate (input to agent) |
-| `po/l10n-done-batch-<N>.json` | Batch N translated (output from agent) |
-| `po/l10n-done.po` | Merged translated entries |
+| `po/l10n-todo.json` | Current batch to translate (input to agent) |
+| `po/l10n-done.json` | Current batch translated (output from agent) |
+| `po/l10n-done.po` | Converted from l10n-done.json (with --unset-fuzzy) for merge |
 
 ### 5.2 RunAgentTranslateUseAgentMd (existing flow)
 
@@ -105,68 +108,59 @@ For `po/XX.po` (e.g. `po/zh_CN.po`), use base `po/l10n`:
 
 ### 5.3 RunAgentTranslateLocalOrchestration (new flow)
 
-Implement steps matching AGENTS.md Task 4:
+Implement steps matching AGENTS.md Task 3 (one batch per iteration):
 
 **Step 1: Condition check**
 
 - If `po/l10n-todo.po` does not exist → go to Step 2
-- If `po/l10n-todo-batch-*.json` exist → go to Step 4 (translate batches)
-- If `po/l10n-done-batch-*.json` exist (and no todo-batch) → go to Step 5 (merge)
-- Otherwise → go to Step 3 (generate batches)
+- If `po/l10n-todo.json` exists → go to Step 4 (translate)
+- If `po/l10n-done.json` exists (and no todo.json) → go to Step 5 (merge)
+- Otherwise → go to Step 3 (generate one batch)
 
 **Step 2: Generate pending file**
 
 ```go
 // Remove any stale batch files
-os.Remove("po/l10n-todo-batch-*.json")
-os.Remove("po/l10n-done-batch-*.json")
+os.Remove("po/l10n-todo.json")
+os.Remove("po/l10n-done.json")
 // msg-select --untranslated --fuzzy --no-obsolete po/XX.po -o po/l10n-todo.po
 MsgSelect(poFile, "", todoFile, false, &EntryStateFilter{Untranslated: true, Fuzzy: true, NoObsolete: true})
 ```
 
 If `l10n-todo.po` is empty or has no content entries → translation complete; cleanup and return success.
 
-**Step 3: Generate batch files**
+**Step 3: Generate one batch**
 
 - Count entries in `l10n-todo.po` (excluding header)
 - Apply batch size formula to get `num` per batch
-- For each batch: `msg-select --json --range "X-Y" po/l10n-todo.po -o po/l10n-todo-batch-<N>.json`
-- Use `WriteGettextJSONFromPOFile` or equivalent to produce JSON batches
+- `msg-select --json --range "-$num" po/l10n-todo.po -o po/l10n-todo.json` (first N entries)
+- Use `WriteGettextJSONFromPOFile` or equivalent
 
-**Step 4: Translate each batch**
-
-For each `po/l10n-todo-batch-<N>.json` (sorted by N):
+**Step 4: Translate batch**
 
 - Build agent command with placeholders:
-  - `{{.prompt}}`: from `prompt.local_orchestration_translation` (config/prompts/local-orchestration-translation.md)
-  - `{{.source}}`: `po/l10n-todo-batch-<N>.json`
-  - `{{.dest}}`: `po/l10n-done-batch-<N>.json`
+  - `{{.prompt}}`: from `prompt.local_orchestration_translation`
+  - `{{.source}}`: `po/l10n-todo.json`
+  - `{{.dest}}`: `po/l10n-done.json`
 - Execute agent
-- Agent is expected to write translated JSON to `{{.dest}}`
+- Agent writes translated JSON to `{{.dest}}`
 - Validate output JSON exists and is parseable
-- Delete `po/l10n-todo-batch-<N>.json`
-- Repeat until no `l10n-todo-batch-*.json` remain
 
-**Step 5: Merge batch results**
+**Step 5: Merge and complete**
 
 ```go
-// msg-cat -o po/l10n-done.po po/l10n-done-batch-*.json
-MsgCat(glob("po/l10n-done-batch-*.json"), "po/l10n-done.po")
-// Remove batch files
-os.Remove("po/l10n-done-batch-*.json")
-```
-
-**Step 6: Complete translation**
-
-```go
-// msgcat --use-first po/l10n-done.po po/XX.po > po/l10n-merged.po
-exec.Command("msgcat", "--use-first", "po/l10n-done.po", poFile).Output() → l10n-merged.po
-// msgfmt --check -o /dev/null po/l10n-merged.po
-exec.Command("msgfmt", "--check", "-o", "/dev/null", "po/l10n-merged.po")
-// mv po/l10n-merged.po po/XX.po
-os.Rename("po/l10n-merged.po", poFile)
-// Cleanup
+// Apply --unset-fuzzy to done JSON, convert to PO
+ClearFuzzyTagFromGettextJSON(doneJSON) → write to l10n-done.po
+// msgcat --use-first l10n-done.po po/XX.po -o merged
+exec.Command("msgcat", "--use-first", "po/l10n-done.po", poFile).Output() → merged
+// msgfmt --check -o /dev/null merged
+exec.Command("msgfmt", "--check", "-o", "/dev/null", "merged")
+// mv merged po/XX.po
+os.Rename("merged", poFile)
+// Cleanup for next iteration
 os.Remove("po/l10n-done.po")
+os.Remove("po/l10n-done.json")
+os.Remove("po/l10n-todo.json")
 os.Remove("po/l10n-todo.po")
 ```
 
@@ -185,8 +179,8 @@ Config key: `prompt.local_orchestration_translation` (embedded from `config/prom
 
 Placeholders:
 - `{{.prompt}}`: resolved prompt content
-- `{{.source}}`: `po/l10n-todo-batch-<N>.json`
-- `{{.dest}}`: `po/l10n-done-batch-<N>.json`
+- `{{.source}}`: `po/l10n-todo.json`
+- `{{.dest}}`: `po/l10n-done.json`
 
 Config example (git-po-helper.yaml):
 
@@ -200,9 +194,8 @@ The `local_orchestration_translation` prompt is loaded from the embedded file; u
 
 ### 5.5 Resume Support
 
-Similar to `agent-run review`:
-- If `l10n-todo-batch-*.json` exist: resume from Step 4 (translate remaining batches)
-- If only `l10n-done-batch-*.json` exist: run Step 5 (merge) then Step 6
+- If `l10n-todo.json` exists: resume from Step 4 (translate)
+- If only `l10n-done.json` exists: run Step 5 (merge) then loop
 
 ### 5.6 Agent Output Handling
 
@@ -226,7 +219,7 @@ For local orchestration, the agent writes directly to `{{.dest}}`. git-po-helper
 |------|--------|-------------|
 | 1 | Add flags to translate command | Add `--use-agent-md`, `--use-local-orchestration`, `--batch-size` to `cmd/agent-run-translate.go`; implement mutual exclusivity and default to `--use-agent-md` |
 | 2 | Add local-orchestration prompt | Create `config/prompts/local-orchestration-translation.md` with batch translation instructions; add `local_orchestration_translation` to `config/agent.go` (PromptConfig, embed, default); wire `GetRawPrompt` for action `local-orchestration-translation` |
-| 3 | Create local orchestration module | Create `util/agent-run-translate-local.go` with `RunAgentTranslateLocalOrchestration` skeleton; implement Steps 1–6 (condition check, msg-select todo, batch JSON creation, agent per batch, msg-cat merge, msgcat+msgfmt) |
+| 3 | Create local orchestration module | Create `util/agent-run-translate-local.go` with `RunAgentTranslateLocalOrchestration`; implement Steps 1–5 (condition check, msg-select todo, one-batch JSON, agent translate, merge with --unset-fuzzy, msgcat+msgfmt); one batch per iteration |
 | 4 | Wire translate command to local flow | In `cmd/agent-run-translate.go`, when `--use-local-orchestration` is set, call `RunAgentTranslateLocalOrchestration`; ensure `--use-agent-md` (or default) calls existing `RunAgentTranslate` |
 | 5 | Add integration tests | Add integration test for `agent-run translate --use-local-orchestration` (e.g. in `test/t0090-agent-run.sh` or new test file); verify batch flow, merge, and final PO |
 | 6 | Update documentation | Update README, `docs/agent-commands.md` (or equivalent) with `--use-local-orchestration` usage and `config/prompts/local-orchestration-translation.md` reference |
@@ -235,7 +228,8 @@ For local orchestration, the agent writes directly to `{{.dest}}`. git-po-helper
 
 - `util.MsgSelect` with `EntryStateFilter{Untranslated: true, Fuzzy: true, NoObsolete: true}` for Step 2
 - `util.WriteGettextJSONFromPOFile` for batch JSON output (Step 3)
-- `util.ReadFileToGettextJSON` + `util.MergeGettextJSON` + `util.WriteGettextJSONToPO` for Step 5 (or invoke `msg-cat` subprocess)
+- `util.ClearFuzzyTagFromGettextJSON` before converting done JSON to PO (equivalent to `msg-cat --unset-fuzzy`)
+- `util.WriteGettextJSONToPO` for done JSON → PO conversion
 - External: `msgcat`, `msgfmt` (already required by project)
 - `BuildAgentCommand` with `source` and `dest` placeholders
 
