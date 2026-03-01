@@ -29,6 +29,9 @@ var promptReview string
 //go:embed prompts/local-orchestration-translation.md
 var promptLocalOrchestrationTranslation string
 
+//go:embed prompts/fix-po.txt
+var promptFixPo string
+
 // AgentConfig holds the complete agent configuration.
 type AgentConfig struct {
 	DefaultLangCode string           `yaml:"default_lang_code"`
@@ -44,6 +47,7 @@ type PromptConfig struct {
 	Translate                     string `yaml:"translate"`
 	Review                        string `yaml:"review"`
 	LocalOrchestrationTranslation string `yaml:"local_orchestration_translation"`
+	FixPo                         string `yaml:"fix_po"`
 }
 
 // AgentTestConfig holds configuration for agent-test command.
@@ -153,6 +157,7 @@ func getDefaultConfig() *AgentConfig {
 			Translate:                     loadEmbeddedPrompt(promptTranslate),
 			Review:                        loadEmbeddedPrompt(promptReview),
 			LocalOrchestrationTranslation: loadEmbeddedPrompt(promptLocalOrchestrationTranslation),
+			FixPo:                         loadEmbeddedPrompt(promptFixPo),
 		},
 		AgentTest: AgentTestConfig{
 			Runs: &defaultRuns,
@@ -329,6 +334,9 @@ func mergeConfigs(baseConfig, overlay *AgentConfig, mergeAgents bool) *AgentConf
 		}
 		if overlay.Prompt.LocalOrchestrationTranslation != "" {
 			result.Prompt.LocalOrchestrationTranslation = overlay.Prompt.LocalOrchestrationTranslation
+		}
+		if overlay.Prompt.FixPo != "" {
+			result.Prompt.FixPo = overlay.Prompt.FixPo
 		}
 		if overlay.AgentTest.Runs != nil {
 			result.AgentTest.Runs = overlay.AgentTest.Runs

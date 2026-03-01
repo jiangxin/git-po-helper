@@ -92,7 +92,7 @@ func RunAgentTranslateLocalOrchestration(cfg *config.AgentConfig, agentName, poF
 			}
 
 			// Step 6: Complete translation
-			if err := completeTranslation(donePO, poFile, mergedPO); err != nil {
+			if err := completeTranslation(cfg, selectedAgent, donePO, poFile, mergedPO, result); err != nil {
 				return result, err
 			}
 
@@ -350,16 +350,27 @@ func mergeDoneBatches(donePaths []string, outputPath string) error {
 	return nil
 }
 
-func completeTranslation(donePO, targetPO, mergedPO string) error {
+func completeTranslation(cfg *config.AgentConfig, selectedAgent config.Agent, donePO, targetPO, mergedPO string, result *AgentRunResult) error {
 	cmd := exec.Command("msgcat", "--use-first", donePO, targetPO, "-o", mergedPO)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("msgcat failed: %w\n%s", err, string(out))
 	}
 
 	cmd = exec.Command("msgfmt", "--check", "-o", os.DevNull, mergedPO)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		os.Remove(mergedPO)
-		return fmt.Errorf("msgfmt validation failed: %w\n%s", err, string(out))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		// msgfmt failed: try agent to fix the PO file
+		log.Warnf("msgfmt validation failed, invoking agent to fix: %s", string(out))
+		if fixErr := fixPoWithAgent(cfg, selectedAgent, mergedPO, string(out), result); fixErr != nil {
+			os.Remove(mergedPO)
+			return fmt.Errorf("msgfmt validation failed and agent fix failed: %w\nOriginal error: %s", fixErr, string(out))
+		}
+		// Retry msgfmt after fix
+		cmd = exec.Command("msgfmt", "--check", "-o", os.DevNull, mergedPO)
+		if out2, err2 := cmd.CombinedOutput(); err2 != nil {
+			os.Remove(mergedPO)
+			return fmt.Errorf("msgfmt still fails after agent fix: %w\n%s", err2, string(out2))
+		}
 	}
 
 	if err := os.Rename(mergedPO, targetPO); err != nil {
@@ -367,6 +378,78 @@ func completeTranslation(donePO, targetPO, mergedPO string) error {
 		return fmt.Errorf("failed to replace %s: %w", targetPO, err)
 	}
 	log.Infof("merged translations into %s", targetPO)
+	return nil
+}
+
+// fixPoWithAgent invokes the agent to fix PO file syntax errors. The agent modifies the file in place.
+func fixPoWithAgent(cfg *config.AgentConfig, selectedAgent config.Agent, poFile, msgfmtError string, result *AgentRunResult) error {
+	prompt, err := GetRawPrompt(cfg, "fix-po")
+	if err != nil {
+		return fmt.Errorf("fix-po prompt not configured: %w", err)
+	}
+
+	workDir := repository.WorkDirOrCwd()
+	sourceRel, _ := filepath.Rel(workDir, poFile)
+	if sourceRel == "" || sourceRel == "." {
+		sourceRel = poFile
+	}
+	sourceRel = filepath.ToSlash(sourceRel)
+
+	vars := PlaceholderVars{
+		"prompt": prompt,
+		"source": sourceRel,
+		"dest":   sourceRel,
+		"error":  msgfmtError,
+	}
+	resolvedPrompt, err := ExecutePromptTemplate(prompt, vars)
+	if err != nil {
+		return fmt.Errorf("failed to resolve prompt: %w", err)
+	}
+	vars["prompt"] = resolvedPrompt
+
+	agentCmd, err := BuildAgentCommand(selectedAgent, vars)
+	if err != nil {
+		return fmt.Errorf("failed to build agent command: %w", err)
+	}
+
+	outputFormat := selectedAgent.Output
+	if outputFormat == "" {
+		outputFormat = "default"
+	}
+	outputFormat = normalizeOutputFormat(outputFormat)
+
+	log.Infof("invoking agent to fix PO file: %s (output=%s, streaming=%v)", sourceRel, outputFormat, outputFormat == "json")
+	result.AgentExecuted = true
+
+	var stderr []byte
+	if outputFormat == "json" {
+		stdoutReader, stderrBuf, cmdProcess, execErr := ExecuteAgentCommandStream(agentCmd)
+		if execErr != nil {
+			return fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", execErr)
+		}
+		defer stdoutReader.Close()
+		_, streamResult, _ := parseStreamByKind(selectedAgent.Kind, stdoutReader)
+		applyAgentDiagnostics(result, streamResult)
+		waitErr := cmdProcess.Wait()
+		stderr = stderrBuf.Bytes()
+		if waitErr != nil {
+			if len(stderr) > 0 {
+				log.Debugf("agent stderr: %s", string(stderr))
+			}
+			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", waitErr)
+			return fmt.Errorf("agent fix failed: %w", waitErr)
+		}
+	} else {
+		_, stderr, err = ExecuteAgentCommand(agentCmd)
+		if err != nil {
+			if len(stderr) > 0 {
+				log.Debugf("agent stderr: %s", string(stderr))
+			}
+			result.AgentError = err
+			return fmt.Errorf("agent fix failed: %w", err)
+		}
+	}
+	log.Infof("agent completed fix, re-validating with msgfmt")
 	return nil
 }
 
