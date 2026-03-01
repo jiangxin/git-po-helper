@@ -4,7 +4,8 @@ test_description="test git-po-helper check-commits in partial clone"
 
 . ./lib/test-lib.sh
 
-HELPER="po-helper --no-special-gettext-versions --pot-file=no --report-typos=warn"
+HELPER="po-helper --no-special-gettext-versions --report-typos=warn"
+POT_NO="--pot-file=no"
 
 test_expect_success "setup" '
 	git clone --mirror "$PO_HELPER_TEST_REPOSITORY" bare.git &&
@@ -96,7 +97,7 @@ EOF
 
 test_expect_success "check-commits show typos" '
 	git -C partial-clone.git $HELPER \
-		check-commits v1..v2 >out 2>&1 &&
+		check-commits $POT_NO v1..v2 >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 	test_cmp expect actual
 '
@@ -123,7 +124,7 @@ EOF
 
 test_expect_success "check-commits show typos (--typos=error)" '
 	test_must_fail git -C partial-clone.git $HELPER \
-		check-commits --report-typos=error v1..v2 >out 2>&1 &&
+		check-commits $POT_NO --report-typos=error v1..v2 >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 	test_cmp expect actual
 '
@@ -167,7 +168,7 @@ EOF
 test_expect_success "check-commits show typos and TEAMS file" '
 	git -C partial-clone.git fetch &&
 	test_must_fail git -C partial-clone.git $HELPER \
-		check-commits v1..v3 >out 2>&1 &&
+		check-commits $POT_NO v1..v3 >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 	test_cmp expect actual
 '

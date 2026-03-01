@@ -182,12 +182,21 @@ func (v *rootCommand) AddCommand(cmds ...*cobra.Command) {
 	v.Command().AddCommand(cmds...)
 }
 
+// potFileVisibleCommands lists commands that use --pot-file; the flag is shown only for them.
+var potFileVisibleCommands = map[string]bool{
+	"check": true, "check-po": true, "check-commits": true,
+	"check-pot": true, "init": true, "update": true,
+}
+
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() Response {
 	var (
 		resp Response
 	)
+
+	// Hide --pot-file for commands that do not use it (must run before ExecuteC).
+	hidePotFileForCommands()
 
 	c, err := rootCmd.Command().ExecuteC()
 	resp.Err = err
@@ -199,4 +208,46 @@ func init() {
 	cobra.OnInitialize(rootCmd.initLog)
 	cobra.OnInitialize(rootCmd.initRepository)
 	cobra.OnInitialize(rootCmd.preCheck)
+}
+
+// hidePotFileForCommands sets a custom help func for commands that do not use
+// --pot-file, so the flag is hidden only when showing help for those commands.
+// Commands in potFileVisibleCommands get the default help to avoid inheriting
+// the hiding behavior from root.
+func hidePotFileForCommands() {
+	root := rootCmd.Command()
+	defaultHelp := root.HelpFunc() // capture before modifying root
+	var visit func(*cobra.Command)
+	visit = func(c *cobra.Command) {
+		if potFileVisibleCommands[c.Name()] {
+			c.SetHelpFunc(defaultHelp)
+		} else {
+			markPotFileHiddenForHelp(c)
+		}
+		for _, child := range c.Commands() {
+			visit(child)
+		}
+	}
+	visit(root)
+}
+
+// markPotFileHiddenForHelp sets a help func that hides --pot-file before rendering.
+func markPotFileHiddenForHelp(c *cobra.Command) {
+	var baseHelp func(*cobra.Command, []string)
+	if c.Parent() != nil {
+		baseHelp = c.Parent().HelpFunc()
+	} else {
+		baseHelp = c.HelpFunc()
+	}
+	c.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		// For root, use PersistentFlags(); for children, use InheritedFlags()
+		f := cmd.InheritedFlags().Lookup("pot-file")
+		if f == nil {
+			f = cmd.PersistentFlags().Lookup("pot-file")
+		}
+		if f != nil {
+			f.Hidden = true
+		}
+		baseHelp(cmd, args)
+	})
 }
