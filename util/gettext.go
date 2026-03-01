@@ -59,6 +59,27 @@ func StripFuzzyFromCommentLine(line string) string {
 	return "#, " + strings.Join(rest, ", ")
 }
 
+// StripFuzzyFromFlagLine removes "fuzzy" from a "#," flag line.
+// Returns the line with fuzzy stripped, or empty string if no flags remain.
+func StripFuzzyFromFlagLine(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "#,") {
+		return line
+	}
+	flagsStr := strings.TrimPrefix(trimmed, "#,")
+	var flags []string
+	for _, f := range strings.Split(flagsStr, ",") {
+		s := strings.TrimSpace(f)
+		if s != "" && s != "fuzzy" {
+			flags = append(flags, s)
+		}
+	}
+	if len(flags) == 0 {
+		return ""
+	}
+	return "#, " + strings.Join(flags, ", ")
+}
+
 // MergeFuzzyIntoFlagLine returns a "#," flag line with "fuzzy" prepended to existing flags.
 // If addFuzzy is false, returns line unchanged. If addFuzzy is true, any existing "fuzzy"
 // in the line is not duplicated (input may be "#, c-format" or legacy "#, fuzzy").

@@ -97,4 +97,35 @@ test_expect_success "msg-cat merge: range1-3-no-fuzzy.json, range10-15.po, examp
 	test_cmp expect actual
 '
 
+test_expect_success "msg-cat --unset-fuzzy: PO output has no fuzzy marker" '
+	$HELPER msg-cat --unset-fuzzy -o merged-cleared.po fixture.po &&
+	test -s merged-cleared.po &&
+	! grep -q "#, fuzzy" merged-cleared.po &&
+	$HELPER stat merged-cleared.po | grep -q "translated" &&
+	! $HELPER stat merged-cleared.po | grep -q "fuzzy"
+'
+
+test_expect_success "msg-cat --unset-fuzzy: JSON output has no fuzzy true" '
+	$HELPER msg-cat --unset-fuzzy --json -o merged-cleared.json fixture.po &&
+	test -s merged-cleared.json &&
+	! grep -q "\"fuzzy\":true" merged-cleared.json
+'
+
+test_expect_success "msg-cat --clear-fuzzy: remove fuzzy tag and clear msgstr" '
+	cat >expect <<-EOF &&
+	merged-clear.po: 14 translated messages, 6 untranslated messages.
+	EOF
+	$HELPER msg-cat --clear-fuzzy -o merged-clear.po fixture.po &&
+	test -s merged-clear.po &&
+	! grep -q "#, fuzzy" merged-clear.po &&
+	$HELPER stat merged-clear.po >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success "msg-cat --clear-fuzzy: JSON output, former fuzzy have empty msgstr" '
+	$HELPER msg-cat --clear-fuzzy --json -o merged-clear.json fixture.po &&
+	test -s merged-clear.json &&
+	! grep -q "\"fuzzy\":true" merged-clear.json
+'
+
 test_done

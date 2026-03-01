@@ -313,6 +313,65 @@ func MergeGettextJSON(sources []*GettextJSON) *GettextJSON {
 	}
 }
 
+// ClearFuzzyTagFromGettextJSON clears only the fuzzy marker from all entries.
+// Sets entry.Fuzzy = false and strips "fuzzy" from #, flag lines in Comments.
+// Translation content (msgstr, msgstr_plural) is preserved.
+func ClearFuzzyTagFromGettextJSON(j *GettextJSON) {
+	if j == nil {
+		return
+	}
+	for i := range j.Entries {
+		j.Entries[i].Fuzzy = false
+		var newComments []string
+		for _, c := range j.Entries[i].Comments {
+			trimmed := strings.TrimSpace(c)
+			if strings.HasPrefix(trimmed, "#,") {
+				stripped := StripFuzzyFromFlagLine(c)
+				if stripped != "" {
+					newComments = append(newComments, stripped+"\n")
+				}
+			} else {
+				newComments = append(newComments, c)
+			}
+		}
+		j.Entries[i].Comments = newComments
+	}
+}
+
+// ClearFuzzyFromGettextJSON clears the fuzzy marker and empties translation
+// (msgstr, msgstr_plural) for entries that were fuzzy. msgid and msgid_plural
+// are preserved. Non-fuzzy entries are unchanged.
+func ClearFuzzyFromGettextJSON(j *GettextJSON) {
+	if j == nil {
+		return
+	}
+	for i := range j.Entries {
+		wasFuzzy := j.Entries[i].Fuzzy
+		j.Entries[i].Fuzzy = false
+		var newComments []string
+		for _, c := range j.Entries[i].Comments {
+			trimmed := strings.TrimSpace(c)
+			if strings.HasPrefix(trimmed, "#,") {
+				stripped := StripFuzzyFromFlagLine(c)
+				if stripped != "" {
+					newComments = append(newComments, stripped+"\n")
+				}
+			} else {
+				newComments = append(newComments, c)
+			}
+		}
+		j.Entries[i].Comments = newComments
+		if wasFuzzy {
+			j.Entries[i].MsgStr = ""
+			if len(j.Entries[i].MsgStrPlural) > 0 {
+				for k := range j.Entries[i].MsgStrPlural {
+					j.Entries[i].MsgStrPlural[k] = ""
+				}
+			}
+		}
+	}
+}
+
 // ReadFileToGettextJSON reads a single file (PO, POT, or gettext JSON) and returns GettextJSON.
 // Format is detected by extension (.json) or by content (starts with '{' after whitespace).
 func ReadFileToGettextJSON(path string) (*GettextJSON, error) {

@@ -20,6 +20,8 @@ type msgCatCommand struct {
 		NoObsolete   bool
 		OnlySame     bool
 		OnlyObsolete bool
+		UnsetFuzzy   bool
+		ClearFuzzy   bool
 	}
 }
 
@@ -77,6 +79,14 @@ Use --json to output gettext JSON; otherwise output is PO format.`,
 	fs.BoolVar(&v.O.OnlyObsolete, "only-obsolete", false, "only obsolete entries")
 	fs.SetAnnotation("only-same", "group", []string{"Single-state filter"})
 	fs.SetAnnotation("only-obsolete", "group", []string{"Single-state filter"})
+
+	// Others
+	fs.BoolVar(&v.O.UnsetFuzzy, "unset-fuzzy", false,
+		"remove fuzzy marker from fuzzy entries in output (keep translations)")
+	fs.BoolVar(&v.O.ClearFuzzy, "clear-fuzzy", false,
+		"remove fuzzy marker and clear msgstr for fuzzy entries (msgid/msgid_plural preserved)")
+	fs.SetAnnotation("unset-fuzzy", "group", []string{"Others"})
+	fs.SetAnnotation("clear-fuzzy", "group", []string{"Others"})
 
 	// Custom usage template with grouped flags
 	v.cmd.SetUsageTemplate(`Usage:{{if .Runnable}}
@@ -139,6 +149,17 @@ func (v msgCatCommand) Execute(args []string) error {
 	// Apply state filter
 	if filter != nil {
 		merged.Entries = util.FilterGettextEntries(merged.Entries, *filter)
+	}
+
+	// Clear fuzzy marker from entries if requested
+	if v.O.UnsetFuzzy && v.O.ClearFuzzy {
+		return newUserError("--unset-fuzzy and --clear-fuzzy are mutually exclusive")
+	}
+	if v.O.UnsetFuzzy {
+		util.ClearFuzzyTagFromGettextJSON(merged)
+	}
+	if v.O.ClearFuzzy {
+		util.ClearFuzzyFromGettextJSON(merged)
 	}
 
 	if v.O.JSON {
