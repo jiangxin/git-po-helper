@@ -180,7 +180,7 @@ The `--pot-file` option (way to get latest pot file: 'auto', 'download', 'build'
 
 | Command | Description |
 |---------|-------------|
-| `agent-run` | Run agent commands for automation. Subcommands: `update-pot`, `update-po`, `translate`, `review`, `report`, `parse-log`, `show-config`. Uses git-po-helper.yaml for configuration. Option: `--prompt` (override prompt). |
+| `agent-run` | Run agent commands for automation. Subcommands: `update-pot`, `update-po`, `translate`, `review`, `report`, `parse-log`, `show-config`. Uses git-po-helper.yaml for configuration. Options: `--prompt` (override prompt). For `translate`: `--use-agent-md` (default), `--use-local-orchestration`, `--batch-size`. |
 | `agent-test` | Test agent commands with multiple runs and calculate average scores. Subcommands: `update-pot`, `update-po`, `translate`, `review`, `show-config`. Options: `--runs` (number of runs, default 5), `--dangerously-remove-po-directory`. |
 
 See [docs/agent-commands.md](docs/agent-commands.md) for agent configuration and detailed usage.

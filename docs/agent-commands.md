@@ -64,6 +64,7 @@ agents:
 - `prompt.update_pot`: Prompt for updating the POT file
 - `prompt.update_po`: Prompt for updating a PO file (uses `{{.source}}` placeholder)
 - `prompt.translate`: Prompt for translating a PO file (uses `{{.source}}` placeholder)
+- `prompt.local_orchestration_translation`: Prompt for batch JSON translation when using `--use-local-orchestration` (uses `{{.source}}` and `{{.dest}}` placeholders; loaded from `config/prompts/local-orchestration-translation.md`)
 - `prompt.review`: Prompt for reviewing translations in a PO file (uses `{{.source}}` placeholder)
 
 #### Agent Test Configuration
@@ -173,6 +174,43 @@ git-po-helper agent-run update-po --agent claude po/zh_CN.po
 - Target `po/XX.po` file exists and is valid
 - Pre-validation passes (if configured)
 - Post-validation passes (if configured)
+
+### agent-run translate
+
+Translate new (untranslated) and fuzzy entries in a PO file using a configured agent.
+
+**Usage:**
+```bash
+git-po-helper agent-run translate [--use-agent-md | --use-local-orchestration] [--agent <agent-name>] [--batch-size <n>] [po/XX.po]
+```
+
+**Options:**
+- `--use-agent-md`: Use existing flow: agent receives full/extracted PO, does translation (default)
+- `--use-local-orchestration`: Use local orchestration: agent only translates batch JSON files
+- `--agent <agent-name>`: Specify which agent to use (required if multiple agents are configured)
+- `--batch-size <n>`: Min entries per batch when using `--use-local-orchestration` (default: 50)
+- `po/XX.po`: Optional PO file path; if omitted, `default_lang_code` is used
+
+**Note:** `--use-agent-md` and `--use-local-orchestration` are mutually exclusive. If neither is specified, defaults to `--use-agent-md`.
+
+**Examples:**
+```bash
+# Use default flow (agent receives full PO)
+git-po-helper agent-run translate po/zh_CN.po
+
+# Use local orchestration (agent translates batch JSONs only)
+git-po-helper agent-run translate --use-local-orchestration po/zh_CN.po
+
+# With custom batch size
+git-po-helper agent-run translate --use-local-orchestration --batch-size 30 po/zh_CN.po
+```
+
+**Local orchestration mode** uses a separate prompt from `config/prompts/local-orchestration-translation.md`. The agent receives `{{.source}}` (input JSON) and `{{.dest}}` (output JSON) placeholders and must write the translated gettext JSON directly to the output file.
+
+**Success Criteria:**
+- Agent command exits with code 0
+- All new and fuzzy entries are translated (counts become 0)
+- PO file syntax is valid (msgfmt)
 
 ### agent-run review
 
