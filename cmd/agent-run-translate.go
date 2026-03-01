@@ -44,25 +44,35 @@ Examples:
 			if len(args) > 1 {
 				return newUserError("translate command expects at most one argument: po/XX.po")
 			}
+			if opts.UseAgentMd && opts.UseLocalOrchestration {
+				return newUserError("--use-agent-md and --use-local-orchestration are mutually exclusive")
+			}
 
 			poFile := ""
 			if len(args) == 1 {
 				poFile = args[0]
 			}
 
-			if err := util.CmdAgentRunTranslate(opts.Agent, poFile); err != nil {
+			if err := util.CmdAgentRunTranslate(opts.Agent, poFile, opts.UseAgentMd, opts.UseLocalOrchestration, opts.BatchSize); err != nil {
 				return errExecute
 			}
 			return nil
 		},
 	}
 
+	cmd.Flags().BoolVar(&opts.UseAgentMd, "use-agent-md", false,
+		"use existing flow: agent receives full/extracted PO, does translation (default)")
+	cmd.Flags().BoolVar(&opts.UseLocalOrchestration, "use-local-orchestration", false,
+		"use local orchestration: agent only translates batch JSON files")
+	cmd.Flags().IntVar(&opts.BatchSize, "batch-size", 50,
+		"min entries per batch when using --use-local-orchestration (default: 50)")
 	cmd.Flags().StringVar(&opts.Agent,
 		"agent",
 		"",
 		"agent name to use (required if multiple agents are configured)")
 
 	_ = viper.BindPFlag("agent-run--agent", cmd.Flags().Lookup("agent"))
+	_ = viper.BindPFlag("agent-run--batch-size", cmd.Flags().Lookup("batch-size"))
 
 	return cmd
 }

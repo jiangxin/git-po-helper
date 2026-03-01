@@ -235,8 +235,9 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 }
 
 // CmdAgentRunTranslate implements the agent-run translate command logic.
-// It loads configuration and calls RunAgentTranslate, then handles errors appropriately.
-func CmdAgentRunTranslate(agentName, poFile string) error {
+// It loads configuration and calls RunAgentTranslate or RunAgentTranslateLocalOrchestration
+// based on useAgentMd/useLocalOrchestration flags, then handles errors appropriately.
+func CmdAgentRunTranslate(agentName, poFile string, useAgentMd, useLocalOrchestration bool, batchSize int) error {
 	// Load configuration
 	log.Debugf("loading agent configuration")
 	cfg, err := config.LoadAgentConfig(flag.AgentConfigFile())
@@ -246,6 +247,10 @@ func CmdAgentRunTranslate(agentName, poFile string) error {
 	}
 
 	startTime := time.Now()
+
+	if useLocalOrchestration {
+		return fmt.Errorf("--use-local-orchestration is not yet implemented\nHint: This feature will be added in a future commit")
+	}
 
 	result, err := RunAgentTranslate(cfg, agentName, poFile, false)
 	if err != nil {

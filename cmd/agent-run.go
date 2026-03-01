@@ -6,14 +6,15 @@ import (
 )
 
 type agentRunOptions struct {
-	Agent      string
-	Range      string
-	Commit     string
-	Since      string
-	Prompt     string
-	Output     string
-	UseAgentMd bool
-	BatchSize  int
+	Agent                 string
+	Range                 string
+	Commit                string
+	Since                 string
+	Prompt                string
+	Output                string
+	UseAgentMd            bool
+	UseLocalOrchestration bool
+	BatchSize             int
 }
 
 type agentRunCommand struct {
