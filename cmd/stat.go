@@ -19,14 +19,17 @@ func (v *statCommand) Command() *cobra.Command {
 	}
 
 	v.cmd = &cobra.Command{
-		Use:   "stat <po-file> [po-file...]",
-		Short: "Report statistics for PO file(s)",
-		Long: `Report entry statistics for a PO file:
+		Use:   "stat <file> [file...]",
+		Short: "Report statistics for PO/JSON file(s)",
+		Long: `Report entry statistics for PO or gettext JSON files:
   translated   - entries with non-empty translation
   untranslated - entries with empty msgstr
   same         - entries where msgstr equals msgid (suspect untranslated)
   fuzzy        - entries with fuzzy flag
   obsolete     - obsolete entries (#~ format)
+
+Input can be PO/POT files or gettext JSON (same schema as msg-select --json).
+Format is auto-detected: JSON if file starts with '{' after whitespace.
 
 When run inside a git worktree, paths are relative to the project root (e.g. po/zh_CN.po).
 When run outside a git repository, paths are relative to the current directory or absolute.
@@ -43,15 +46,15 @@ For review JSON report, use: git-po-helper agent-run report [path]`,
 
 func (v statCommand) Execute(args []string) error {
 	if len(args) < 1 {
-		return newUserError("stat requires at least one argument: <po-file> [po-file...]")
+		return newUserError("stat requires at least one argument: <file> [file...]")
 	}
 
-	for i, poFile := range args {
-		if !util.Exist(poFile) {
-			return newUserError("file does not exist:", poFile)
+	for i, file := range args {
+		if !util.Exist(file) {
+			return newUserError("file does not exist:", file)
 		}
 
-		stats, err := util.CountPoReportStats(poFile)
+		stats, err := util.CountReportStats(file)
 		if err != nil {
 			return newUserErrorF("%v", err)
 		}
@@ -60,7 +63,7 @@ func (v statCommand) Execute(args []string) error {
 			if i > 0 {
 				fmt.Println()
 			}
-			title := fmt.Sprintf("PO file: %s", poFile)
+			title := fmt.Sprintf("File: %s", file)
 			fmt.Println(title)
 			fmt.Println(strings.Repeat("-", len(title)))
 			fmt.Printf("  translated:   %d\n", stats.Translated)
@@ -69,7 +72,7 @@ func (v statCommand) Execute(args []string) error {
 			fmt.Printf("  fuzzy:        %d\n", stats.Fuzzy)
 			fmt.Printf("  obsolete:     %d\n", stats.Obsolete)
 		} else {
-			fmt.Printf("%s: %s", poFile, util.FormatStatLine(stats))
+			fmt.Printf("%s: %s", file, util.FormatStatLine(stats))
 		}
 	}
 

@@ -67,13 +67,21 @@ test_expect_success "check stat of FIXTURE" '
 	test_cmp expect actual
 '
 
-test_expect_success "check stat of range1-3-no-fuzzy" '
+test_expect_success "check stat of range1-3-no-fuzzy (PO)" '
 	cat >expect <<-EOF &&
 	range1-3-no-fuzzy.po: 3 translated messages.
 	EOF
 	$HELPER msg-select --range "1-" range1-3-no-fuzzy.json \
 		>range1-3-no-fuzzy.po &&
 	$HELPER stat range1-3-no-fuzzy.po >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success "check stat of range1-3-no-fuzzy (JSON)" '
+	cat >expect <<-EOF &&
+	range1-3-no-fuzzy.json: 3 translated messages.
+	EOF
+	$HELPER stat range1-3-no-fuzzy.json >actual &&
 	test_cmp expect actual
 '
 
