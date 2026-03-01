@@ -16,7 +16,7 @@ import (
 
 // CmdAgentTestTranslate implements the agent-test translate command logic.
 // It runs the agent-run translate operation multiple times and calculates an average score.
-func CmdAgentTestTranslate(agentName, poFile string, runs int, skipConfirmation bool) error {
+func CmdAgentTestTranslate(agentName, poFile string, runs int, skipConfirmation bool, useLocalOrchestration bool, batchSize int) error {
 	// Require user confirmation before proceeding
 	if err := ConfirmAgentTestExecution(skipConfirmation); err != nil {
 		return err
@@ -48,7 +48,7 @@ func CmdAgentTestTranslate(agentName, poFile string, runs int, skipConfirmation 
 	startTime := time.Now()
 
 	// Run the test
-	results, averageScore, err := RunAgentTestTranslate(agentName, poFile, runs, cfg)
+	results, averageScore, err := RunAgentTestTranslate(agentName, poFile, runs, cfg, useLocalOrchestration, batchSize)
 	if err != nil {
 		log.Errorf("agent-test execution failed: %v", err)
 		return fmt.Errorf("agent-test failed: %w", err)
@@ -65,9 +65,9 @@ func CmdAgentTestTranslate(agentName, poFile string, runs int, skipConfirmation 
 }
 
 // RunAgentTestTranslate runs the agent-test translate operation multiple times.
-// It reuses RunAgentTranslate for each run and accumulates scores.
+// It reuses RunAgentTranslate or RunAgentTranslateLocalOrchestration for each run.
 // Returns scores for each run, average score, and error.
-func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.AgentConfig) ([]RunResult, float64, error) {
+func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.AgentConfig, useLocalOrchestration bool, batchSize int) ([]RunResult, float64, error) {
 	// Determine the agent to use (for saving results)
 	selectedAgent, err := SelectAgent(cfg, agentName)
 	if err != nil {
@@ -102,8 +102,19 @@ func RunAgentTestTranslate(agentName, poFile string, runs int, cfg *config.Agent
 			// Continue with the run even if cleanup fails, but log the warning
 		}
 
-		// Reuse RunAgentTranslate for each run
-		agentResult, err := RunAgentTranslate(cfg, agentName, poFile, true)
+		// Reuse RunAgentTranslate or RunAgentTranslateLocalOrchestration for each run
+		var agentResult *AgentRunResult
+		var runErr error
+		if useLocalOrchestration {
+			bs := batchSize
+			if bs <= 0 {
+				bs = 50
+			}
+			agentResult, runErr = RunAgentTranslateLocalOrchestration(cfg, agentName, poFile, bs)
+		} else {
+			agentResult, runErr = RunAgentTranslate(cfg, agentName, poFile, true)
+		}
+		err = runErr
 
 		// Calculate execution time for this iteration
 		iterExecutionTime := time.Since(iterStartTime)

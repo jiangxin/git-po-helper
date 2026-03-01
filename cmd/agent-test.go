@@ -15,6 +15,7 @@ type agentTestOptions struct {
 	Prompt                 string
 	Output                 string
 	UseAgentMd             bool
+	UseLocalOrchestration  bool
 	BatchSize              int
 }
 

@@ -33,11 +33,17 @@ Exactly one of --range, --commit and --since may be specified.
 With two file arguments, compare worktree files (revisions not allowed).`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if opts.UseAgentMd && opts.UseLocalOrchestration {
+				return newUserError("--use-agent-md and --use-local-orchestration are mutually exclusive")
+			}
+			// When neither specified, default to agent-md
+			useAgentMd := !opts.UseLocalOrchestration
+
 			target, err := util.ResolveRevisionsAndFiles(opts.Range, opts.Commit, opts.Since, args)
 			if err != nil {
 				return newUserErrorF("%v", err)
 			}
-			if err := util.CmdAgentRunReview(opts.Agent, target, opts.Output, opts.UseAgentMd, opts.BatchSize); err != nil {
+			if err := util.CmdAgentRunReview(opts.Agent, target, opts.Output, useAgentMd, opts.BatchSize); err != nil {
 				return errExecute
 			}
 			return nil
@@ -45,7 +51,9 @@ With two file arguments, compare worktree files (revisions not allowed).`,
 	}
 
 	cmd.Flags().BoolVar(&opts.UseAgentMd, "use-agent-md", false,
-		"use agent with po/AGENTS.md: agent does extraction, review, and writes review.json")
+		"use agent with po/AGENTS.md: agent does extraction, review, writes review.json (default)")
+	cmd.Flags().BoolVar(&opts.UseLocalOrchestration, "use-local-orchestration", false,
+		"use local orchestration: agent only reviews batch JSON files")
 	cmd.Flags().StringVarP(&opts.Output, "output", "o", "",
 		"base path for review output files (default: po/review); .po/.json are appended")
 	cmd.Flags().StringVar(&opts.Agent,
