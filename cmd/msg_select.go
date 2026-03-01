@@ -151,7 +151,7 @@ func (v msgSelectCommand) Execute(args []string) error {
 		defer f.Close()
 		w = f
 	}
-	// Detect input format: JSON if file starts with '{' after whitespace
+	// Load → Filter → Save: ReadFileToGettextJSON auto-detects PO vs JSON
 	peek, err := os.ReadFile(poFile)
 	if err != nil {
 		return newUserErrorF("failed to read %s: %v", poFile, err)
@@ -160,13 +160,8 @@ func (v msgSelectCommand) Execute(args []string) error {
 		peek = peek[:512]
 	}
 	trimmed := bytes.TrimLeft(peek, " \t\r\n")
-	if len(trimmed) > 0 && trimmed[0] == '{' {
-		return util.SelectGettextJSONFromFile(poFile, v.O.Range, w, v.O.JSON, filter)
-	}
-	if v.O.JSON {
-		return util.WriteGettextJSONFromPOFile(poFile, v.O.Range, w, filter)
-	}
-	return util.MsgSelect(poFile, v.O.Range, w, v.O.NoHeader, filter)
+	inputWasPO := len(trimmed) == 0 || trimmed[0] != '{'
+	return util.MsgSelectFromFile(poFile, v.O.Range, w, v.O.JSON, v.O.NoHeader, inputWasPO, filter)
 }
 
 func (v msgSelectCommand) buildFilter() (*util.EntryStateFilter, error) {

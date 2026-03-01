@@ -395,6 +395,50 @@ func ReadFileToGettextJSON(path string) (*GettextJSON, error) {
 	return PoEntriesToGettextJSON(headerComment, headerMeta, entries), nil
 }
 
+// MsgSelectFromFile implements the 3-step flow: Load → Filter → Save.
+// 1. Load: reads PO or JSON file into GettextJSON (format auto-detected).
+// 2. Filter: applies EntryStateFilter and range spec to the loaded data.
+// 3. Save: writes filtered result as JSON (useJSON) or PO (noHeader for PO output).
+// If filter is nil, DefaultFilter() is used. When no content entries match, PO output is empty; JSON output has entries: [].
+// inputWasPO: when true, PO output matches MsgSelect format (trailing newline after last entry); when false, matches WriteGettextJSONToPO format.
+func MsgSelectFromFile(path, rangeSpec string, w io.Writer, useJSON, noHeader, inputWasPO bool, filter *EntryStateFilter) error {
+	// Step 1: Load from PO or JSON
+	j, err := ReadFileToGettextJSON(path)
+	if err != nil {
+		return err
+	}
+	// Step 2: Filter by state and range
+	f := DefaultFilter()
+	if filter != nil {
+		f = *filter
+	}
+	filtered := FilterGettextEntries(j.Entries, f)
+	maxEntry := len(filtered)
+	indices, err := ParseEntryRange(rangeSpec, maxEntry)
+	if err != nil {
+		return fmt.Errorf("invalid range %q: %w", rangeSpec, err)
+	}
+	var selected []GettextEntry
+	for _, idx := range indices {
+		if idx > 0 && idx <= len(filtered) {
+			selected = append(selected, filtered[idx-1])
+		}
+	}
+	out := &GettextJSON{
+		HeaderComment: j.HeaderComment,
+		HeaderMeta:    j.HeaderMeta,
+		Entries:       selected,
+	}
+	// Step 3: Save in requested format
+	if useJSON {
+		return WriteGettextJSONToJSON(out, w)
+	}
+	if len(selected) == 0 {
+		return nil // PO output empty when no content entries
+	}
+	return WriteGettextJSONToPO(out, w, noHeader, inputWasPO)
+}
+
 // SelectGettextJSONFromFile reads a gettext JSON file, applies state filter and range.
 // If filter is nil, DefaultFilter() is used. Range applies to the filtered list.
 func SelectGettextJSONFromFile(jsonFile, rangeSpec string, w io.Writer, useJSON bool, filter *EntryStateFilter) error {
@@ -435,15 +479,31 @@ func SelectGettextJSONFromFile(jsonFile, rangeSpec string, w io.Writer, useJSON 
 		}
 		return nil
 	}
-	return WriteGettextJSONToPO(out, w)
+	return WriteGettextJSONToPO(out, w, false, false)
 }
 
 // WriteGettextJSONToPO writes the GettextJSON object as valid PO content to w.
+// If noHeader is true, the header block is omitted (only content entries are written).
+// If addTrailingNewline is true, adds newline after last entry (matches MsgSelect format).
 // Header comment is written as raw lines (split on newline); header meta is written
 // as msgid "" / msgstr "" with PO-escaped continuation lines. Each entry is written
 // with comments, msgid/msgstr (multi-line with PO escaping when needed), and #, fuzzy if set.
-func WriteGettextJSONToPO(j *GettextJSON, w io.Writer) error {
+func WriteGettextJSONToPO(j *GettextJSON, w io.Writer, noHeader, addTrailingNewline bool) error {
 	if j == nil {
+		return nil
+	}
+	if noHeader {
+		// Write only content entries, no header block
+		for ei, entry := range j.Entries {
+			if err := writeGettextEntryToPO(w, entry); err != nil {
+				return err
+			}
+			if ei < len(j.Entries)-1 || addTrailingNewline {
+				if _, err := io.WriteString(w, "\n"); err != nil {
+					return err
+				}
+			}
+		}
 		return nil
 	}
 	// Header comment: lines above first msgid ""
@@ -489,7 +549,6 @@ func WriteGettextJSONToPO(j *GettextJSON, w io.Writer) error {
 		}
 	}
 	for ei, entry := range j.Entries {
-		// Comments: restore fuzzy from entry.Fuzzy (merge into flag line or add standalone)
 		wroteFuzzyFlag := false
 		for _, c := range entry.Comments {
 			trimmed := strings.TrimSpace(c)
@@ -521,13 +580,11 @@ func WriteGettextJSONToPO(j *GettextJSON, w io.Writer) error {
 		if entry.Obsolete {
 			prefix = "#~ "
 		}
-		// #~| msgid (previous untranslated string, gettext 0.19.8+)
 		if entry.Obsolete && entry.MsgIDPrevious != "" {
 			if err := writePoStringWithPrefix(w, "#~| ", "msgid", entry.MsgIDPrevious); err != nil {
 				return err
 			}
 		}
-		// msgid (single- or multi-line)
 		if err := writePoStringWithPrefix(w, prefix, "msgid", entry.MsgID); err != nil {
 			return err
 		}
@@ -551,6 +608,71 @@ func WriteGettextJSONToPO(j *GettextJSON, w io.Writer) error {
 			if _, err := io.WriteString(w, "\n"); err != nil {
 				return err
 			}
+		}
+	}
+	if addTrailingNewline && len(j.Entries) > 0 {
+		if _, err := io.WriteString(w, "\n"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeGettextEntryToPO writes a single GettextEntry as PO content (used by noHeader path).
+func writeGettextEntryToPO(w io.Writer, entry GettextEntry) error {
+	wroteFuzzyFlag := false
+	for _, c := range entry.Comments {
+		trimmed := strings.TrimSpace(c)
+		if strings.HasPrefix(trimmed, "#,") {
+			line := MergeFuzzyIntoFlagLine(c, entry.Fuzzy)
+			if entry.Fuzzy {
+				wroteFuzzyFlag = true
+			}
+			if _, err := io.WriteString(w, line+"\n"); err != nil {
+				return err
+			}
+		} else {
+			if _, err := io.WriteString(w, c); err != nil {
+				return err
+			}
+			if !strings.HasSuffix(c, "\n") {
+				if _, err := io.WriteString(w, "\n"); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if entry.Fuzzy && !wroteFuzzyFlag {
+		if _, err := io.WriteString(w, "#, fuzzy\n"); err != nil {
+			return err
+		}
+	}
+	prefix := ""
+	if entry.Obsolete {
+		prefix = "#~ "
+	}
+	if entry.Obsolete && entry.MsgIDPrevious != "" {
+		if err := writePoStringWithPrefix(w, "#~| ", "msgid", entry.MsgIDPrevious); err != nil {
+			return err
+		}
+	}
+	if err := writePoStringWithPrefix(w, prefix, "msgid", entry.MsgID); err != nil {
+		return err
+	}
+	if entry.MsgIDPlural != "" {
+		if err := writePoStringWithPrefix(w, prefix, "msgid_plural", entry.MsgIDPlural); err != nil {
+			return err
+		}
+	}
+	if len(entry.MsgStrPlural) > 0 {
+		for i, s := range entry.MsgStrPlural {
+			if err := writePoStringWithPrefix(w, prefix, "msgstr["+strconv.Itoa(i)+"]", s); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := writePoStringWithPrefix(w, prefix, "msgstr", entry.MsgStr); err != nil {
+			return err
 		}
 	}
 	return nil

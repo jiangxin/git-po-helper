@@ -165,7 +165,7 @@ func (v msgCatCommand) Execute(args []string) error {
 	if v.O.JSON {
 		return util.WriteGettextJSONToJSON(merged, w)
 	}
-	return util.WriteGettextJSONToPO(merged, w)
+	return util.WriteGettextJSONToPO(merged, w, false, false)
 }
 
 func (v msgCatCommand) buildFilter() (*util.EntryStateFilter, error) {

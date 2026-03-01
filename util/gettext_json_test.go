@@ -270,7 +270,7 @@ func TestWriteGettextJSONToPO_Example2RoundTrip(t *testing.T) {
 		t.Fatalf("parse JSON: %v", err)
 	}
 	var poBuf bytes.Buffer
-	if err := WriteGettextJSONToPO(j, &poBuf); err != nil {
+	if err := WriteGettextJSONToPO(j, &poBuf, false, false); err != nil {
 		t.Fatalf("WriteGettextJSONToPO: %v", err)
 	}
 	poBytes := poBuf.Bytes()
@@ -325,7 +325,7 @@ func TestWriteGettextJSONToPO_Example3PluralRoundTrip(t *testing.T) {
 		t.Fatalf("parse JSON: %v", err)
 	}
 	var poBuf bytes.Buffer
-	if err := WriteGettextJSONToPO(j, &poBuf); err != nil {
+	if err := WriteGettextJSONToPO(j, &poBuf, false, false); err != nil {
 		t.Fatalf("WriteGettextJSONToPO: %v", err)
 	}
 	entries, _, err := ParsePoEntries(poBuf.Bytes())
@@ -354,7 +354,7 @@ func TestWriteGettextJSONToPO_SpecialChars(t *testing.T) {
 		}},
 	}
 	var buf bytes.Buffer
-	if err := WriteGettextJSONToPO(j, &buf); err != nil {
+	if err := WriteGettextJSONToPO(j, &buf, false, false); err != nil {
 		t.Fatalf("WriteGettextJSONToPO: %v", err)
 	}
 	entries, _, err := ParsePoEntries(buf.Bytes())
@@ -402,7 +402,7 @@ msgstr ""
 		t.Fatalf("ParseGettextJSONBytes: %v", err)
 	}
 	var poBuf bytes.Buffer
-	if err := WriteGettextJSONToPO(j1, &poBuf); err != nil {
+	if err := WriteGettextJSONToPO(j1, &poBuf, false, false); err != nil {
 		t.Fatalf("WriteGettextJSONToPO: %v", err)
 	}
 	entries2, header2, err := ParsePoEntries(poBuf.Bytes())
@@ -451,7 +451,7 @@ msgstr[1] "%d 个文件"
 	}
 	j, _ := ParseGettextJSONBytes(jsonBuf.Bytes())
 	var poBuf bytes.Buffer
-	if err := WriteGettextJSONToPO(j, &poBuf); err != nil {
+	if err := WriteGettextJSONToPO(j, &poBuf, false, false); err != nil {
 		t.Fatalf("WriteGettextJSONToPO: %v", err)
 	}
 	entries2, _, err := ParsePoEntries(poBuf.Bytes())
@@ -475,7 +475,7 @@ func TestWriteGettextJSONToPO_EmptyEntries(t *testing.T) {
 		Entries:       []GettextEntry{},
 	}
 	var buf bytes.Buffer
-	if err := WriteGettextJSONToPO(j, &buf); err != nil {
+	if err := WriteGettextJSONToPO(j, &buf, false, false); err != nil {
 		t.Fatalf("WriteGettextJSONToPO: %v", err)
 	}
 	entries, header, err := ParsePoEntries(buf.Bytes())
@@ -515,7 +515,7 @@ msgstr "活跃"
 		t.Errorf("Obsolete flags: entry0=%v entry1=%v", j.Entries[0].Obsolete, j.Entries[1].Obsolete)
 	}
 	var poBuf bytes.Buffer
-	if err := WriteGettextJSONToPO(j, &poBuf); err != nil {
+	if err := WriteGettextJSONToPO(j, &poBuf, false, false); err != nil {
 		t.Fatalf("WriteGettextJSONToPO: %v", err)
 	}
 	entries2, _, err := ParsePoEntries(poBuf.Bytes())
@@ -564,7 +564,7 @@ msgstr "活跃"
 		t.Errorf("JSON MsgIDPrevious: got %q", j.Entries[1].MsgIDPrevious)
 	}
 	var poBuf bytes.Buffer
-	if err := WriteGettextJSONToPO(j, &poBuf); err != nil {
+	if err := WriteGettextJSONToPO(j, &poBuf, false, false); err != nil {
 		t.Fatalf("WriteGettextJSONToPO: %v", err)
 	}
 	if !strings.Contains(poBuf.String(), "#~| msgid \"Old source\"") {
@@ -805,7 +805,7 @@ msgstr ""
 		}
 	}
 	var poBuf bytes.Buffer
-	if err := WriteGettextJSONToPO(j, &poBuf); err != nil {
+	if err := WriteGettextJSONToPO(j, &poBuf, false, false); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(poBuf.String(), "#, fuzzy\n") {
@@ -846,7 +846,7 @@ msgstr ""
 		t.Error("expected #, c-format to remain in Comments")
 	}
 	var poBuf2 bytes.Buffer
-	if err := WriteGettextJSONToPO(j2, &poBuf2); err != nil {
+	if err := WriteGettextJSONToPO(j2, &poBuf2, false, false); err != nil {
 		t.Fatal(err)
 	}
 	out := poBuf2.String()

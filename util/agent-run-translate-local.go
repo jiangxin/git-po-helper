@@ -339,7 +339,7 @@ func mergeDoneBatches(donePaths []string, outputPath string) error {
 		return fmt.Errorf("create %s: %w", outputPath, err)
 	}
 	defer f.Close()
-	if err := WriteGettextJSONToPO(merged, f); err != nil {
+	if err := WriteGettextJSONToPO(merged, f, false, false); err != nil {
 		os.Remove(outputPath)
 		return fmt.Errorf("write merged PO: %w", err)
 	}
