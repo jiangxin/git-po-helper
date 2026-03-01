@@ -4,7 +4,8 @@ test_description="show gettext 0.14 incompatible errors"
 
 . ./lib/test-lib.sh
 
-HELPER="po-helper --no-special-gettext-versions --pot-file=no"
+HELPER="po-helper --no-special-gettext-versions"
+POT_NO="--pot-file=no"
 
 test_expect_success "setup" '
 	git clone "$PO_HELPER_TEST_REPOSITORY" workdir &&
@@ -64,7 +65,7 @@ ERROR: fail to execute "git-po-helper check-po"
 EOF
 
 test_expect_success "show gettext 0.14 incompatible errors" '
-	test_must_fail git -C workdir $HELPER check-po --report-file-locations=none fr >out 2>&1 &&
+	test_must_fail git -C workdir $HELPER check-po $POT_NO --report-file-locations=none fr >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 	test_cmp expect actual
 '

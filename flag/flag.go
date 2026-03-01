@@ -98,9 +98,17 @@ const (
 	PotFileFlagDownload
 )
 
+// getPotFileOpt returns the --pot-file value (defined on root command).
+func getPotFileOpt() string {
+	if viper.IsSet("pot-file") {
+		return viper.GetString("pot-file")
+	}
+	return "auto"
+}
+
 // GetPotFileLocation returns option "--pot-file".
 func GetPotFileLocation() string {
-	value := viper.GetString("pot-file")
+	value := getPotFileOpt()
 
 	switch GetPotFileFlag() {
 	case PotFileFlagNone:
@@ -118,7 +126,7 @@ func GetPotFileLocation() string {
 func GetPotFileFlag() int {
 	var (
 		ret int
-		opt = strings.ToLower(viper.GetString("pot-file"))
+		opt = strings.ToLower(getPotFileOpt())
 	)
 
 	if opt == "" {

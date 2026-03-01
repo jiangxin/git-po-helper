@@ -4,7 +4,8 @@ test_description="test git-po-helper check-commits"
 
 . ./lib/test-lib.sh
 
-HELPER="po-helper --no-special-gettext-versions --pot-file=no"
+HELPER="po-helper --no-special-gettext-versions"
+POT_NO="--pot-file=no"
 
 test_expect_success "setup" '
 	git clone "$PO_HELPER_TEST_REPOSITORY" workdir &&
@@ -28,7 +29,7 @@ test_expect_success "new commit with changes outside of po/" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-\EOF &&
@@ -69,7 +70,7 @@ test_expect_success "new commit with unsupported hidden meta fields" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -130,7 +131,7 @@ test_expect_success "new commits with datetime in the future" '
 
 test_expect_success "show errors of commit-date drift" '
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~2..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~2..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out |
 		sed -e "s/in the future, .* from now/in the future, XX from now/g" >actual &&
 
@@ -151,7 +152,7 @@ test_expect_success "show errors of commit-date drift" '
 
 test_expect_success "suppress errors of commit-date drift for github actions" '
 	test_must_fail git -C workdir $HELPER --github-action-event=pull_request_target \
-		check-commits HEAD~2..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~2..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out |
 		sed -e "s/in the future, .* from now/in the future, XX from now/g" >actual &&
 
@@ -190,7 +191,7 @@ test_expect_success "new commit with bad email address" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -207,7 +208,7 @@ test_expect_success "new commit with bad email address" '
 
 test_expect_success "too many commits to check" '
 	test_must_fail env MAX_COMMITS=1 git -C workdir $HELPER \
-		check-commits >out 2>&1 &&
+		check-commits $POT_NO >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-\EOF &&
@@ -225,7 +226,7 @@ test_expect_success "too many commits to check" '
 
 test_expect_success "too many commits to check" '
 	test_must_fail env MAX_COMMITS=1 git -C workdir $HELPER \
-		check-commits --force >out 2>&1 &&
+		check-commits $POT_NO --force >out 2>&1 &&
 	make_user_friendly_and_stable_output <out |
 		sed -e "s/in the future, .* from now/in the future, XX from now/g" >actual &&
 
@@ -254,7 +255,7 @@ test_expect_success "long subject, exceed hard limit" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -285,7 +286,7 @@ test_expect_success "long subject, exceed soft limit" '
 	) &&
 
 	git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -311,7 +312,7 @@ test_expect_success "no empty line between subject and body" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -340,7 +341,7 @@ test_expect_success "no l10n prefix in subject" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -369,7 +370,7 @@ test_expect_success "non-ascii characters in subject" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -398,7 +399,7 @@ test_expect_success "subject end with period" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -428,7 +429,7 @@ test_expect_success "empty commit log" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -455,7 +456,7 @@ test_expect_success "oneline commit message" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -485,7 +486,7 @@ test_expect_success "no s-o-b signature (has body message, but no s-o-b)" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -517,7 +518,7 @@ test_expect_success "no s-o-b signature (has body message, no s-o-b, but has oth
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -545,7 +546,7 @@ test_expect_success "has s-o-b signature (only s-o-b, no body message)" '
 		git commit --allow-empty -F .git/commit-message
 	) &&
 
-	git -C workdir $HELPER check-commits HEAD~..HEAD
+	git -C workdir $HELPER check-commits $POT_NO HEAD~..HEAD
 '
 
 test_expect_success "has s-o-b signature (only s-o-b and other signature, no body message)" '
@@ -561,7 +562,7 @@ test_expect_success "has s-o-b signature (only s-o-b and other signature, no bod
 		git commit --allow-empty -F .git/commit-message
 	) &&
 
-	git -C workdir $HELPER check-commits HEAD~..HEAD
+	git -C workdir $HELPER check-commits $POT_NO HEAD~..HEAD
 '
 
 test_expect_success "has s-o-b signature (have s-o-b and other signature)" '
@@ -580,7 +581,7 @@ test_expect_success "has s-o-b signature (have s-o-b and other signature)" '
 		git commit --allow-empty -F .git/commit-message
 	) &&
 
-	git -C workdir $HELPER check-commits HEAD~..HEAD
+	git -C workdir $HELPER check-commits $POT_NO HEAD~..HEAD
 '
 
 test_expect_success "no s-o-b signature (tailing trash message)" '
@@ -602,7 +603,7 @@ test_expect_success "no s-o-b signature (tailing trash message)" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -633,7 +634,7 @@ test_expect_success "too long message in commit log body" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -669,7 +670,7 @@ test_expect_success "merge commit with details" '
 	) &&
 
 	git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -702,7 +703,7 @@ test_expect_success "merge commit subject not start with Merge and no details" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -739,7 +740,7 @@ test_expect_success "utf-8 characters in commit log" '
 	) &&
 
 	git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -768,7 +769,7 @@ test_expect_success "utf-8 characters in commit log with wrong encoding" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -802,7 +803,7 @@ test_expect_success "gbk characters in commit log with proper encoding" '
 		git cat-file commit HEAD >.git/commit-meta
 	) &&
 
-	git -C workdir $HELPER check-commits HEAD~..HEAD >out 2>&1 &&
+	git -C workdir $HELPER check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -832,7 +833,7 @@ test_expect_success "gbk characters in commit log with wrong encoding" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -862,7 +863,7 @@ test_expect_success "bad utf-8 characters in commit log" '
 	) &&
 
 	test_must_fail git -C workdir $HELPER \
-		check-commits HEAD~..HEAD >out 2>&1 &&
+		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
@@ -880,7 +881,7 @@ test_expect_success "bad utf-8 characters in commit log" '
 
 test_expect_success "bad commit range" '
 	test_must_fail git -C workdir $HELPER \
-		check-commits -qq non_exist_commit..HEAD >out 2>&1 &&
+		check-commits $POT_NO -qq non_exist_commit..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
 	cat >expect <<-EOF &&
