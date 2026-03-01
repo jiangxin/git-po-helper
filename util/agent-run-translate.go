@@ -249,7 +249,22 @@ func CmdAgentRunTranslate(agentName, poFile string, useAgentMd, useLocalOrchestr
 	startTime := time.Now()
 
 	if useLocalOrchestration {
-		return fmt.Errorf("--use-local-orchestration is not yet implemented\nHint: This feature will be added in a future commit")
+		if batchSize <= 0 {
+			batchSize = 50
+		}
+		result, err := RunAgentTranslateLocalOrchestration(cfg, agentName, poFile, batchSize)
+		if err != nil {
+			log.Errorf("failed to run agent translate local orchestration: %v", err)
+			return err
+		}
+		if result.AgentError != nil {
+			return fmt.Errorf("agent execution failed: %w", result.AgentError)
+		}
+		elapsed := time.Since(startTime)
+		fmt.Printf("\nSummary:\n")
+		fmt.Printf("  Execution time: %s\n", elapsed.Round(time.Millisecond))
+		log.Infof("agent-run translate (local orchestration) completed successfully")
+		return nil
 	}
 
 	result, err := RunAgentTranslate(cfg, agentName, poFile, false)
