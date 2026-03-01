@@ -297,7 +297,7 @@ func GetPotFilePath() string {
 }
 
 // GetRawPrompt returns the prompt for the specified action from configuration, or an error if not configured.
-// Supported actions: "update-pot", "update-po", "translate", "review"
+// Supported actions: "update-pot", "update-po", "translate", "review", "local-orchestration-translation"
 // If --prompt flag is provided via viper, it overrides the configuration value.
 func GetRawPrompt(cfg *config.AgentConfig, action string) (string, error) {
 	// Check if --prompt flag is provided via viper (from command line)
@@ -329,8 +329,11 @@ func GetRawPrompt(cfg *config.AgentConfig, action string) (string, error) {
 	case "review":
 		prompt = cfg.Prompt.Review
 		promptName = "prompt.review"
+	case "local-orchestration-translation":
+		prompt = cfg.Prompt.LocalOrchestrationTranslation
+		promptName = "prompt.local_orchestration_translation"
 	default:
-		return "", fmt.Errorf("unknown action: %s\nHint: Supported actions are: update-pot, update-po, translate, review", action)
+		return "", fmt.Errorf("unknown action: %s\nHint: Supported actions are: update-pot, update-po, translate, review, local-orchestration-translation", action)
 	}
 
 	if prompt == "" {

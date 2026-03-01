@@ -26,6 +26,9 @@ var promptTranslate string
 //go:embed prompts/review.txt
 var promptReview string
 
+//go:embed prompts/local-orchestration-translation.md
+var promptLocalOrchestrationTranslation string
+
 // AgentConfig holds the complete agent configuration.
 type AgentConfig struct {
 	DefaultLangCode string           `yaml:"default_lang_code"`
@@ -36,10 +39,11 @@ type AgentConfig struct {
 
 // PromptConfig holds prompt templates for different operations.
 type PromptConfig struct {
-	UpdatePot string `yaml:"update_pot"`
-	UpdatePo  string `yaml:"update_po"`
-	Translate string `yaml:"translate"`
-	Review    string `yaml:"review"`
+	UpdatePot                     string `yaml:"update_pot"`
+	UpdatePo                      string `yaml:"update_po"`
+	Translate                     string `yaml:"translate"`
+	Review                        string `yaml:"review"`
+	LocalOrchestrationTranslation string `yaml:"local_orchestration_translation"`
 }
 
 // AgentTestConfig holds configuration for agent-test command.
@@ -144,10 +148,11 @@ func getDefaultConfig() *AgentConfig {
 	return &AgentConfig{
 		DefaultLangCode: systemLocale,
 		Prompt: PromptConfig{
-			UpdatePot: loadEmbeddedPrompt(promptUpdatePot),
-			UpdatePo:  loadEmbeddedPrompt(promptUpdatePo),
-			Translate: loadEmbeddedPrompt(promptTranslate),
-			Review:    loadEmbeddedPrompt(promptReview),
+			UpdatePot:                     loadEmbeddedPrompt(promptUpdatePot),
+			UpdatePo:                      loadEmbeddedPrompt(promptUpdatePo),
+			Translate:                     loadEmbeddedPrompt(promptTranslate),
+			Review:                        loadEmbeddedPrompt(promptReview),
+			LocalOrchestrationTranslation: loadEmbeddedPrompt(promptLocalOrchestrationTranslation),
 		},
 		AgentTest: AgentTestConfig{
 			Runs: &defaultRuns,
@@ -321,6 +326,9 @@ func mergeConfigs(baseConfig, overlay *AgentConfig, mergeAgents bool) *AgentConf
 		}
 		if overlay.Prompt.Review != "" {
 			result.Prompt.Review = overlay.Prompt.Review
+		}
+		if overlay.Prompt.LocalOrchestrationTranslation != "" {
+			result.Prompt.LocalOrchestrationTranslation = overlay.Prompt.LocalOrchestrationTranslation
 		}
 		if overlay.AgentTest.Runs != nil {
 			result.AgentTest.Runs = overlay.AgentTest.Runs
