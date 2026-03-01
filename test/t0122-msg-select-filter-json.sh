@@ -203,6 +203,28 @@ test_expect_success "--translated --no-obsolete: no obsolete (JSON input)" '
 	test_cmp expect trans-no-obs.po
 '
 
+test_expect_success "--unset-fuzzy: JSON input to PO, no fuzzy marker" '
+	$HELPER msg-select --unset-fuzzy filter-test.json -o unset-fuzzy.po &&
+	! grep -q "#, fuzzy" unset-fuzzy.po &&
+	grep -q "msgstr \"模糊\"" unset-fuzzy.po
+'
+
+test_expect_success "--unset-fuzzy: JSON input to JSON, no fuzzy true" '
+	$HELPER msg-select --unset-fuzzy --json filter-test.json -o unset-fuzzy.json &&
+	! grep -q "\"fuzzy\":true" unset-fuzzy.json
+'
+
+test_expect_success "--clear-fuzzy: JSON input, remove fuzzy and clear msgstr" '
+	$HELPER msg-select --clear-fuzzy filter-test.json -o clear-fuzzy.po &&
+	! grep -q "#, fuzzy" clear-fuzzy.po &&
+	grep -A1 "msgid \"Fuzzy entry\"" clear-fuzzy.po | grep -q "msgstr \"\""
+'
+
+test_expect_success "--unset-fuzzy and --clear-fuzzy are mutually exclusive (JSON input)" '
+	test_must_fail $HELPER msg-select --unset-fuzzy --clear-fuzzy filter-test.json 2>err &&
+	grep -q "mutually exclusive" err
+'
+
 test_expect_success "--only-same and --only-obsolete are mutually exclusive (JSON input)" '
 	test_must_fail $HELPER msg-select --only-same --only-obsolete filter-test.json 2>err &&
 	grep -q "mutually exclusive" err

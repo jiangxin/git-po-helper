@@ -401,7 +401,8 @@ func ReadFileToGettextJSON(path string) (*GettextJSON, error) {
 // 3. Save: writes filtered result as JSON (useJSON) or PO (noHeader for PO output).
 // If filter is nil, DefaultFilter() is used. When no content entries match, PO output is empty; JSON output has entries: [].
 // inputWasPO: when true, PO output matches MsgSelect format (trailing newline after last entry); when false, matches WriteGettextJSONToPO format.
-func MsgSelectFromFile(path, rangeSpec string, w io.Writer, useJSON, noHeader, inputWasPO bool, filter *EntryStateFilter) error {
+// unsetFuzzy: remove fuzzy marker from entries, keep translations. clearFuzzy: remove fuzzy marker and clear msgstr for fuzzy entries.
+func MsgSelectFromFile(path, rangeSpec string, w io.Writer, useJSON, noHeader, inputWasPO bool, unsetFuzzy, clearFuzzy bool, filter *EntryStateFilter) error {
 	// Step 1: Load from PO or JSON
 	j, err := ReadFileToGettextJSON(path)
 	if err != nil {
@@ -428,6 +429,12 @@ func MsgSelectFromFile(path, rangeSpec string, w io.Writer, useJSON, noHeader, i
 		HeaderComment: j.HeaderComment,
 		HeaderMeta:    j.HeaderMeta,
 		Entries:       selected,
+	}
+	if unsetFuzzy {
+		ClearFuzzyTagFromGettextJSON(out)
+	}
+	if clearFuzzy {
+		ClearFuzzyFromGettextJSON(out)
 	}
 	// Step 3: Save in requested format
 	if useJSON {

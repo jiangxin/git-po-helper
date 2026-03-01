@@ -23,6 +23,8 @@ type msgSelectCommand struct {
 		NoObsolete   bool
 		OnlySame     bool
 		OnlyObsolete bool
+		UnsetFuzzy   bool
+		ClearFuzzy   bool
 	}
 }
 
@@ -103,6 +105,14 @@ Examples:
 	fs.SetAnnotation("only-same", "group", []string{"Single-state filter"})
 	fs.SetAnnotation("only-obsolete", "group", []string{"Single-state filter"})
 
+	// Fuzzy handling
+	fs.BoolVar(&v.O.UnsetFuzzy, "unset-fuzzy", false,
+		"remove fuzzy marker from fuzzy entries in output (keep translations)")
+	fs.BoolVar(&v.O.ClearFuzzy, "clear-fuzzy", false,
+		"remove fuzzy marker and clear msgstr for fuzzy entries (msgid/msgid_plural preserved)")
+	fs.SetAnnotation("unset-fuzzy", "group", []string{"Fuzzy handling"})
+	fs.SetAnnotation("clear-fuzzy", "group", []string{"Fuzzy handling"})
+
 	// Custom usage template with grouped flags
 	v.cmd.SetUsageTemplate(`Usage:{{if .Runnable}}
   {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
@@ -151,6 +161,9 @@ func (v msgSelectCommand) Execute(args []string) error {
 		defer f.Close()
 		w = f
 	}
+	if v.O.UnsetFuzzy && v.O.ClearFuzzy {
+		return newUserError("--unset-fuzzy and --clear-fuzzy are mutually exclusive")
+	}
 	// Load → Filter → Save: ReadFileToGettextJSON auto-detects PO vs JSON
 	peek, err := os.ReadFile(poFile)
 	if err != nil {
@@ -161,7 +174,8 @@ func (v msgSelectCommand) Execute(args []string) error {
 	}
 	trimmed := bytes.TrimLeft(peek, " \t\r\n")
 	inputWasPO := len(trimmed) == 0 || trimmed[0] != '{'
-	return util.MsgSelectFromFile(poFile, v.O.Range, w, v.O.JSON, v.O.NoHeader, inputWasPO, filter)
+	return util.MsgSelectFromFile(poFile, v.O.Range, w, v.O.JSON, v.O.NoHeader, inputWasPO,
+		v.O.UnsetFuzzy, v.O.ClearFuzzy, filter)
 }
 
 func (v msgSelectCommand) buildFilter() (*util.EntryStateFilter, error) {

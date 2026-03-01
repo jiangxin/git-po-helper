@@ -211,6 +211,23 @@ test_expect_success "--translated --no-obsolete: no obsolete in translated" '
 	test_cmp expect trans-no-obs.po
 '
 
+test_expect_success "--unset-fuzzy: remove fuzzy marker, keep translations" '
+	$HELPER msg-select --unset-fuzzy filter-test.po -o unset-fuzzy.po &&
+	! grep -q "#, fuzzy" unset-fuzzy.po &&
+	grep -q "msgstr \"模糊\"" unset-fuzzy.po
+'
+
+test_expect_success "--clear-fuzzy: remove fuzzy marker and clear msgstr" '
+	$HELPER msg-select --clear-fuzzy filter-test.po -o clear-fuzzy.po &&
+	! grep -q "#, fuzzy" clear-fuzzy.po &&
+	grep -A1 "msgid \"Fuzzy entry\"" clear-fuzzy.po | grep -q "msgstr \"\""
+'
+
+test_expect_success "--unset-fuzzy and --clear-fuzzy are mutually exclusive" '
+	test_must_fail $HELPER msg-select --unset-fuzzy --clear-fuzzy filter-test.po 2>err &&
+	grep -q "mutually exclusive" err
+'
+
 test_expect_success "--only-same and --only-obsolete are mutually exclusive" '
 	test_must_fail $HELPER msg-select --only-same --only-obsolete filter-test.po 2>err &&
 	grep -q "mutually exclusive" err
