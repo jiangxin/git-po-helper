@@ -16,9 +16,8 @@ func (v *teamCommand) Command() *cobra.Command {
 	}
 
 	v.cmd = &cobra.Command{
-		Use:           "team [--leader | --all] [team]...",
-		Short:         "Show team leader/members",
-		SilenceErrors: true,
+		Use:   "team [--leader | --all] [team]...",
+		Short: "Show team leader/members",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return v.Execute(args)
 		},
@@ -53,7 +52,7 @@ func (v *teamCommand) Command() *cobra.Command {
 
 func (v teamCommand) Execute(args []string) error {
 	if !util.ShowTeams(args...) {
-		return errExecute
+		return NewStandardError("team command failed")
 	}
 	return nil
 }

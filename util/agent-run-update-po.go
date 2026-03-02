@@ -55,7 +55,6 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 		}
 
 		if err := ValidatePoEntryCount(poFile, cfg.AgentTest.PoEntriesBeforeUpdate, "before update"); err != nil {
-			log.Errorf("pre-validation failed: %v", err)
 			result.PreValidationError = err.Error()
 			return result, fmt.Errorf("pre-validation failed: %w\nHint: Ensure %s exists and has the expected number of entries", err, poFile)
 		}
@@ -122,7 +121,6 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 	if outputFormat == "json" {
 		stdoutReader, stderrBuf, cmdProcess, err := ExecuteAgentCommandStream(agentCmd)
 		if err != nil {
-			log.Errorf("agent command execution failed: %v", err)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 		}
 		defer stdoutReader.Close()
@@ -137,7 +135,6 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 				log.Debugf("agent command stderr: %s", string(stderr))
 			}
 			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", waitErr)
-			log.Errorf("agent command execution failed: %v", waitErr)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", waitErr)
 		}
 		log.Infof("agent command completed successfully")
@@ -152,7 +149,6 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 				log.Debugf("agent command stdout: %s", string(stdout))
 			}
 			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", err)
-			log.Errorf("agent command execution failed: %v", err)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 		}
 		log.Infof("agent command completed successfully")
@@ -191,7 +187,6 @@ func RunAgentUpdatePo(cfg *config.AgentConfig, agentName, poFile string, agentTe
 		}
 
 		if err := ValidatePoEntryCount(poFile, cfg.AgentTest.PoEntriesAfterUpdate, "after update"); err != nil {
-			log.Errorf("post-validation failed: %v", err)
 			result.PostValidationError = err.Error()
 			result.Score = 0
 			return result, fmt.Errorf("post-validation failed: %w\nHint: The agent may not have updated the PO file correctly", err)
@@ -241,7 +236,6 @@ func CmdAgentRunUpdatePo(agentName, poFile string) error {
 	log.Debugf("loading agent configuration")
 	cfg, err := config.LoadAgentConfig(flag.AgentConfigFile())
 	if err != nil {
-		log.Errorf("failed to load agent configuration: %v", err)
 		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
 

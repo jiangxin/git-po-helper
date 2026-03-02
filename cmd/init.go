@@ -18,12 +18,10 @@ func (v *initCommand) Command() *cobra.Command {
 	}
 
 	v.cmd = &cobra.Command{
-		Use:           "init <XX.po>",
-		Short:         "Create XX.po file",
-		SilenceErrors: true,
+		Use:   "init <XX.po>",
+		Short: "Create XX.po file",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return v.Execute(args)
-
 		},
 	}
 
@@ -37,11 +35,11 @@ func (v *initCommand) Command() *cobra.Command {
 
 func (v initCommand) Execute(args []string) error {
 	if len(args) != 1 {
-		return newUserError("must given 1 argument for init command")
+		return NewErrorWithUsage("must given 1 argument for init command")
 	}
 	locale := args[0]
 	if !util.CmdInit(locale, v.O.OnlyCore) {
-		return errExecute
+		return NewStandardError("init command failed")
 	}
 	return nil
 }

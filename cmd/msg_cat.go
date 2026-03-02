@@ -44,7 +44,6 @@ Use --no-obsolete to exclude obsolete; --only-same or --only-obsolete for a sing
 
 Write result to the file given by -o; use -o - or omit -o to write to stdout.
 Use --json to output gettext JSON; otherwise output is PO format.`,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return v.Execute(args)
 		},
@@ -119,7 +118,10 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 
 func (v msgCatCommand) Execute(args []string) error {
 	if len(args) == 0 {
-		return newUserError("msg-cat requires at least one input file")
+		return NewErrorWithUsage("msg-cat requires at least one input file")
+	}
+	if v.O.UnsetFuzzy && v.O.ClearFuzzy {
+		return NewErrorWithUsage("--unset-fuzzy and --clear-fuzzy are mutually exclusive")
 	}
 	filter, err := v.buildFilter()
 	if err != nil {
@@ -130,7 +132,7 @@ func (v msgCatCommand) Execute(args []string) error {
 	if v.O.Output != "" && v.O.Output != "-" {
 		f, err := os.Create(v.O.Output)
 		if err != nil {
-			return newUserErrorF("failed to create output file %s: %v", v.O.Output, err)
+			return NewStandardErrorF("failed to create output file %s: %v", v.O.Output, err)
 		}
 		defer f.Close()
 		w = f
@@ -140,7 +142,7 @@ func (v msgCatCommand) Execute(args []string) error {
 	for _, path := range args {
 		j, err := util.ReadFileToGettextJSON(path)
 		if err != nil {
-			return newUserErrorF("%v", err)
+			return NewStandardErrorF("%v", err)
 		}
 		sources = append(sources, j)
 	}
@@ -152,9 +154,6 @@ func (v msgCatCommand) Execute(args []string) error {
 	}
 
 	// Clear fuzzy marker from entries if requested
-	if v.O.UnsetFuzzy && v.O.ClearFuzzy {
-		return newUserError("--unset-fuzzy and --clear-fuzzy are mutually exclusive")
-	}
 	if v.O.UnsetFuzzy {
 		util.ClearFuzzyTagFromGettextJSON(merged)
 	}
@@ -170,13 +169,13 @@ func (v msgCatCommand) Execute(args []string) error {
 
 func (v msgCatCommand) buildFilter() (*util.EntryStateFilter, error) {
 	if v.O.OnlySame && v.O.OnlyObsolete {
-		return nil, newUserError("--only-same and --only-obsolete are mutually exclusive")
+		return nil, NewErrorWithUsage("--only-same and --only-obsolete are mutually exclusive")
 	}
 	if v.O.OnlySame && (v.O.Translated || v.O.Untranslated || v.O.Fuzzy) {
-		return nil, newUserError("--only-same is mutually exclusive with --translated, --untranslated, --fuzzy")
+		return nil, NewErrorWithUsage("--only-same is mutually exclusive with --translated, --untranslated, --fuzzy")
 	}
 	if v.O.OnlyObsolete && (v.O.Translated || v.O.Untranslated || v.O.Fuzzy) {
-		return nil, newUserError("--only-obsolete is mutually exclusive with --translated, --untranslated, --fuzzy")
+		return nil, NewErrorWithUsage("--only-obsolete is mutually exclusive with --translated, --untranslated, --fuzzy")
 	}
 	f := util.EntryStateFilter{
 		Translated:   v.O.Translated,

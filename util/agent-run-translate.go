@@ -44,7 +44,6 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 
 	// Check if PO file exists
 	if !Exist(poFile) {
-		log.Errorf("PO file does not exist: %s", poFile)
 		return result, fmt.Errorf("PO file does not exist: %s\nHint: Ensure the PO file exists before running translate", poFile)
 	}
 
@@ -53,7 +52,6 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 
 	statsBefore, err := CountPoReportStats(poFile)
 	if err != nil {
-		log.Errorf("failed to count PO stats: %v", err)
 		return result, fmt.Errorf("failed to count PO stats: %w", err)
 	}
 	result.BeforeNewCount = statsBefore.Untranslated
@@ -132,7 +130,6 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	if outputFormat == "json" {
 		stdoutReader, stderrBuf, cmdProcess, err := ExecuteAgentCommandStream(agentCmd)
 		if err != nil {
-			log.Errorf("agent command execution failed: %v", err)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 		}
 		defer stdoutReader.Close()
@@ -147,7 +144,6 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 				log.Debugf("agent command stderr: %s", string(stderr))
 			}
 			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", waitErr)
-			log.Errorf("agent command execution failed: %v", waitErr)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", waitErr)
 		}
 		log.Infof("agent command completed successfully")
@@ -162,7 +158,6 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 				log.Debugf("agent command stdout: %s", string(stdout))
 			}
 			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", err)
-			log.Errorf("agent command execution failed: %v", err)
 			return result, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", err)
 		}
 		log.Infof("agent command completed successfully")
@@ -194,7 +189,6 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 
 	statsAfter, err := CountPoReportStats(poFile)
 	if err != nil {
-		log.Errorf("failed to count PO stats after translation: %v", err)
 		return result, fmt.Errorf("failed to count PO stats after translation: %w", err)
 	}
 	result.AfterNewCount = statsAfter.Untranslated
@@ -204,7 +198,6 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 
 	// Validate translation success: both new and fuzzy entries must be 0
 	if statsAfter.Untranslated != 0 || statsAfter.Fuzzy != 0 {
-		log.Errorf("post-validation failed: translation incomplete (new: %d, fuzzy: %d)", statsAfter.Untranslated, statsAfter.Fuzzy)
 		result.PostValidationError = fmt.Sprintf("translation incomplete: %d new entries and %d fuzzy entries remaining", statsAfter.Untranslated, statsAfter.Fuzzy)
 		result.Score = 0
 		return result, fmt.Errorf("post-validation failed: %s\nHint: The agent should translate all new entries and resolve all fuzzy entries", result.PostValidationError)

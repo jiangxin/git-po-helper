@@ -285,8 +285,7 @@ level=error msg="[po/bg.po]    mismatched patterns: --mirror"
 level=error msg="[po/bg.po]    >> msgid: unknown mirror argument: %s"
 level=error msg="[po/bg.po]    >> msgstr: неправилна стойност за „--mirror“: %s"
 level=error msg="[po/bg.po]"
-
-ERROR: fail to execute "git-po-helper check-po"
+ERROR: check-po command failed
 EOF
 
 test_expect_success "still has typos in master branch" '

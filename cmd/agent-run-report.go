@@ -16,7 +16,6 @@ If any files match po/review-batch-*.json, they are loaded and aggregated
 into one result; otherwise po/review.json is used.
 
 Default path is ` + util.DefaultReviewPoPath + ` when omitted.`,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := util.DefaultReviewPoPath
 			if len(args) > 0 {
@@ -24,7 +23,7 @@ Default path is ` + util.DefaultReviewPoPath + ` when omitted.`,
 			}
 			jsonFile, result, err := util.ReportReviewFromPathWithBatches(path)
 			if err != nil {
-				return newUserErrorF("%v", err)
+				return NewStandardErrorF("%v", err)
 			}
 			util.PrintReviewReportResult(jsonFile, result)
 			return nil

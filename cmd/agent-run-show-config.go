@@ -21,14 +21,13 @@ The configuration is read from:
 
 If no configuration files are found, an empty configuration structure
 will be displayed.`,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 0 {
-				return newUserError("show-config command needs no arguments")
+				return NewErrorWithUsage("show-config command needs no arguments")
 			}
 
 			if err := util.CmdAgentRunShowConfig(); err != nil {
-				return errExecute
+				return NewStandardErrorF("%v", err)
 			}
 			return nil
 		},

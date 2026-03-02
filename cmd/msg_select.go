@@ -65,7 +65,6 @@ Examples:
   git-po-helper msg-select --no-obsolete po/zh_CN.po
   git-po-helper msg-select --only-obsolete po/zh_CN.po
   git-po-helper msg-select --translated --range "-5" -o batch.po po/zh_CN.po`,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return v.Execute(args)
 		},
@@ -144,7 +143,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 
 func (v msgSelectCommand) Execute(args []string) error {
 	if len(args) != 1 {
-		return newUserError("msg-select requires exactly one argument: <po-file>")
+		return NewErrorWithUsage("msg-select requires exactly one argument: <po-file>")
 	}
 	filter, err := v.buildFilter()
 	if err != nil {
@@ -156,39 +155,42 @@ func (v msgSelectCommand) Execute(args []string) error {
 	if v.O.Output != "" && v.O.Output != "-" {
 		f, err := os.Create(v.O.Output)
 		if err != nil {
-			return newUserErrorF("failed to create output file %s: %v", v.O.Output, err)
+			return NewStandardErrorF("failed to create output file %s: %v", v.O.Output, err)
 		}
 		defer f.Close()
 		w = f
 	}
 	if v.O.UnsetFuzzy && v.O.ClearFuzzy {
-		return newUserError("--unset-fuzzy and --clear-fuzzy are mutually exclusive")
+		return NewErrorWithUsage("--unset-fuzzy and --clear-fuzzy are mutually exclusive")
 	}
 	// Load → Filter → Save: ReadFileToGettextJSON auto-detects PO vs JSON
 	peek, err := os.ReadFile(poFile)
 	if err != nil {
-		return newUserErrorF("failed to read %s: %v", poFile, err)
+		return NewStandardErrorF("failed to read %s: %v", poFile, err)
 	}
 	if len(peek) > 512 {
 		peek = peek[:512]
 	}
 	trimmed := bytes.TrimLeft(peek, " \t\r\n")
 	inputWasPO := len(trimmed) == 0 || trimmed[0] != '{'
-	return util.MsgSelectFromFile(poFile, v.O.Range, w, v.O.JSON, v.O.NoHeader, inputWasPO,
-		v.O.UnsetFuzzy, v.O.ClearFuzzy, filter)
+	if err := util.MsgSelectFromFile(poFile, v.O.Range, w, v.O.JSON, v.O.NoHeader, inputWasPO,
+		v.O.UnsetFuzzy, v.O.ClearFuzzy, filter); err != nil {
+		return NewStandardErrorF("%v", err)
+	}
+	return nil
 }
 
 func (v msgSelectCommand) buildFilter() (*util.EntryStateFilter, error) {
 	// Mutually exclusive: --only-same and --only-obsolete
 	if v.O.OnlySame && v.O.OnlyObsolete {
-		return nil, newUserError("--only-same and --only-obsolete are mutually exclusive")
+		return nil, NewErrorWithUsage("--only-same and --only-obsolete are mutually exclusive")
 	}
 	// --only-same/--only-obsolete are mutually exclusive with --translated, --untranslated, --fuzzy
 	if v.O.OnlySame && (v.O.Translated || v.O.Untranslated || v.O.Fuzzy) {
-		return nil, newUserError("--only-same is mutually exclusive with --translated, --untranslated, --fuzzy")
+		return nil, NewErrorWithUsage("--only-same is mutually exclusive with --translated, --untranslated, --fuzzy")
 	}
 	if v.O.OnlyObsolete && (v.O.Translated || v.O.Untranslated || v.O.Fuzzy) {
-		return nil, newUserError("--only-obsolete is mutually exclusive with --translated, --untranslated, --fuzzy")
+		return nil, NewErrorWithUsage("--only-obsolete is mutually exclusive with --translated, --untranslated, --fuzzy")
 	}
 	// Default: include obsolete. --no-obsolete excludes.
 	f := util.EntryStateFilter{

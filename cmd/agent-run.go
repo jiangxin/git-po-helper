@@ -35,7 +35,6 @@ func (v *agentRunCommand) Command() *cobra.Command {
 This command uses configured code agents (like Claude, Gemini, etc.) to
 automate various localization operations. The agent configuration is
 read from git-po-helper.yaml in the repository root or user home directory.`,
-		SilenceErrors: true,
 	}
 
 	v.cmd.PersistentFlags().StringVar(&v.O.Prompt,

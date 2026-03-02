@@ -37,13 +37,12 @@ Examples:
 
   # Run 10 tests with a specific agent
   git-po-helper agent-test translate --agent claude --runs 10 po/zh_CN.po`,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
-				return newUserError("translate command expects at most one argument: po/XX.po")
+				return NewErrorWithUsage("translate command expects at most one argument: po/XX.po")
 			}
 			if opts.UseAgentMd && opts.UseLocalOrchestration {
-				return newUserError("--use-agent-md and --use-local-orchestration are mutually exclusive")
+				return NewErrorWithUsage("--use-agent-md and --use-local-orchestration are mutually exclusive")
 			}
 			// When neither specified, default to agent-md
 			useLocalOrchestration := opts.UseLocalOrchestration
@@ -54,7 +53,7 @@ Examples:
 			}
 
 			if err := util.CmdAgentTestTranslate(opts.Agent, poFile, opts.Runs, opts.DangerouslyRemovePoDir, useLocalOrchestration, opts.BatchSize); err != nil {
-				return errExecute
+				return NewStandardErrorF("%v", err)
 			}
 			return nil
 		},

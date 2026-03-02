@@ -16,9 +16,8 @@ func (v *checkPoCommand) Command() *cobra.Command {
 	}
 
 	v.cmd = &cobra.Command{
-		Use:           "check-po <XX.po>...",
-		Short:         "Check syntax of XX.po file",
-		SilenceErrors: true,
+		Use:   "check-po <XX.po>...",
+		Short: "Check syntax of XX.po file",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return v.Execute(args)
 		},
@@ -41,7 +40,7 @@ func (v *checkPoCommand) Command() *cobra.Command {
 
 func (v checkPoCommand) Execute(args []string) error {
 	if !util.CmdCheckPo(args...) {
-		return errExecute
+		return NewStandardError("check-po command failed")
 	}
 	return nil
 }

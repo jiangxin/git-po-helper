@@ -35,7 +35,6 @@ When run inside a git worktree, paths are relative to the project root (e.g. po/
 When run outside a git repository, paths are relative to the current directory or absolute.
 
 For review JSON report, use: git-po-helper agent-run report [path]`,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return v.Execute(args)
 		},
@@ -46,7 +45,7 @@ For review JSON report, use: git-po-helper agent-run report [path]`,
 
 func (v statCommand) Execute(args []string) error {
 	if len(args) < 1 {
-		return newUserError("stat requires at least one argument: <file> [file...]")
+		return NewErrorWithUsage("stat requires at least one argument: <file> [file...]")
 	}
 
 	var errs []string
@@ -80,7 +79,7 @@ func (v statCommand) Execute(args []string) error {
 	}
 
 	if len(errs) > 0 {
-		return newUserError(strings.Join(errs, "\n"))
+		return NewStandardError(strings.Join(errs, "\n"))
 	}
 	return nil
 }

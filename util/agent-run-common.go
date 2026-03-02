@@ -234,7 +234,6 @@ func GetPoFileAbsPath(cfg *config.AgentConfig, poFile string) (string, error) {
 	if poFile == "" {
 		lang := cfg.DefaultLangCode
 		if lang == "" {
-			log.Errorf("default_lang_code is not configured in agent configuration")
 			return "", fmt.Errorf("default_lang_code is not configured\nHint: Provide po/XX.po on the command line or set default_lang_code in git-po-helper.yaml")
 		}
 		poFile = filepath.Join(workDir, PoDir, fmt.Sprintf("%s.po", lang))
@@ -264,7 +263,6 @@ func GetPoFileRelPath(cfg *config.AgentConfig, poFile string) (string, error) {
 	// Convert absolute path to relative path
 	relPath, err := filepath.Rel(workDir, absPath)
 	if err != nil {
-		log.Errorf("failed to convert absolute path to relative path: %v", err)
 		return "", fmt.Errorf("failed to convert path to relative: %w", err)
 	}
 

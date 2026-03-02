@@ -40,8 +40,7 @@ level=error msg="[po/zh_CN.po]    >> msgid: Note: Some branches outside the refs
 level=error msg="[po/zh_CN.po]    to delete them, use:"
 level=error msg="[po/zh_CN.po]    >> msgstr: 注意：ref/remotes 层级之外的一些分支未被移除。要删除它们，使用："
 level=error msg="[po/zh_CN.po]"
-
-ERROR: fail to execute "git-po-helper check-po"
+ERROR: check-po command failed
 EOF
 
 test_expect_success "zh_CN.po: has file-locations (--report-file-location=error)" '
@@ -72,8 +71,7 @@ level=error msg="[po/zh_CN.po]    >> msgid: Note: Some branches outside the refs
 level=error msg="[po/zh_CN.po]    to delete them, use:"
 level=error msg="[po/zh_CN.po]    >> msgstr: 注意：ref/remotes 层级之外的一些分支未被移除。要删除它们，使用："
 level=error msg="[po/zh_CN.po]"
-
-ERROR: fail to execute "git-po-helper check-po"
+ERROR: check-po command failed
 EOF
 
 test_expect_success "zh_CN.po: remove locations" '

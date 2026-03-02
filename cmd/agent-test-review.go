@@ -27,20 +27,19 @@ Review modes:
 
 Exactly one of --range, --commit and --since may be specified.
 With two file arguments, compare worktree files (revisions not allowed).`,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.UseAgentMd && opts.UseLocalOrchestration {
-				return newUserError("--use-agent-md and --use-local-orchestration are mutually exclusive")
+				return NewErrorWithUsage("--use-agent-md and --use-local-orchestration are mutually exclusive")
 			}
 			// When neither specified, default to agent-md
 			useAgentMd := !opts.UseLocalOrchestration
 
 			target, err := util.ResolveRevisionsAndFiles(opts.Range, opts.Commit, opts.Since, args)
 			if err != nil {
-				return newUserErrorF("%v", err)
+				return NewStandardErrorF("%v", err)
 			}
 			if err := util.CmdAgentTestReview(opts.Agent, target, opts.Runs, opts.DangerouslyRemovePoDir, opts.Output, useAgentMd, opts.BatchSize); err != nil {
-				return errExecute
+				return NewStandardErrorF("%v", err)
 			}
 			return nil
 		},

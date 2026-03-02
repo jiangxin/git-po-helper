@@ -24,8 +24,7 @@ level=error msg="[po/zh_CN.po]    fail to check po: exit status 1"
 ------------------------------------------------------------------------------
 level=error msg="[po/zh_CN.po]    fail to compile po/zh_CN.po: exit status 1"
 level=error msg="[po/zh_CN.po]    fail to generate mofile"
-
-ERROR: fail to execute "git-po-helper check-po"
+ERROR: check-po command failed
 EOF
 
 test_expect_success "bad syntax of zh_CN.po" '

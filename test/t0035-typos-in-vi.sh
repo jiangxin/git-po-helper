@@ -93,8 +93,7 @@ level=warning msg="[po/vi.po]    mismatched patterns: %%(color:%s), %%(màu:%s)"
 level=warning msg="[po/vi.po]    >> msgid: unrecognized color: %%(color:%s)"
 level=warning msg="[po/vi.po]    >> msgstr: không nhận ra màu: %%(màu:%s)"
 level=warning msg="[po/vi.po]"
-
-ERROR: fail to execute "git-po-helper check-po"
+ERROR: check-po command failed
 EOF
 
 test_expect_success "check typos in vi.po" '

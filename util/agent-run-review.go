@@ -45,7 +45,6 @@ func executeReviewAgent(selectedAgent config.Agent, vars PlaceholderVars, result
 	if outputFormat == "json" {
 		stdoutReader, stderrBuf, cmdProcess, execErr := ExecuteAgentCommandStream(agentCmd)
 		if execErr != nil {
-			log.Errorf("agent command execution failed: %v", execErr)
 			return nil, nil, nil, streamResult, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", execErr)
 		}
 		defer stdoutReader.Close()
@@ -64,7 +63,6 @@ func executeReviewAgent(selectedAgent config.Agent, vars PlaceholderVars, result
 				log.Debugf("agent command stderr: %s", string(stderr))
 			}
 			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", waitErr)
-			log.Errorf("agent command execution failed: %v", waitErr)
 			return nil, stderr, originalStdout, streamResult, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", waitErr)
 		}
 		log.Infof("agent command completed successfully")
@@ -83,7 +81,6 @@ func executeReviewAgent(selectedAgent config.Agent, vars PlaceholderVars, result
 				log.Debugf("agent command stdout: %s", string(stdout))
 			}
 			result.AgentError = fmt.Errorf("agent command failed: %v (see logs for agent stderr output)", execErr)
-			log.Errorf("agent command execution failed: %v", execErr)
 			return nil, stderr, originalStdout, streamResult, fmt.Errorf("agent command failed: %w\nHint: Check that the agent command is correct and executable", execErr)
 		}
 		log.Infof("agent command completed successfully")
@@ -269,13 +266,11 @@ func prepareReviewBatches(reviewPOFile string, minBatchSize int) (batchPOPaths [
 func parseAndAccumulateReviewJSON(stdout []byte, entryCount int) (*ReviewJSONResult, error) {
 	jsonBytes, err := ExtractJSONFromOutput(stdout)
 	if err != nil {
-		log.Errorf("failed to extract JSON from agent output: %v", err)
 		return nil, fmt.Errorf("failed to extract JSON: %w", err)
 	}
 
 	reviewJSON, err := ParseReviewJSON(jsonBytes)
 	if err != nil {
-		log.Errorf("failed to parse review JSON: %v", err)
 		return nil, fmt.Errorf("failed to parse review JSON: %w", err)
 	}
 
@@ -544,7 +539,6 @@ func CmdAgentRunReview(agentName string, target *CompareTarget, outputBase strin
 	log.Debugf("loading agent configuration")
 	cfg, err := config.LoadAgentConfig(flag.AgentConfigFile())
 	if err != nil {
-		log.Errorf("failed to load agent configuration: %v", err)
 		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
 
@@ -557,13 +551,11 @@ func CmdAgentRunReview(agentName string, target *CompareTarget, outputBase strin
 		result, err = RunAgentReview(cfg, agentName, target, false, outputBase, batchSize)
 	}
 	if err != nil {
-		log.Errorf("failed to run agent review: %v", err)
 		return err
 	}
 
 	// For agent-run, we require agent execution to succeed (no error set)
 	if result.AgentError != nil {
-		log.Errorf("agent execution failed: %v", result.AgentError)
 		return fmt.Errorf("agent execution failed: %w", result.AgentError)
 	}
 

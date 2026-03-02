@@ -18,22 +18,10 @@ func main() {
 
 	if resp.Err != nil {
 		errOut := resp.Cmd.ErrOrStderr()
-		if resp.IsUserError() {
-			if resp.Cmd.SilenceErrors {
-				fmt.Fprintf(errOut, "ERROR: %s\n\n", resp.Err)
-			}
+		msg := strings.TrimRight(resp.Err.Error(), "\n")
+		fmt.Fprintf(errOut, "ERROR: %s\n", msg)
+		if cmd.IsErrorWithUsage(resp.Err) {
 			fmt.Fprint(errOut, resp.Cmd.UsageString())
-		} else if resp.Cmd.SilenceErrors {
-			fmt.Fprintln(errOut, "")
-			// Use CommandPath() to get full command path (e.g., "git-po-helper agent-run translate")
-			// Remove Program prefix to get subcommand path (e.g., "agent-run translate")
-			cmdPath := resp.Cmd.CommandPath()
-			subCmdPath := strings.TrimPrefix(cmdPath, Program+" ")
-			if subCmdPath == "" {
-				// Fallback to Name() if CommandPath() only contains Program
-				subCmdPath = resp.Cmd.Name()
-			}
-			fmt.Fprintf(errOut, "ERROR: fail to execute \"%s %s\"\n", Program, subCmdPath)
 		}
 		os.Exit(-1)
 	}

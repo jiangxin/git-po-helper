@@ -22,17 +22,16 @@ Examples:
   git-po-helper agent-run parse-log
   git-po-helper agent-run parse-log /tmp/claude.log.jsonl
   git-po-helper agent-run parse-log /tmp/qwen.log.jsonl`,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 1 {
+				return NewErrorWithUsage("parse-log expects at most one argument: log-file")
+			}
 			logFile := "/tmp/claude.log.jsonl"
 			if len(args) > 0 {
 				logFile = args[0]
 			}
-			if len(args) > 1 {
-				return newUserError("parse-log expects at most one argument: log-file")
-			}
 			if err := util.CmdAgentRunParseLog(logFile); err != nil {
-				return errExecute
+				return NewStandardErrorF("%v", err)
 			}
 			return nil
 		},

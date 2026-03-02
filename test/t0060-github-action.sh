@@ -35,8 +35,7 @@ ERROR [po/zh_CN.po]     the [Updating a "XX.po" file] section in "po/README.md"
 ------------------------------------------------------------------------------
 ERROR [po/zh_CN.po]    fail to compile po/zh_CN.po: exit status 1
 ERROR [po/zh_CN.po]    fail to generate mofile
-
-ERROR: fail to execute "git-po-helper check-po"
+ERROR: check-po command failed
 EOF
 
 test_expect_success "bad syntax of zh_CN.po" '
@@ -157,8 +156,7 @@ ERROR commit <OID>: subject ("Add files ...") does not have prefix "l10n:"
 ------------------------------------------------------------------------------
 ERROR commit <OID>: empty body of the commit message, no s-o-b signature
 INFO checking commits: 0 passed, 1 failed.
-
-ERROR: fail to execute "git-po-helper check-commits"
+ERROR: check-commits command failed
 EOF
 
 test_expect_success "check-commits (old-oid is zero)" '
@@ -185,8 +183,7 @@ ERROR         A.txt
 ERROR
 ERROR commit <OID>: break because this commit is not for git-l10n
 INFO checking commits: 0 passed, 1 failed, 1 skipped.
-
-ERROR: fail to execute "git-po-helper check-commits"
+ERROR: check-commits command failed
 EOF
 
 test_expect_success "check-commits (non-l10n commit)" '

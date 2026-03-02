@@ -47,8 +47,7 @@ level=warning msg="[po/pt_PT.po]    mismatched patterns: %%(algn), %%(align)"
 level=warning msg="[po/pt_PT.po]    >> msgid: positive width expected with the %%(align) atom"
 level=warning msg="[po/pt_PT.po]    >> msgstr: largura positiva esperada com o átomo %%(algn)"
 level=warning msg="[po/pt_PT.po]"
-
-ERROR: fail to execute "git-po-helper check-po"
+ERROR: check-po command failed
 EOF
 
 test_expect_success "check typos in pt_PT.po" '

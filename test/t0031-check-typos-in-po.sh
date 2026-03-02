@@ -92,8 +92,7 @@ test_expect_success "trash variables in msgStr (--typos=error)" '
 	level=error msg="[po/zh_CN.po]    >> msgid: exit code %d from %s is < 0 or >= 128"
 	level=error msg="[po/zh_CN.po]    >> msgstr: 命令 $command 的退出码 $res 应该 < 0 或 >= 128"
 	level=error msg="[po/zh_CN.po]"
-	
-	ERROR: fail to execute "git-po-helper check-po"
+	ERROR: check-po command failed
 	EOF
 
 	test_cmp expect actual

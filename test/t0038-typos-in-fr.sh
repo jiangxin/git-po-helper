@@ -41,8 +41,7 @@ test_expect_success "still has typos in master branch" '
 		level=error msg="[po/fr.po]"
 		level=error msg="[po/fr.po]    Aucune n${SQ}a fonctionné, donc abandon. Veuillez spécifier une référence totalement qualifiée."
 		level=error msg="[po/fr.po]"
-
-		ERROR: fail to execute "git-po-helper check-po"
+		ERROR: check-po command failed
 	EOF
 	test_cmp expect actual
 '

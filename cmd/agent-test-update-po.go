@@ -44,10 +44,9 @@ Examples:
 
   # Run 10 tests with a specific agent
   git-po-helper agent-test update-po --agent claude --runs 10 po/zh_CN.po`,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
-				return newUserError("update-po command expects at most one argument: po/XX.po")
+				return NewErrorWithUsage("update-po command expects at most one argument: po/XX.po")
 			}
 
 			poFile := ""
@@ -56,7 +55,7 @@ Examples:
 			}
 
 			if err := util.CmdAgentTestUpdatePo(opts.Agent, poFile, opts.Runs, opts.DangerouslyRemovePoDir); err != nil {
-				return errExecute
+				return NewStandardErrorF("%v", err)
 			}
 			return nil
 		},

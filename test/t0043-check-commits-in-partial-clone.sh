@@ -118,8 +118,7 @@ level=error msg="[po/zh_CN.po@rev]"
 ------------------------------------------------------------------------------
 level=warning msg="commit <OID>: author (A U Thor <author@example.com>) and committer (C O Mitter <committer@example.com>) are different"
 level=info msg="checking commits: 0 passed, 1 failed."
-
-ERROR: fail to execute "git-po-helper check-commits"
+ERROR: check-commits command failed
 EOF
 
 test_expect_success "check-commits show typos (--typos=error)" '
@@ -161,8 +160,7 @@ level=warning msg="[po/zh_CN.po@rev]"
 ------------------------------------------------------------------------------
 level=warning msg="commit <OID>: author (A U Thor <author@example.com>) and committer (C O Mitter <committer@example.com>) are different"
 level=info msg="checking commits: 1 passed, 1 failed."
-
-ERROR: fail to execute "git-po-helper check-commits"
+ERROR: check-commits command failed
 EOF
 
 test_expect_success "check-commits show typos and TEAMS file" '

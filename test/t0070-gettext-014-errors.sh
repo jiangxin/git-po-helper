@@ -60,8 +60,7 @@ cat >expect <<-\EOF
 level=error msg="[po/fr.po]    2 translated messages."
 level=error msg="[po/fr.po]    too many obsolete entries (3) in comments, please remove them"
 level=error msg="[po/fr.po]    remove lines that start with '#~| msgid', for they are not compatible with gettext 0.14"
-
-ERROR: fail to execute "git-po-helper check-po"
+ERROR: check-po command failed
 EOF
 
 test_expect_success "show gettext 0.14 incompatible errors" '

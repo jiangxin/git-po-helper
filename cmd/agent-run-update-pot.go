@@ -30,14 +30,13 @@ Examples:
 
   # Use a specific agent
   git-po-helper agent-run update-pot --agent claude`,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 0 {
-				return newUserError("update-pot command needs no arguments")
+				return NewErrorWithUsage("update-pot command needs no arguments")
 			}
 
 			if err := util.CmdAgentRunUpdatePot(opts.Agent); err != nil {
-				return errExecute
+				return NewStandardErrorF("%v", err)
 			}
 			return nil
 		},

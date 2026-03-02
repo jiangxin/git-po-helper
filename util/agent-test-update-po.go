@@ -22,7 +22,6 @@ func CmdAgentTestUpdatePo(agentName, poFile string, runs int, skipConfirmation b
 	log.Debugf("loading agent configuration")
 	cfg, err := config.LoadAgentConfig(flag.AgentConfigFile())
 	if err != nil {
-		log.Errorf("failed to load agent configuration: %v", err)
 		return fmt.Errorf("failed to load agent configuration: %w\nHint: Ensure git-po-helper.yaml exists in repository root or user home directory", err)
 	}
 
@@ -46,7 +45,6 @@ func CmdAgentTestUpdatePo(agentName, poFile string, runs int, skipConfirmation b
 	// Run the test
 	results, averageScore, err := RunAgentTestUpdatePo(agentName, poFile, runs, cfg)
 	if err != nil {
-		log.Errorf("agent-test execution failed: %v", err)
 		return fmt.Errorf("agent-test failed: %w", err)
 	}
 

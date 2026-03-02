@@ -43,7 +43,6 @@ git-po-helper.yaml. If not specified, the default is 5 runs.
 
 Entry count validation can be configured to verify that the agent correctly
 updates files with the expected number of entries.`,
-		SilenceErrors: true,
 	}
 
 	v.cmd.PersistentFlags().BoolVar(&v.O.DangerouslyRemovePoDir,

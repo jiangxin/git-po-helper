@@ -121,8 +121,7 @@ level=warning msg="[po/sv.po]    mismatched patterns: --group, --group-flagga"
 level=warning msg="[po/sv.po]    >> msgid: using multiple --group options with stdin is not supported"
 level=warning msg="[po/sv.po]    >> msgstr: mer än en --group-flagga stöds inte med standard in"
 level=warning msg="[po/sv.po]"
-
-ERROR: fail to execute "git-po-helper check-po"
+ERROR: check-po command failed
 EOF
 
 test_expect_success "check typos in sv.po" '
@@ -156,8 +155,7 @@ level=error msg="[po/sv.po]     motsvarande refs/{heads,tags}/-prefix på fjärr
 level=error msg="[po/sv.po]"
 level=error msg="[po/sv.po]    Inget av dem fungerade, så vi gav upp. Ange fullständig referens."
 level=error msg="[po/sv.po]"
-
-ERROR: fail to execute "git-po-helper check-po"
+ERROR: check-po command failed
 EOF
 
 test_expect_success "typos in master branch" '
