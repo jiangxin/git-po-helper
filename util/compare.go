@@ -183,6 +183,15 @@ func PoCompare(src, dest []byte) (DiffStat, []byte, error) {
 	var reviewEntries []*PoEntry
 	i, j := 0, 0
 	for i < len(origEntries) && j < len(newEntries) {
+		for origEntries[i].IsObsolete {
+			i++
+		}
+		for newEntries[j].IsObsolete {
+			j++
+		}
+		if i >= len(origEntries) || j >= len(newEntries) {
+			break
+		}
 		cmp := strings.Compare(origEntries[i].MsgID, newEntries[j].MsgID)
 		if cmp < 0 {
 			stat.Deleted++
@@ -201,10 +210,18 @@ func PoCompare(src, dest []byte) (DiffStat, []byte, error) {
 		}
 	}
 	for i < len(origEntries) {
+		if origEntries[i].IsObsolete {
+			i++
+			continue
+		}
 		stat.Deleted++
 		i++
 	}
 	for j < len(newEntries) {
+		if newEntries[j].IsObsolete {
+			j++
+			continue
+		}
 		stat.Added++
 		reviewEntries = append(reviewEntries, newEntries[j])
 		j++

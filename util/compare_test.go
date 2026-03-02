@@ -117,6 +117,204 @@ msgstr "您好"
 	}
 }
 
+// TestPoCompare_ObsoleteSkipped tests that obsolete entries are skipped during comparison.
+func TestPoCompare_ObsoleteSkipped(t *testing.T) {
+	// src: Hello, obsolete, World. dest: Hello, World (obsolete removed).
+	// Obsolete in src should be skipped; comparison should show no change.
+	srcContent := poHeader + `msgid "Hello"
+msgstr "你好"
+
+#~ msgid "Obsolete"
+#~ msgstr "已废弃"
+
+msgid "World"
+msgstr "世界"
+`
+	destContent := poHeader + `msgid "Hello"
+msgstr "你好"
+
+msgid "World"
+msgstr "世界"
+`
+
+	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent))
+	if err != nil {
+		t.Fatalf("PoCompare returned error: %v", err)
+	}
+	if stat.Added != 0 {
+		t.Errorf("expected Added=0 (obsolete in src skipped), got %d", stat.Added)
+	}
+	if stat.Changed != 0 {
+		t.Errorf("expected Changed=0, got %d", stat.Changed)
+	}
+	if stat.Deleted != 0 {
+		t.Errorf("expected Deleted=0 (obsolete not counted), got %d", stat.Deleted)
+	}
+	if len(data) != 0 {
+		t.Errorf("expected empty review data when no real change, got %d bytes", len(data))
+	}
+}
+
+// TestPoCompare_ObsoleteInDest tests that obsolete entries in dest are skipped.
+func TestPoCompare_ObsoleteInDest(t *testing.T) {
+	// src: Hello. dest: Hello, obsolete, World.
+	// Obsolete in dest should be skipped; World is new (Added=1).
+	srcContent := poHeader + `msgid "Hello"
+msgstr "你好"
+`
+	destContent := poHeader + `msgid "Hello"
+msgstr "你好"
+
+#~ msgid "Obsolete"
+#~ msgstr "已废弃"
+
+msgid "World"
+msgstr "世界"
+`
+
+	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent))
+	if err != nil {
+		t.Fatalf("PoCompare returned error: %v", err)
+	}
+	if stat.Added != 1 {
+		t.Errorf("expected Added=1 (World), got %d", stat.Added)
+	}
+	if stat.Deleted != 0 {
+		t.Errorf("expected Deleted=0, got %d", stat.Deleted)
+	}
+	if !bytes.Contains(data, []byte("World")) {
+		t.Errorf("review data should contain new entry 'World', got: %s", data)
+	}
+}
+
+// TestPoCompare_ObsoleteOnlyTrailing tests bounds check when entries end with obsolete.
+func TestPoCompare_ObsoleteOnlyTrailing(t *testing.T) {
+	// src: Hello + trailing obsolete. dest: Hello only.
+	// Should not panic; obsolete at end of src skipped, no deleted.
+	srcContent := poHeader + `msgid "Hello"
+msgstr "你好"
+
+#~ msgid "Trailing obsolete"
+#~ msgstr ""
+`
+	destContent := poHeader + `msgid "Hello"
+msgstr "你好"
+`
+
+	stat, _, err := PoCompare([]byte(srcContent), []byte(destContent))
+	if err != nil {
+		t.Fatalf("PoCompare returned error: %v", err)
+	}
+	if stat.Deleted != 0 {
+		t.Errorf("expected Deleted=0 (trailing obsolete skipped), got %d", stat.Deleted)
+	}
+}
+
+// TestPoCompare_ObsoleteInSrcNormalInDest tests: same msgid obsolete in src, normal in dest → Added.
+// Obsolete entries are filtered from src, so the entry appears only in dest and is reported as added.
+func TestPoCompare_ObsoleteInSrcNormalInDest(t *testing.T) {
+	srcContent := poHeader + `msgid "Hello"
+msgstr "你好"
+
+#~ msgid "Revived"
+#~ msgstr "复活"
+`
+	destContent := poHeader + `msgid "Hello"
+msgstr "你好"
+
+msgid "Revived"
+msgstr "复活"
+`
+
+	stat, header, entries, err := PoCompare([]byte(srcContent), []byte(destContent), false)
+	if err != nil {
+		t.Fatalf("PoCompare returned error: %v", err)
+	}
+	if stat.Added != 1 {
+		t.Errorf("expected Added=1 (Revived: obsolete in src → normal in dest), got %d", stat.Added)
+	}
+	if stat.Deleted != 0 {
+		t.Errorf("expected Deleted=0, got %d", stat.Deleted)
+	}
+	if stat.Changed != 0 {
+		t.Errorf("expected Changed=0, got %d", stat.Changed)
+	}
+	data := BuildPoContent(header, entries)
+	if !bytes.Contains(data, []byte("Revived")) || !bytes.Contains(data, []byte("复活")) {
+		t.Errorf("review data should contain revived entry, got: %s", data)
+	}
+}
+
+// TestPoCompare_NormalInSrcObsoleteInDest tests: same msgid normal in src, obsolete in dest → Deleted.
+// Obsolete entries are filtered from dest, so the entry appears only in src and is reported as deleted.
+func TestPoCompare_NormalInSrcObsoleteInDest(t *testing.T) {
+	srcContent := poHeader + `msgid "Hello"
+msgstr "你好"
+
+msgid "Deprecated"
+msgstr "已废弃"
+`
+	destContent := poHeader + `msgid "Hello"
+msgstr "你好"
+
+#~ msgid "Deprecated"
+#~ msgstr "已废弃"
+`
+
+	stat, header, entries, err := PoCompare([]byte(srcContent), []byte(destContent), false)
+	if err != nil {
+		t.Fatalf("PoCompare returned error: %v", err)
+	}
+	if stat.Added != 0 {
+		t.Errorf("expected Added=0, got %d", stat.Added)
+	}
+	if stat.Deleted != 1 {
+		t.Errorf("expected Deleted=1 (Deprecated: normal in src → obsolete in dest), got %d", stat.Deleted)
+	}
+	if stat.Changed != 0 {
+		t.Errorf("expected Changed=0, got %d", stat.Changed)
+	}
+	data := BuildPoContent(header, entries)
+	if len(data) != 0 {
+		t.Errorf("expected empty review data (no new/changed entries), got %d bytes", len(data))
+	}
+}
+
+// TestPoCompare_DifferentObsoleteInBoth tests: different obsolete entries in both files → no added/deleted.
+// Obsolete entries are filtered from both, so they do not affect the diff.
+func TestPoCompare_DifferentObsoleteInBoth(t *testing.T) {
+	srcContent := poHeader + `msgid "Hello"
+msgstr "你好"
+
+#~ msgid "ObsoleteA"
+#~ msgstr "废弃A"
+`
+	destContent := poHeader + `msgid "Hello"
+msgstr "你好"
+
+#~ msgid "ObsoleteB"
+#~ msgstr "废弃B"
+`
+
+	stat, header, entries, err := PoCompare([]byte(srcContent), []byte(destContent), false)
+	if err != nil {
+		t.Fatalf("PoCompare returned error: %v", err)
+	}
+	if stat.Added != 0 {
+		t.Errorf("expected Added=0 (obsolete in both filtered), got %d", stat.Added)
+	}
+	if stat.Deleted != 0 {
+		t.Errorf("expected Deleted=0 (obsolete in both filtered), got %d", stat.Deleted)
+	}
+	if stat.Changed != 0 {
+		t.Errorf("expected Changed=0, got %d", stat.Changed)
+	}
+	data := BuildPoContent(header, entries)
+	if len(data) != 0 {
+		t.Errorf("expected empty review data (no new/changed entries), got %d bytes", len(data))
+	}
+}
+
 // TestPoCompare_EmptySrc tests PoCompare when src is empty (all dest entries are new).
 func TestPoCompare_EmptySrc(t *testing.T) {
 	destContent := poHeader + `msgid "Hello"
