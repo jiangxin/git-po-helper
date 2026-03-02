@@ -76,6 +76,21 @@ test_expect_success "compare --json: empty output when no new/changed entries" '
 	test ! -s empty.json
 '
 
+test_expect_success "compare --msgid: same msgid unchanged (ignore msgstr, fuzzy)" '
+	$HELPER compare --stat --msgid old.po new.po >actual 2>&1 &&
+	cat >expect <<-\EOF &&
+	1 new
+	EOF
+	test_cmp expect actual
+'
+
+test_expect_success "compare --msgid: output has only new entries, not changed" '
+	$HELPER compare --msgid -o msgid-out.po old.po new.po &&
+	test -s msgid-out.po &&
+	grep -q "msgid \"New entry\"" msgid-out.po &&
+	! grep -q "msgid \"Hello\"" msgid-out.po
+'
+
 test_expect_success "setup: create PO files with obsolete entries" '
 	cat >old-with-obsolete.po <<-\EOF &&
 	msgid ""

@@ -20,6 +20,7 @@ type compareCommand struct {
 		Stat            bool
 		AssertNoChanges bool
 		AssertChanges   bool
+		MsgIDOnly       bool
 		Output          string
 		NoHeader        bool
 		JSON            bool
@@ -37,6 +38,9 @@ func (v *compareCommand) Command() *cobra.Command {
 		Long: `By default: output new or changed entries to stdout.
 Use -o <file> to write to a file (avoids stderr mixing when redirecting stdout).
 With --stat: show diff statistics between two l10n file versions.
+
+With --msgid: only compare msgid; same msgid is considered unchanged
+(ignore msgstr, fuzzy status changes).
 
 Assert modes (for CI; mutually exclusive with --stat):
 - --assert-no-changes: fail if there are new or changed entries; output goes to stderr on failure
@@ -59,6 +63,7 @@ Output is empty when there are no new or changed entries.`,
 	v.cmd.Flags().BoolVar(&v.O.Stat, "stat", false, "show diff statistics (default: output new or changed entries)")
 	v.cmd.Flags().BoolVar(&v.O.AssertNoChanges, "assert-no-changes", false, "fail (exit 1) if there are new or changed entries; output goes to stderr on failure")
 	v.cmd.Flags().BoolVar(&v.O.AssertChanges, "assert-changes", false, "fail (exit 1) if there are no new or changed entries")
+	v.cmd.Flags().BoolVar(&v.O.MsgIDOnly, "msgid", false, "only compare msgid; same msgid is unchanged (ignore msgstr, fuzzy)")
 	v.cmd.Flags().StringVarP(&v.O.Range, "range", "r", "",
 		"revision range: a..b (a and b), a.. (a and working tree), or a (a~ and a)")
 	v.cmd.Flags().StringVar(&v.O.Commit, "commit", "",
@@ -117,7 +122,7 @@ func (v compareCommand) executeNew(oldCommit, oldFile, newCommit, newFile string
 
 	log.Debugf("outputting new entries from '%s:%s' to '%s:%s'",
 		oldCommit, oldFile, newCommit, newFile)
-	err := util.PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputDest, v.O.NoHeader, v.O.JSON)
+	err := util.PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputDest, v.O.NoHeader, v.O.JSON, v.O.MsgIDOnly)
 	if err != nil {
 		return NewStandardErrorF("failed to prepare review data: %v", err)
 	}
@@ -177,7 +182,7 @@ func (v compareCommand) executeStat(oldCommit, oldFile, newCommit, newFile strin
 		return NewStandardErrorF("%v", err)
 	}
 
-	stat, _ := util.CompareGettextEntries(oldJ, newJ)
+	stat, _ := util.CompareGettextEntries(oldJ, newJ, v.O.MsgIDOnly)
 
 	diffStat := ""
 	if stat.Added != 0 {
