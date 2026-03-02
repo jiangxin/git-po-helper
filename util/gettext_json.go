@@ -271,6 +271,45 @@ func ParseGettextJSONBytes(data []byte) (*GettextJSON, error) {
 	return &out, nil
 }
 
+// ParseGettextJSONBytesForCompare parses gettext JSON with repair attempts (same as ParseGettextJSONBytes).
+// When all repair attempts fail, returns FormatGettextJSONParseError for LLM-assisted file repair.
+func ParseGettextJSONBytesForCompare(data []byte, path string) (*GettextJSON, error) {
+	j, err := ParseGettextJSONBytes(data)
+	if err != nil {
+		return nil, FormatGettextJSONParseError(data, path, err)
+	}
+	return j, nil
+}
+
+// FormatGettextJSONParseError formats a parse error with path and content snippet for LLM repair.
+// Used when JSON repair (BOM removal, markdown extraction, gjson fallback) all fail.
+func FormatGettextJSONParseError(data []byte, path string, parseErr error) error {
+	const snippetLen = 800
+	snippet := string(data)
+	if len(snippet) > snippetLen {
+		snippet = snippet[:snippetLen] + "\n... (truncated, total " + strconv.Itoa(len(data)) + " bytes)"
+	}
+	return fmt.Errorf(`failed to parse gettext JSON file: %s
+
+Parse error: %v
+
+Repair attempts (BOM removal, markdown code block extraction, gjson fallback) all failed.
+The file may have:
+- Invalid JSON syntax (missing commas, brackets, quotes, trailing commas)
+- Truncated or malformed content
+- Incorrect gettext schema
+
+Expected schema:
+  {"header_comment":"","header_meta":"","entries":[{"msgid":"...","msgstr":"...","fuzzy":false,...}]}
+
+Content snippet (first %d bytes):
+---
+%s
+---
+
+Please fix the JSON file to conform to the gettext JSON schema`, path, parseErr, snippetLen, snippet)
+}
+
 // EntryRangeForJSON applies the same range semantics as ParseEntryRange to a JSON entries slice.
 // maxEntry is len(entries). Returns indices in ascending order (1-based content indices).
 func EntryRangeForJSON(spec string, maxEntry int) ([]int, error) {
@@ -487,6 +526,15 @@ func SelectGettextJSONFromFile(jsonFile, rangeSpec string, w io.Writer, useJSON 
 		return nil
 	}
 	return WriteGettextJSONToPO(out, w, false, false)
+}
+
+// GettextJSONToPoBytes converts GettextJSON to PO format bytes for use with PoCompare.
+func GettextJSONToPoBytes(j *GettextJSON) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := WriteGettextJSONToPO(j, &buf, false, false); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // WriteGettextJSONToPO writes the GettextJSON object as valid PO content to w.

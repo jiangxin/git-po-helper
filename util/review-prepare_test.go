@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -230,5 +231,40 @@ func TestParsePoEntriesRoundTrip(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestLoadFileDataForCompare_JSON(t *testing.T) {
+	jsonData := []byte(`{"header_comment":"","header_meta":"Content-Type: text/plain; charset=UTF-8\n","entries":[{"msgid":"Hello","msgstr":"你好","fuzzy":false}]}`)
+	poData, err := LoadFileDataForCompare(jsonData, "test.json")
+	if err != nil {
+		t.Fatalf("LoadFileDataForCompare with JSON: %v", err)
+	}
+	entries, header, err := ParsePoEntries(poData)
+	if err != nil {
+		t.Fatalf("ParsePoEntries of converted data: %v", err)
+	}
+	if len(entries) != 1 || entries[0].MsgID != "Hello" || entries[0].MsgStr != "你好" {
+		t.Errorf("expected Hello/你好, got %d entries: %+v", len(entries), entries)
+	}
+	if len(header) == 0 {
+		t.Errorf("expected non-empty header")
+	}
+}
+
+func TestLoadFileDataForCompare_PO(t *testing.T) {
+	poContent := []byte(`msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Hello"
+msgstr "你好"
+`)
+	out, err := LoadFileDataForCompare(poContent, "test.po")
+	if err != nil {
+		t.Fatalf("LoadFileDataForCompare with PO: %v", err)
+	}
+	if !bytes.Equal(out, poContent) {
+		t.Errorf("PO data should be returned unchanged")
 	}
 }

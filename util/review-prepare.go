@@ -2,6 +2,7 @@
 package util
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,21 @@ import (
 	"github.com/git-l10n/git-po-helper/repository"
 	log "github.com/sirupsen/logrus"
 )
+
+// LoadFileDataForCompare loads file data for compare. Supports PO and gettext JSON.
+// JSON is detected by content (starts with '{' after trim). For JSON, parses with
+// repair attempts; on failure returns FormatGettextJSONParseError for LLM repair.
+func LoadFileDataForCompare(data []byte, path string) ([]byte, error) {
+	trimmed := bytes.TrimLeft(data, " \t\r\n")
+	if len(trimmed) > 0 && trimmed[0] == '{' {
+		j, err := ParseGettextJSONBytesForCompare(data, path)
+		if err != nil {
+			return nil, err
+		}
+		return GettextJSONToPoBytes(j)
+	}
+	return data, nil
+}
 
 func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string, noHeader, useJSON bool) error {
 	var (
@@ -118,6 +134,15 @@ func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string
 	newData, err := os.ReadFile(newFileRevision.Tmpfile)
 	if err != nil {
 		return fmt.Errorf("failed to read new file: %w", err)
+	}
+
+	origData, err = LoadFileDataForCompare(origData, relOldFile)
+	if err != nil {
+		return err
+	}
+	newData, err = LoadFileDataForCompare(newData, relNewFile)
+	if err != nil {
+		return err
 	}
 
 	log.Debugf("extracting differences to review-input")

@@ -122,6 +122,15 @@ func (v compareCommand) executeStat(oldCommit, oldFile, newCommit, newFile strin
 		return NewStandardErrorF("failed to read new file: %v", err)
 	}
 
+	srcData, err = util.LoadFileDataForCompare(srcData, oldFile)
+	if err != nil {
+		return NewStandardErrorF("%v", err)
+	}
+	destData, err = util.LoadFileDataForCompare(destData, newFile)
+	if err != nil {
+		return NewStandardErrorF("%v", err)
+	}
+
 	stat, _, _, err := util.PoCompare(srcData, destData, false)
 	if err != nil {
 		return NewStandardErrorF("%v", err)

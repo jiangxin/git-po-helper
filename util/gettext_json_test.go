@@ -3,6 +3,7 @@ package util
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -891,4 +892,30 @@ func TestParseGettextJSONBytes_RepairMalformedLLMOutput(t *testing.T) {
 			t.Errorf("got %+v", j)
 		}
 	})
+}
+
+func TestFormatGettextJSONParseError(t *testing.T) {
+	data := []byte(`{"invalid": json}`)
+	path := "test.json"
+	parseErr := fmt.Errorf("invalid character 'j' looking for beginning of value")
+	err := FormatGettextJSONParseError(data, path, parseErr)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	errStr := err.Error()
+	if !strings.Contains(errStr, "failed to parse gettext JSON file") {
+		t.Errorf("expected 'failed to parse gettext JSON file' in error, got: %s", errStr)
+	}
+	if !strings.Contains(errStr, path) {
+		t.Errorf("expected path %q in error, got: %s", path, errStr)
+	}
+	if !strings.Contains(errStr, "Content snippet") {
+		t.Errorf("expected 'Content snippet' in error, got: %s", errStr)
+	}
+	if !strings.Contains(errStr, "Please fix the JSON") {
+		t.Errorf("expected 'Please fix the JSON' in error, got: %s", errStr)
+	}
+	if !strings.Contains(errStr, parseErr.Error()) {
+		t.Errorf("expected parse error in output, got: %s", errStr)
+	}
 }
