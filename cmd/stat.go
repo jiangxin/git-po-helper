@@ -49,14 +49,17 @@ func (v statCommand) Execute(args []string) error {
 		return newUserError("stat requires at least one argument: <file> [file...]")
 	}
 
+	var errs []string
 	for i, file := range args {
 		if !util.Exist(file) {
-			return newUserError("file does not exist:", file)
+			errs = append(errs, fmt.Sprintf("file does not exist: %s", file))
+			continue
 		}
 
 		stats, err := util.CountReportStats(file)
 		if err != nil {
-			return newUserErrorF("%v", err)
+			errs = append(errs, fmt.Sprintf("%s: %v", file, err))
+			continue
 		}
 
 		if flag.Verbose() > 0 {
@@ -76,6 +79,9 @@ func (v statCommand) Execute(args []string) error {
 		}
 	}
 
+	if len(errs) > 0 {
+		return newUserError(strings.Join(errs, "\n"))
+	}
 	return nil
 }
 
