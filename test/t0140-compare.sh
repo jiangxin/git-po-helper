@@ -173,4 +173,34 @@ test_expect_success "compare JSON vs PO: mixed input works" '
 	test_cmp expect actual
 '
 
+test_expect_success "compare --assert-no-changes: pass when no changes" '
+	$HELPER compare --assert-no-changes new.po new.po
+'
+
+test_expect_success "compare --assert-no-changes: fail when there are changes" '
+	test_must_fail $HELPER compare --assert-no-changes old.po new.po >out 2>&1 &&
+	grep -q "assert-no-changes failed" out &&
+	grep -q "msgid \"Hello\"" out &&
+	grep -q "msgid \"New entry\"" out
+'
+
+test_expect_success "compare --assert-changes: pass when there are changes" '
+	$HELPER compare --assert-changes old.po new.po
+'
+
+test_expect_success "compare --assert-changes: fail when no changes" '
+	test_must_fail $HELPER compare --assert-changes new.po new.po 2>stderr &&
+	grep -q "assert-changes failed" stderr
+'
+
+test_expect_success "compare --assert-no-changes and --assert-changes are mutually exclusive" '
+	test_must_fail $HELPER compare --assert-no-changes --assert-changes old.po new.po 2>&1 |
+	grep -q "mutually exclusive"
+'
+
+test_expect_success "compare --stat and --assert-no-changes are mutually exclusive" '
+	test_must_fail $HELPER compare --stat --assert-no-changes old.po new.po 2>&1 |
+	grep -q "cannot be used with"
+'
+
 test_done
