@@ -210,9 +210,9 @@ type DiffStat struct {
 
 // PoCompare compares src and dest PO file content. Returns DiffStat, header lines,
 // and review entries (new or changed in dest compared to src). The caller may build
-// PO via BuildPoContent(header, entries) or JSON via PoEntriesToGettextJSON.
+// PO via BuildPoContent(header, entries) or JSON via GettextJSON.
 // When noHeader is true, header is nil (use empty header for JSON output).
-func PoCompare(src, dest []byte, noHeader bool) (DiffStat, []string, []*PoEntry, error) {
+func PoCompare(src, dest []byte, noHeader bool) (DiffStat, []string, []*GettextEntry, error) {
 	oldJ, err := LoadFileToGettextJSON(src, "src")
 	if err != nil {
 		return DiffStat{}, nil, nil, fmt.Errorf("failed to parse src file: %w", err)
@@ -223,7 +223,7 @@ func PoCompare(src, dest []byte, noHeader bool) (DiffStat, []string, []*PoEntry,
 	}
 
 	stat, reviewEntries := CompareGettextEntries(oldJ, newJ)
-	poEntries := GettextEntriesToPoEntries(reviewEntries)
+	entries := GettextEntriesWithRawLines(reviewEntries)
 
 	_, newHeader, err := ParsePoEntries(dest)
 	if err != nil {
@@ -233,5 +233,5 @@ func PoCompare(src, dest []byte, noHeader bool) (DiffStat, []string, []*PoEntry,
 	if noHeader {
 		header = nil
 	}
-	return stat, header, poEntries, nil
+	return stat, header, entries, nil
 }

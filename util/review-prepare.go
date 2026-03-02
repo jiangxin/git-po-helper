@@ -183,7 +183,7 @@ func WriteFile(outputFile string, data []byte) error {
 
 // WritePoEntries writes the review input PO file with header and review entries.
 // When outputPath is "-" or "" and entries is empty, writes nothing (for new-entries command).
-func WritePoEntries(outputPath string, header []string, entries []*PoEntry) error {
+func WritePoEntries(outputPath string, header []string, entries []*GettextEntry) error {
 	data := BuildPoContent(header, entries)
 	return WriteFile(outputPath, data)
 }

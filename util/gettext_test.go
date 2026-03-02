@@ -124,7 +124,7 @@ func TestParsePoEntriesRoundTripBytes(t *testing.T) {
 	}
 }
 
-func TestParsePoEntriesIsFuzzy(t *testing.T) {
+func TestParsePoEntriesFuzzy(t *testing.T) {
 	poContent := `msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -147,14 +147,14 @@ msgstr "正常"
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 entries, got %d", len(entries))
 	}
-	if !entries[0].IsFuzzy {
-		t.Errorf("entry 0 (Fuzzy): expected IsFuzzy=true, got false")
+	if !entries[0].Fuzzy {
+		t.Errorf("entry 0 (Fuzzy): expected Fuzzy=true, got false")
 	}
-	if !entries[1].IsFuzzy {
-		t.Errorf("entry 1 (Fuzzy %%s): expected IsFuzzy=true, got false")
+	if !entries[1].Fuzzy {
+		t.Errorf("entry 1 (Fuzzy %%s): expected Fuzzy=true, got false")
 	}
-	if entries[2].IsFuzzy {
-		t.Errorf("entry 2 (Normal): expected IsFuzzy=false, got true")
+	if entries[2].Fuzzy {
+		t.Errorf("entry 2 (Normal): expected Fuzzy=false, got true")
 	}
 }
 
@@ -176,11 +176,11 @@ func TestParsePoEntriesObsolete(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
-	if entries[0].MsgID != "Active" || entries[0].IsObsolete {
-		t.Errorf("entry 0: got MsgID=%q IsObsolete=%v", entries[0].MsgID, entries[0].IsObsolete)
+	if entries[0].MsgID != "Active" || entries[0].Obsolete {
+		t.Errorf("entry 0: got MsgID=%q Obsolete=%v", entries[0].MsgID, entries[0].Obsolete)
 	}
-	if entries[1].MsgID != "Obsolete" || !entries[1].IsObsolete {
-		t.Errorf("entry 1: got MsgID=%q IsObsolete=%v", entries[1].MsgID, entries[1].IsObsolete)
+	if entries[1].MsgID != "Obsolete" || !entries[1].Obsolete {
+		t.Errorf("entry 1: got MsgID=%q Obsolete=%v", entries[1].MsgID, entries[1].Obsolete)
 	}
 }
 
@@ -203,8 +203,8 @@ func TestParsePoEntriesObsoleteHashTildePipe(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
-	if entries[1].MsgID != "Obsolete" || !entries[1].IsObsolete {
-		t.Errorf("entry 1: got MsgID=%q IsObsolete=%v", entries[1].MsgID, entries[1].IsObsolete)
+	if entries[1].MsgID != "Obsolete" || !entries[1].Obsolete {
+		t.Errorf("entry 1: got MsgID=%q Obsolete=%v", entries[1].MsgID, entries[1].Obsolete)
 	}
 	if entries[1].MsgIDPrevious != "Old source" {
 		t.Errorf("entry 1 MsgIDPrevious: got %q, want %q", entries[1].MsgIDPrevious, "Old source")
@@ -217,7 +217,7 @@ func TestParsePoEntries(t *testing.T) {
 		poContent      string
 		expectedHeader []string
 		expectedCount  int
-		validateEntry  func(t *testing.T, entries []*PoEntry)
+		validateEntry  func(t *testing.T, entries []*GettextEntry)
 	}{
 		{
 			name: "simple PO file with header and entries",
@@ -251,7 +251,7 @@ msgstr ""
 				`"Content-Transfer-Encoding: 8bit\n"`,
 			},
 			expectedCount: 2,
-			validateEntry: func(t *testing.T, entries []*PoEntry) {
+			validateEntry: func(t *testing.T, entries []*GettextEntry) {
 				if len(entries) != 2 {
 					t.Fatalf("expected 2 entries, got %d", len(entries))
 				}
@@ -291,7 +291,7 @@ msgstr "单行"
 				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
-			validateEntry: func(t *testing.T, entries []*PoEntry) {
+			validateEntry: func(t *testing.T, entries []*GettextEntry) {
 				if len(entries) != 2 {
 					t.Fatalf("expected 2 entries, got %d", len(entries))
 				}
@@ -330,7 +330,7 @@ msgstr[1] "文件"
 				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
-			validateEntry: func(t *testing.T, entries []*PoEntry) {
+			validateEntry: func(t *testing.T, entries []*GettextEntry) {
 				if len(entries) != 2 {
 					t.Fatalf("expected 2 entries, got %d", len(entries))
 				}
@@ -384,7 +384,7 @@ msgstr[1] ""
 				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
-			validateEntry: func(t *testing.T, entries []*PoEntry) {
+			validateEntry: func(t *testing.T, entries []*GettextEntry) {
 				if len(entries) != 2 {
 					t.Fatalf("expected 2 entries, got %d", len(entries))
 				}
@@ -426,7 +426,7 @@ msgstr "简单字符串"
 				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
-			validateEntry: func(t *testing.T, entries []*PoEntry) {
+			validateEntry: func(t *testing.T, entries []*GettextEntry) {
 				if len(entries) != 2 {
 					t.Fatalf("expected 2 entries, got %d", len(entries))
 				}
@@ -469,7 +469,7 @@ msgstr ""
 				`"Language: zh_CN\n"`,
 			},
 			expectedCount: 0,
-			validateEntry: func(t *testing.T, entries []*PoEntry) {
+			validateEntry: func(t *testing.T, entries []*GettextEntry) {
 				if len(entries) != 0 {
 					t.Errorf("expected 0 entries, got %d", len(entries))
 				}
@@ -493,7 +493,7 @@ msgstr "已翻译"
 				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
-			validateEntry: func(t *testing.T, entries []*PoEntry) {
+			validateEntry: func(t *testing.T, entries []*GettextEntry) {
 				if len(entries) != 2 {
 					t.Fatalf("expected 2 entries, got %d", len(entries))
 				}
@@ -513,7 +513,7 @@ msgstr "已翻译"
 			poContent:      "",
 			expectedHeader: []string{},
 			expectedCount:  0,
-			validateEntry: func(t *testing.T, entries []*PoEntry) {
+			validateEntry: func(t *testing.T, entries []*GettextEntry) {
 				if len(entries) != 0 {
 					t.Errorf("expected 0 entries, got %d", len(entries))
 				}
@@ -538,7 +538,7 @@ msgstr "正常字符串"
 				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
-			validateEntry: func(t *testing.T, entries []*PoEntry) {
+			validateEntry: func(t *testing.T, entries []*GettextEntry) {
 				if len(entries) != 2 {
 					t.Fatalf("expected 2 entries, got %d", len(entries))
 				}
@@ -553,11 +553,11 @@ msgstr "正常字符串"
 				} else if entries[0].Comments[0] != "#, fuzzy" {
 					t.Errorf("expected comment '#, fuzzy', got '%s'", entries[0].Comments[0])
 				}
-				if !entries[0].IsFuzzy {
-					t.Errorf("expected first entry IsFuzzy=true, got false")
+				if !entries[0].Fuzzy {
+					t.Errorf("expected first entry Fuzzy=true, got false")
 				}
-				if entries[1].IsFuzzy {
-					t.Errorf("expected second entry IsFuzzy=false, got true")
+				if entries[1].Fuzzy {
+					t.Errorf("expected second entry Fuzzy=false, got true")
 				}
 				if len(entries[1].Comments) != 0 {
 					t.Errorf("expected second entry to have no comments, got %d comments", len(entries[1].Comments))
@@ -582,18 +582,18 @@ msgstr "活跃"
 				`"Content-Type: text/plain; charset=UTF-8\n"`,
 			},
 			expectedCount: 2,
-			validateEntry: func(t *testing.T, entries []*PoEntry) {
+			validateEntry: func(t *testing.T, entries []*GettextEntry) {
 				if len(entries) != 2 {
 					for i, e := range entries {
-						t.Logf("entry %d: MsgID=%q IsObsolete=%v", i, e.MsgID, e.IsObsolete)
+						t.Logf("entry %d: MsgID=%q Obsolete=%v", i, e.MsgID, e.Obsolete)
 					}
 					t.Fatalf("expected 2 entries, got %d", len(entries))
 				}
-				if entries[0].MsgID != "Active" || entries[0].IsObsolete {
-					t.Errorf("entry 0: expected active, got MsgID=%q IsObsolete=%v", entries[0].MsgID, entries[0].IsObsolete)
+				if entries[0].MsgID != "Active" || entries[0].Obsolete {
+					t.Errorf("entry 0: expected active, got MsgID=%q Obsolete=%v", entries[0].MsgID, entries[0].Obsolete)
 				}
-				if entries[1].MsgID != "Obsolete" || !entries[1].IsObsolete {
-					t.Errorf("entry 1: expected obsolete, got MsgID=%q IsObsolete=%v", entries[1].MsgID, entries[1].IsObsolete)
+				if entries[1].MsgID != "Obsolete" || !entries[1].Obsolete {
+					t.Errorf("entry 1: expected obsolete, got MsgID=%q Obsolete=%v", entries[1].MsgID, entries[1].Obsolete)
 				}
 			},
 		},

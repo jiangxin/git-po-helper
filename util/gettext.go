@@ -9,17 +9,18 @@ import (
 	"strings"
 )
 
-// PoEntry represents a single PO file entry.
-type PoEntry struct {
-	Comments      []string
-	MsgID         string
-	MsgStr        string
-	MsgIDPlural   string
-	MsgStrPlural  []string
-	RawLines      []string // Original lines for the entry
-	IsFuzzy       bool
-	IsObsolete    bool   // True for #~ obsolete entries
-	MsgIDPrevious string // For #~| format: previous untranslated string (gettext 0.19.8+)
+// GettextEntry represents a single PO/JSON entry. Used for parsing, comparison, and output.
+// MsgID/MsgStr are normalized (unescaped). RawLines preserves exact PO format for round-trip.
+type GettextEntry struct {
+	MsgID         string   `json:"msgid"`
+	MsgStr        string   `json:"msgstr"`
+	MsgIDPlural   string   `json:"msgid_plural,omitempty"`
+	MsgStrPlural  []string `json:"msgstr_plural,omitempty"`
+	Comments      []string `json:"comments,omitempty"`
+	Fuzzy         bool     `json:"fuzzy"`
+	Obsolete      bool     `json:"obsolete,omitempty"`       // True for #~ obsolete entries
+	MsgIDPrevious string   `json:"msgid_previous,omitempty"` // For #~| format (gettext 0.19.8+)
+	RawLines      []string `json:"-"`                        // Original PO lines for round-trip; empty when built from JSON
 }
 
 // commentHasFuzzyFlag returns true if the line is a flag comment (e.g. "#, fuzzy" or "#, fuzzy, c-format")
@@ -106,6 +107,39 @@ func MergeFuzzyIntoFlagLine(line string, addFuzzy bool) string {
 	return out
 }
 
+// poUnescape decodes PO escape sequences in s into real characters.
+// PO uses \n (newline), \t (tab), \r (carriage return), \" (quote), \\ (backslash).
+func poUnescape(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case 'n':
+				b.WriteByte('\n')
+				i++
+			case 't':
+				b.WriteByte('\t')
+				i++
+			case 'r':
+				b.WriteByte('\r')
+				i++
+			case '"':
+				b.WriteByte('"')
+				i++
+			case '\\':
+				b.WriteByte('\\')
+				i++
+			default:
+				b.WriteByte(s[i])
+			}
+		} else {
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
+}
+
 // strDeQuote removes one quote character from each end of s if both ends have a quote.
 // Returns s unchanged otherwise.
 func strDeQuote(s string) string {
@@ -118,9 +152,9 @@ func strDeQuote(s string) string {
 // ParsePoEntries parses PO file entries and returns entries and header.
 // The header includes comments, the empty msgid/msgstr block, and any continuation lines.
 // Entries are 1-based for content (header entry with empty msgid is not included).
-func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error) {
+func ParsePoEntries(data []byte) (entries []*GettextEntry, header []string, err error) {
 	lines := strings.Split(string(data), "\n")
-	var currentEntry *PoEntry
+	var currentEntry *GettextEntry
 	var inHeader = true
 	var hasSeenHeaderBlock bool // true after we've seen msgid "" (the header block)
 	var headerLines []string
@@ -167,30 +201,30 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 				value = strings.TrimSpace(value)
 				value = strDeQuote(value)
 				if currentEntry != nil && (msgidValue.Len() > 0 || msgstrValue.Len() > 0) {
-					currentEntry.MsgID = msgidValue.String()
-					currentEntry.MsgStr = msgstrValue.String()
+					currentEntry.MsgID = poUnescape(msgidValue.String())
+					currentEntry.MsgStr = poUnescape(msgstrValue.String())
 					if msgidPluralValue.Len() > 0 {
-						currentEntry.MsgIDPlural = msgidPluralValue.String()
+						currentEntry.MsgIDPlural = poUnescape(msgidPluralValue.String())
 						currentEntry.MsgStrPlural = make([]string, len(msgstrPluralValues))
 						for i, b := range msgstrPluralValues {
-							currentEntry.MsgStrPlural[i] = b.String()
+							currentEntry.MsgStrPlural[i] = poUnescape(b.String())
 						}
 					}
 					currentEntry.RawLines = entryLines
-					currentEntry.IsFuzzy = entryHasFuzzyFlag(currentEntry.Comments)
-					currentEntry.IsObsolete = inObsolete
+					currentEntry.Fuzzy = entryHasFuzzyFlag(currentEntry.Comments)
+					currentEntry.Obsolete = inObsolete
 					entries = append(entries, currentEntry)
 				}
 				if currentEntry == nil || msgidValue.Len() > 0 || msgstrValue.Len() > 0 {
-					currentEntry = &PoEntry{}
+					currentEntry = &GettextEntry{}
 					entryLines = []string{}
 					msgidValue.Reset()
 					msgstrValue.Reset()
 					msgidPluralValue.Reset()
 					msgstrPluralValues = []strings.Builder{}
 				}
-				currentEntry.MsgIDPrevious = value
-				currentEntry.IsObsolete = true
+				currentEntry.MsgIDPrevious = poUnescape(value)
+				currentEntry.Obsolete = true
 				inObsolete = true
 				entryLines = append(entryLines, line)
 				continue
@@ -286,7 +320,7 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 		if strings.HasPrefix(trimmed, "#") {
 			// Comment line
 			if currentEntry == nil {
-				currentEntry = &PoEntry{}
+				currentEntry = &GettextEntry{}
 				entryLines = []string{}
 			}
 			currentEntry.Comments = append(currentEntry.Comments, line)
@@ -295,26 +329,26 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			// Start of new entry (or obsolete #~ msgid)
 			// Save previous entry if we have one and it has content
 			if currentEntry != nil && (msgidValue.Len() > 0 || msgstrValue.Len() > 0) {
-				currentEntry.MsgID = msgidValue.String()
-				currentEntry.MsgStr = msgstrValue.String()
+				currentEntry.MsgID = poUnescape(msgidValue.String())
+				currentEntry.MsgStr = poUnescape(msgstrValue.String())
 				if msgidPluralValue.Len() > 0 {
-					currentEntry.MsgIDPlural = msgidPluralValue.String()
+					currentEntry.MsgIDPlural = poUnescape(msgidPluralValue.String())
 					currentEntry.MsgStrPlural = make([]string, len(msgstrPluralValues))
 					for i, b := range msgstrPluralValues {
-						currentEntry.MsgStrPlural[i] = b.String()
+						currentEntry.MsgStrPlural[i] = poUnescape(b.String())
 					}
 				}
 				currentEntry.RawLines = entryLines
-				currentEntry.IsFuzzy = entryHasFuzzyFlag(currentEntry.Comments)
-				currentEntry.IsObsolete = inObsolete
+				currentEntry.Fuzzy = entryHasFuzzyFlag(currentEntry.Comments)
+				currentEntry.Obsolete = inObsolete
 				entries = append(entries, currentEntry)
 			}
 			// Start new entry (or continue existing entry if it only has comments)
 			if currentEntry == nil {
-				currentEntry = &PoEntry{}
+				currentEntry = &GettextEntry{}
 				entryLines = []string{}
 			} else if msgidValue.Len() > 0 || msgstrValue.Len() > 0 {
-				currentEntry = &PoEntry{}
+				currentEntry = &GettextEntry{}
 				entryLines = []string{}
 			}
 			// If this line came from #~ msgid, mark the new entry as obsolete
@@ -395,18 +429,18 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 			// if we have collected any continuation lines (msgidValue.Len() > 0)
 			// or if we have a complete entry with msgstr
 			if currentEntry != nil && (msgidValue.Len() > 0 || msgstrValue.Len() > 0) {
-				currentEntry.MsgID = msgidValue.String()
-				currentEntry.MsgStr = msgstrValue.String()
+				currentEntry.MsgID = poUnescape(msgidValue.String())
+				currentEntry.MsgStr = poUnescape(msgstrValue.String())
 				if msgidPluralValue.Len() > 0 {
-					currentEntry.MsgIDPlural = msgidPluralValue.String()
+					currentEntry.MsgIDPlural = poUnescape(msgidPluralValue.String())
 					currentEntry.MsgStrPlural = make([]string, len(msgstrPluralValues))
 					for i, b := range msgstrPluralValues {
-						currentEntry.MsgStrPlural[i] = b.String()
+						currentEntry.MsgStrPlural[i] = poUnescape(b.String())
 					}
 				}
 				currentEntry.RawLines = entryLines
-				currentEntry.IsFuzzy = entryHasFuzzyFlag(currentEntry.Comments)
-				currentEntry.IsObsolete = inObsolete
+				currentEntry.Fuzzy = entryHasFuzzyFlag(currentEntry.Comments)
+				currentEntry.Obsolete = inObsolete
 				entries = append(entries, currentEntry)
 			}
 			currentEntry = nil
@@ -434,18 +468,18 @@ func ParsePoEntries(data []byte) (entries []*PoEntry, header []string, err error
 
 	// Handle last entry
 	if currentEntry != nil && (msgidValue.Len() > 0 || msgstrValue.Len() > 0) {
-		currentEntry.MsgID = msgidValue.String()
-		currentEntry.MsgStr = msgstrValue.String()
+		currentEntry.MsgID = poUnescape(msgidValue.String())
+		currentEntry.MsgStr = poUnescape(msgstrValue.String())
 		if msgidPluralValue.Len() > 0 {
-			currentEntry.MsgIDPlural = msgidPluralValue.String()
+			currentEntry.MsgIDPlural = poUnescape(msgidPluralValue.String())
 			currentEntry.MsgStrPlural = make([]string, len(msgstrPluralValues))
 			for i, b := range msgstrPluralValues {
-				currentEntry.MsgStrPlural[i] = b.String()
+				currentEntry.MsgStrPlural[i] = poUnescape(b.String())
 			}
 		}
 		currentEntry.RawLines = entryLines
-		currentEntry.IsFuzzy = entryHasFuzzyFlag(currentEntry.Comments)
-		currentEntry.IsObsolete = inObsolete
+		currentEntry.Fuzzy = entryHasFuzzyFlag(currentEntry.Comments)
+		currentEntry.Obsolete = inObsolete
 		entries = append(entries, currentEntry)
 	}
 
@@ -465,7 +499,8 @@ func entryHasFuzzyFlag(comments []string) bool {
 // BuildPoContent builds PO file content from header and entries.
 // It is the inverse of ParsePoEntries: the output can be parsed back to produce the same header and entries.
 // When header is nil or empty, no header block is written (only content entries).
-func BuildPoContent(header []string, entries []*PoEntry) []byte {
+// Entries with RawLines use them for round-trip; otherwise content is built from the entry.
+func BuildPoContent(header []string, entries []*GettextEntry) []byte {
 	var b strings.Builder
 	if len(entries) > 0 && len(header) > 0 {
 		for _, line := range header {
@@ -477,9 +512,13 @@ func BuildPoContent(header []string, entries []*PoEntry) []byte {
 		b.WriteString("\n")
 	}
 	for i, entry := range entries {
-		for _, line := range entry.RawLines {
-			b.WriteString(line)
-			b.WriteString("\n")
+		if len(entry.RawLines) > 0 {
+			for _, line := range entry.RawLines {
+				b.WriteString(line)
+				b.WriteString("\n")
+			}
+		} else {
+			writeGettextEntryToPO(&b, *entry)
 		}
 		// Add blank line between entries, but not after the last one
 		if i < len(entries)-1 {
@@ -605,23 +644,27 @@ func MsgSelect(poFile, rangeSpec string, w io.Writer, noHeader bool, filter *Ent
 	}
 
 	// Filter by state first
-	filteredIndices := FilterPoEntries(entries, f)
-	maxEntry := len(filteredIndices)
+	entriesSlice := make([]GettextEntry, len(entries))
+	for i, e := range entries {
+		entriesSlice[i] = *e
+	}
+	filtered := FilterGettextEntries(entriesSlice, f)
+	maxEntry := len(filtered)
 	indices, err := ParseEntryRange(rangeSpec, maxEntry)
 	if err != nil {
 		return fmt.Errorf("invalid range %q: %w", rangeSpec, err)
 	}
 
-	// Map range indices to original entry indices
-	var finalIndices []int
+	// Map range indices to filtered entries
+	var selected []*GettextEntry
 	for _, idx := range indices {
-		if idx > 0 && idx <= len(filteredIndices) {
-			finalIndices = append(finalIndices, filteredIndices[idx-1])
+		if idx > 0 && idx <= len(filtered) {
+			selected = append(selected, &filtered[idx-1])
 		}
 	}
 
 	// If no content entries, output empty
-	if len(finalIndices) == 0 {
+	if len(selected) == 0 {
 		return nil
 	}
 
@@ -642,9 +685,8 @@ func MsgSelect(poFile, rangeSpec string, w io.Writer, noHeader bool, filter *Ent
 		}
 	}
 
-	// Write selected entries (entries[idx-1])
-	for _, idx := range finalIndices {
-		entry := entries[idx-1]
+	// Write selected entries
+	for _, entry := range selected {
 		for _, line := range entry.RawLines {
 			if _, err := io.WriteString(w, line); err != nil {
 				return err
@@ -682,16 +724,20 @@ func WriteGettextJSONFromPOFile(poFile, rangeSpec string, w io.Writer, filter *E
 	if filter != nil {
 		f = *filter
 	}
-	filteredIndices := FilterPoEntries(entries, f)
-	maxEntry := len(filteredIndices)
+	entriesSlice := make([]GettextEntry, len(entries))
+	for i, e := range entries {
+		entriesSlice[i] = *e
+	}
+	filtered := FilterGettextEntries(entriesSlice, f)
+	maxEntry := len(filtered)
 	indices, err := ParseEntryRange(rangeSpec, maxEntry)
 	if err != nil {
 		return fmt.Errorf("invalid range %q: %w", rangeSpec, err)
 	}
-	var selected []*PoEntry
+	var selected []*GettextEntry
 	for _, idx := range indices {
-		if idx > 0 && idx <= len(filteredIndices) {
-			selected = append(selected, entries[filteredIndices[idx-1]-1])
+		if idx > 0 && idx <= len(filtered) {
+			selected = append(selected, &filtered[idx-1])
 		}
 	}
 	return BuildGettextJSON(headerComment, headerMeta, selected, w)

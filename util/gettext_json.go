@@ -21,18 +21,6 @@ type GettextJSON struct {
 	Entries       []GettextEntry `json:"entries"`
 }
 
-// GettextEntry represents one PO entry in the JSON format.
-type GettextEntry struct {
-	MsgID         string   `json:"msgid"`
-	MsgStr        string   `json:"msgstr"`
-	MsgIDPlural   string   `json:"msgid_plural,omitempty"`
-	MsgStrPlural  []string `json:"msgstr_plural,omitempty"`
-	Comments      []string `json:"comments,omitempty"`
-	Fuzzy         bool     `json:"fuzzy"`
-	Obsolete      bool     `json:"obsolete,omitempty"`       // True for #~ obsolete entries
-	MsgIDPrevious string   `json:"msgid_previous,omitempty"` // For #~| format (gettext 0.19.8+)
-}
-
 // poEscape encodes a string for PO quoted output: backslash, quote, newline, tab, carriage return.
 func poEscape(s string) string {
 	var b strings.Builder
@@ -50,39 +38,6 @@ func poEscape(s string) string {
 		case '\r':
 			b.WriteString(`\r`)
 		default:
-			b.WriteByte(s[i])
-		}
-	}
-	return b.String()
-}
-
-// poUnescape decodes PO escape sequences in s into real characters.
-// PO uses \n (newline), \t (tab), \r (carriage return), \" (quote), \\ (backslash).
-func poUnescape(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+1 < len(s) {
-			switch s[i+1] {
-			case 'n':
-				b.WriteByte('\n')
-				i++
-			case 't':
-				b.WriteByte('\t')
-				i++
-			case 'r':
-				b.WriteByte('\r')
-				i++
-			case '"':
-				b.WriteByte('"')
-				i++
-			case '\\':
-				b.WriteByte('\\')
-				i++
-			default:
-				b.WriteByte(s[i])
-			}
-		} else {
 			b.WriteByte(s[i])
 		}
 	}
@@ -138,9 +93,10 @@ func SplitHeader(header []string) (headerComment, headerMeta string, err error) 
 	return headerComment, headerMeta, nil
 }
 
-// GettextEntriesToPoEntries converts GettextEntry slice to PoEntry slice for BuildPoContent.
-func GettextEntriesToPoEntries(entries []GettextEntry) []*PoEntry {
-	out := make([]*PoEntry, 0, len(entries))
+// GettextEntriesWithRawLines converts GettextEntry slice to []*GettextEntry with RawLines
+// populated for BuildPoContent. Use when entries lack RawLines (e.g. from CompareGettextEntries).
+func GettextEntriesWithRawLines(entries []GettextEntry) []*GettextEntry {
+	out := make([]*GettextEntry, 0, len(entries))
 	for _, e := range entries {
 		var buf bytes.Buffer
 		if err := writeGettextEntryToPO(&buf, e); err != nil {
@@ -148,53 +104,35 @@ func GettextEntriesToPoEntries(entries []GettextEntry) []*PoEntry {
 		}
 		s := strings.TrimSuffix(buf.String(), "\n")
 		rawLines := strings.Split(s, "\n")
-		out = append(out, &PoEntry{RawLines: rawLines})
-	}
-	return out
-}
-
-// PoEntriesToGettextJSON builds a GettextJSON from header and PO entries (all entries, no range).
-func PoEntriesToGettextJSON(headerComment, headerMeta string, entries []*PoEntry) *GettextJSON {
-	out := &GettextJSON{
-		HeaderComment: headerComment,
-		HeaderMeta:    headerMeta,
-		Entries:       make([]GettextEntry, 0, len(entries)),
-	}
-	for _, e := range entries {
-		ent := GettextEntry{
-			MsgID:         poUnescape(e.MsgID),
-			MsgStr:        poUnescape(e.MsgStr),
-			Fuzzy:         e.IsFuzzy,
-			Obsolete:      e.IsObsolete,
-			MsgIDPrevious: poUnescape(e.MsgIDPrevious),
-		}
-		// Strip fuzzy from comments; fuzzy state lives only in ent.Fuzzy. Drop empty lines.
-		for _, c := range e.Comments {
-			if stripped := StripFuzzyFromCommentLine(c); stripped != "" {
-				ent.Comments = append(ent.Comments, stripped)
-			}
-		}
-		if e.MsgIDPlural != "" {
-			ent.MsgIDPlural = poUnescape(e.MsgIDPlural)
-		}
-		if len(e.MsgStrPlural) > 0 {
-			ent.MsgStrPlural = make([]string, len(e.MsgStrPlural))
-			for i, s := range e.MsgStrPlural {
-				ent.MsgStrPlural[i] = poUnescape(s)
-			}
-		}
-		if ent.Comments == nil {
-			ent.Comments = []string{}
-		}
-		out.Entries = append(out.Entries, ent)
+		ent := e
+		ent.RawLines = rawLines
+		out = append(out, &ent)
 	}
 	return out
 }
 
 // BuildGettextJSON builds the JSON object from header comment, header meta, and selected entries,
 // and writes it to w. Entries should already be range-selected (e.g. from MsgSelect flow).
-func BuildGettextJSON(headerComment, headerMeta string, entries []*PoEntry, w io.Writer) error {
-	return WriteGettextJSONToJSON(PoEntriesToGettextJSON(headerComment, headerMeta, entries), w)
+func BuildGettextJSON(headerComment, headerMeta string, entries []*GettextEntry, w io.Writer) error {
+	entriesForJSON := make([]GettextEntry, 0, len(entries))
+	for _, e := range entries {
+		ent := *e
+		ent.Comments = nil
+		for _, c := range e.Comments {
+			if stripped := StripFuzzyFromCommentLine(c); stripped != "" {
+				ent.Comments = append(ent.Comments, stripped)
+			}
+		}
+		if ent.Comments == nil {
+			ent.Comments = []string{}
+		}
+		entriesForJSON = append(entriesForJSON, ent)
+	}
+	return WriteGettextJSONToJSON(&GettextJSON{
+		HeaderComment: headerComment,
+		HeaderMeta:    headerMeta,
+		Entries:       entriesForJSON,
+	}, w)
 }
 
 // WriteGettextJSONToJSON writes a GettextJSON value as JSON to w (same schema as --json output).
@@ -443,7 +381,30 @@ func LoadFileToGettextJSON(data []byte, path string) (*GettextJSON, error) {
 	if err != nil {
 		return nil, fmt.Errorf("split header %s: %w", path, err)
 	}
-	return PoEntriesToGettextJSON(headerComment, headerMeta, entries), nil
+	return GettextJSONFromEntries(headerComment, headerMeta, entries), nil
+}
+
+// GettextJSONFromEntries builds GettextJSON from header and entries (strips fuzzy from comments).
+func GettextJSONFromEntries(headerComment, headerMeta string, entries []*GettextEntry) *GettextJSON {
+	entriesForJSON := make([]GettextEntry, 0, len(entries))
+	for _, e := range entries {
+		ent := *e
+		ent.Comments = nil
+		for _, c := range e.Comments {
+			if stripped := StripFuzzyFromCommentLine(c); stripped != "" {
+				ent.Comments = append(ent.Comments, stripped)
+			}
+		}
+		if ent.Comments == nil {
+			ent.Comments = []string{}
+		}
+		entriesForJSON = append(entriesForJSON, ent)
+	}
+	return &GettextJSON{
+		HeaderComment: headerComment,
+		HeaderMeta:    headerMeta,
+		Entries:       entriesForJSON,
+	}
 }
 
 // ReadFileToGettextJSON reads a single file (PO, POT, or gettext JSON) and returns GettextJSON.

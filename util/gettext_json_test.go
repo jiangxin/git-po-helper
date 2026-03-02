@@ -102,12 +102,12 @@ func TestSplitHeader_Empty(t *testing.T) {
 }
 
 func TestBuildGettextJSON_RoundTrip(t *testing.T) {
-	entries := []*PoEntry{
+	entries := []*GettextEntry{
 		{
 			MsgID:    "Hello",
 			MsgStr:   "你好",
 			Comments: []string{"#. Comment\n", "#: src/file.c:10\n"},
-			IsFuzzy:  false,
+			Fuzzy:    false,
 		},
 		{
 			MsgID:        "One file",
@@ -115,7 +115,7 @@ func TestBuildGettextJSON_RoundTrip(t *testing.T) {
 			MsgIDPlural:  "%d files",
 			MsgStrPlural: []string{"一个文件", "%d 个文件"},
 			Comments:     []string{"#, c-format\n"},
-			IsFuzzy:      false,
+			Fuzzy:        false,
 		},
 	}
 	var buf bytes.Buffer
@@ -162,11 +162,11 @@ func TestBuildGettextJSON_EmptyEntries(t *testing.T) {
 }
 
 func TestPoUnescape_InMsgidMsgstr(t *testing.T) {
-	entries := []*PoEntry{
+	entries := []*GettextEntry{
 		{
-			MsgID:   "Line one\nLine two\twith tab",
-			MsgStr:  "第一行\n第二行\t带制表符",
-			IsFuzzy: false,
+			MsgID:  "Line one\nLine two\twith tab",
+			MsgStr: "第一行\n第二行\t带制表符",
+			Fuzzy:  false,
 		},
 	}
 	var buf bytes.Buffer
@@ -511,7 +511,7 @@ msgstr "活跃"
 		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
 	headerComment, headerMeta, _ := SplitHeader(header)
-	j := PoEntriesToGettextJSON(headerComment, headerMeta, entries)
+	j := GettextJSONFromEntries(headerComment, headerMeta, entries)
 	if j.Entries[0].Obsolete || !j.Entries[1].Obsolete {
 		t.Errorf("Obsolete flags: entry0=%v entry1=%v", j.Entries[0].Obsolete, j.Entries[1].Obsolete)
 	}
@@ -526,11 +526,11 @@ msgstr "活跃"
 	if len(entries2) != 2 {
 		t.Fatalf("round-trip: expected 2 entries, got %d", len(entries2))
 	}
-	if entries2[0].MsgID != "Active" || entries2[0].IsObsolete {
-		t.Errorf("round-trip entry0: MsgID=%q IsObsolete=%v", entries2[0].MsgID, entries2[0].IsObsolete)
+	if entries2[0].MsgID != "Active" || entries2[0].Obsolete {
+		t.Errorf("round-trip entry0: MsgID=%q Obsolete=%v", entries2[0].MsgID, entries2[0].Obsolete)
 	}
-	if entries2[1].MsgID != "Obsolete" || !entries2[1].IsObsolete {
-		t.Errorf("round-trip entry1: MsgID=%q IsObsolete=%v", entries2[1].MsgID, entries2[1].IsObsolete)
+	if entries2[1].MsgID != "Obsolete" || !entries2[1].Obsolete {
+		t.Errorf("round-trip entry1: MsgID=%q Obsolete=%v", entries2[1].MsgID, entries2[1].Obsolete)
 	}
 	if !strings.Contains(poBuf.String(), "#~ msgid \"Obsolete\"") {
 		t.Errorf("output should contain #~ msgid format: %s", poBuf.String())
@@ -560,7 +560,7 @@ msgstr "活跃"
 		t.Errorf("MsgIDPrevious: got %q", entries[1].MsgIDPrevious)
 	}
 	headerComment, headerMeta, _ := SplitHeader(header)
-	j := PoEntriesToGettextJSON(headerComment, headerMeta, entries)
+	j := GettextJSONFromEntries(headerComment, headerMeta, entries)
 	if j.Entries[1].MsgIDPrevious != "Old source" {
 		t.Errorf("JSON MsgIDPrevious: got %q", j.Entries[1].MsgIDPrevious)
 	}
@@ -792,7 +792,7 @@ msgstr ""
 		t.Fatal(err)
 	}
 	_, headerMeta, _ := SplitHeader(header)
-	j := PoEntriesToGettextJSON("", headerMeta, entries)
+	j := GettextJSONFromEntries("", headerMeta, entries)
 	if len(j.Entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(j.Entries))
 	}
@@ -826,7 +826,7 @@ msgstr ""
 		t.Fatal(err)
 	}
 	_, headerMeta2, _ := SplitHeader(header2)
-	j2 := PoEntriesToGettextJSON("", headerMeta2, entries2)
+	j2 := GettextJSONFromEntries("", headerMeta2, entries2)
 	if len(j2.Entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(j2.Entries))
 	}
