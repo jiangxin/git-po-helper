@@ -106,7 +106,7 @@ func ReportReviewFromJSON(path string) (string, *ReviewReportResult, error) {
 	}
 
 	if Exist(poFile) {
-		stats, err := CountPoReportStats(poFile)
+		stats, err := CountReportStats(poFile)
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to count entries in %s: %w", poFile, err)
 		}
@@ -215,7 +215,7 @@ func ReportReviewFromPathWithBatches(path string) (string, *ReviewReportResult, 
 		merged = &ReviewJSONResult{Issues: []ReviewIssue{}}
 	}
 	if Exist(poFile) {
-		stats, err := CountPoReportStats(poFile)
+		stats, err := CountReportStats(poFile)
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to count entries in %s: %w", poFile, err)
 		}

@@ -138,6 +138,21 @@ func SplitHeader(header []string) (headerComment, headerMeta string, err error) 
 	return headerComment, headerMeta, nil
 }
 
+// GettextEntriesToPoEntries converts GettextEntry slice to PoEntry slice for BuildPoContent.
+func GettextEntriesToPoEntries(entries []GettextEntry) []*PoEntry {
+	out := make([]*PoEntry, 0, len(entries))
+	for _, e := range entries {
+		var buf bytes.Buffer
+		if err := writeGettextEntryToPO(&buf, e); err != nil {
+			return nil
+		}
+		s := strings.TrimSuffix(buf.String(), "\n")
+		rawLines := strings.Split(s, "\n")
+		out = append(out, &PoEntry{RawLines: rawLines})
+	}
+	return out
+}
+
 // PoEntriesToGettextJSON builds a GettextJSON from header and PO entries (all entries, no range).
 func PoEntriesToGettextJSON(headerComment, headerMeta string, entries []*PoEntry) *GettextJSON {
 	out := &GettextJSON{
@@ -411,16 +426,13 @@ func ClearFuzzyFromGettextJSON(j *GettextJSON) {
 	}
 }
 
-// ReadFileToGettextJSON reads a single file (PO, POT, or gettext JSON) and returns GettextJSON.
-// Format is detected by extension (.json) or by content (starts with '{' after whitespace).
-func ReadFileToGettextJSON(path string) (*GettextJSON, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
+// LoadFileToGettextJSON loads file data (PO, POT, or gettext JSON) into GettextJSON.
+// Format is detected by content (starts with '{' after trim). Used by ReadFileToGettextJSON,
+// stat, and compare. For JSON parse failure, returns FormatGettextJSONParseError.
+func LoadFileToGettextJSON(data []byte, path string) (*GettextJSON, error) {
 	trimmed := bytes.TrimLeft(data, " \t\r\n")
 	if len(trimmed) > 0 && trimmed[0] == '{' {
-		return ParseGettextJSONBytes(data)
+		return ParseGettextJSONBytesForCompare(data, path)
 	}
 	// PO/POT
 	entries, header, err := ParsePoEntries(data)
@@ -432,6 +444,16 @@ func ReadFileToGettextJSON(path string) (*GettextJSON, error) {
 		return nil, fmt.Errorf("split header %s: %w", path, err)
 	}
 	return PoEntriesToGettextJSON(headerComment, headerMeta, entries), nil
+}
+
+// ReadFileToGettextJSON reads a single file (PO, POT, or gettext JSON) and returns GettextJSON.
+// Format is detected by content (starts with '{' after whitespace).
+func ReadFileToGettextJSON(path string) (*GettextJSON, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return LoadFileToGettextJSON(data, path)
 }
 
 // MsgSelectFromFile implements the 3-step flow: Load → Filter → Save.
@@ -528,10 +550,10 @@ func SelectGettextJSONFromFile(jsonFile, rangeSpec string, w io.Writer, useJSON 
 	return WriteGettextJSONToPO(out, w, false, false)
 }
 
-// GettextJSONToPoBytes converts GettextJSON to PO format bytes for use with PoCompare.
-func GettextJSONToPoBytes(j *GettextJSON) ([]byte, error) {
+// GettextJSONToPoBytes converts GettextJSON to PO format bytes.
+func GettextJSONToPoBytes(j *GettextJSON, noHeader bool) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := WriteGettextJSONToPO(j, &buf, false, false); err != nil {
+	if err := WriteGettextJSONToPO(j, &buf, noHeader, false); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

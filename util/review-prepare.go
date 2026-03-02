@@ -2,7 +2,6 @@
 package util
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,21 +10,6 @@ import (
 	"github.com/git-l10n/git-po-helper/repository"
 	log "github.com/sirupsen/logrus"
 )
-
-// LoadFileDataForCompare loads file data for compare. Supports PO and gettext JSON.
-// JSON is detected by content (starts with '{' after trim). For JSON, parses with
-// repair attempts; on failure returns FormatGettextJSONParseError for LLM repair.
-func LoadFileDataForCompare(data []byte, path string) ([]byte, error) {
-	trimmed := bytes.TrimLeft(data, " \t\r\n")
-	if len(trimmed) > 0 && trimmed[0] == '{' {
-		j, err := ParseGettextJSONBytesForCompare(data, path)
-		if err != nil {
-			return nil, err
-		}
-		return GettextJSONToPoBytes(j)
-	}
-	return data, nil
-}
 
 func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string, noHeader, useJSON bool) error {
 	var (
@@ -136,46 +120,42 @@ func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string
 		return fmt.Errorf("failed to read new file: %w", err)
 	}
 
-	origData, err = LoadFileDataForCompare(origData, relOldFile)
+	oldJ, err := LoadFileToGettextJSON(origData, relOldFile)
 	if err != nil {
 		return err
 	}
-	newData, err = LoadFileDataForCompare(newData, relNewFile)
+	newJ, err := LoadFileToGettextJSON(newData, relNewFile)
 	if err != nil {
 		return err
 	}
 
 	log.Debugf("extracting differences to review-input")
-	_, header, entries, err := PoCompare(origData, newData, noHeader)
-	if err != nil {
-		return err
-	}
+	_, reviewEntries := CompareGettextEntries(oldJ, newJ)
 
-	if len(entries) == 0 {
-		// Empty output when no new or changed entries
+	if len(reviewEntries) == 0 {
 		return WriteFile(outputFile, nil)
 	}
 
+	out := &GettextJSON{
+		HeaderComment: newJ.HeaderComment,
+		HeaderMeta:    newJ.HeaderMeta,
+		Entries:       reviewEntries,
+	}
+	if noHeader {
+		out.HeaderComment = ""
+		out.HeaderMeta = ""
+	}
+
 	if useJSON {
-		headerComment, headerMeta := "", ""
-		if len(header) > 0 {
-			var splitErr error
-			headerComment, headerMeta, splitErr = SplitHeader(header)
-			if splitErr != nil {
-				return fmt.Errorf("failed to split header: %w", splitErr)
-			}
-		}
-		j := PoEntriesToGettextJSON(headerComment, headerMeta, entries)
-		return writeGettextJSONToPath(outputFile, j)
+		return writeGettextJSONToPath(outputFile, out)
 	}
 
-	data := BuildPoContent(header, entries)
+	poData, err := GettextJSONToPoBytes(out, noHeader)
+	if err != nil {
+		return fmt.Errorf("failed to build PO: %w", err)
+	}
 	log.Infof("review data prepared: review-input=%s", outputFile)
-	if err = WriteFile(outputFile, data); err != nil {
-		return fmt.Errorf("failed to extract review input: %w", err)
-	}
-
-	return nil
+	return WriteFile(outputFile, poData)
 }
 
 func writeGettextJSONToPath(outputFile string, j *GettextJSON) error {

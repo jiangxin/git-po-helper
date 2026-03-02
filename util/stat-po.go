@@ -2,7 +2,6 @@
 package util
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -22,98 +21,22 @@ func (s *PoReportStats) Total() int {
 	return s.Translated + s.Untranslated + s.Fuzzy
 }
 
-// CountPoReportStats reads a PO file and returns entry statistics.
-func CountPoReportStats(poFile string) (*PoReportStats, error) {
-	data, err := os.ReadFile(poFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read %s: %w", poFile, err)
-	}
-
-	entries, _, err := ParsePoEntries(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", poFile, err)
-	}
-
+// countStatsFromGettextJSON computes PoReportStats from GettextJSON entries.
+func countStatsFromGettextJSON(j *GettextJSON) *PoReportStats {
 	stats := &PoReportStats{}
-
-	for _, e := range entries {
-		// Skip header (empty msgid)
-		if e.MsgID == "" {
-			continue
-		}
-		// Skip obsolete entries; count them separately
-		if e.IsObsolete {
-			stats.Obsolete++
-			continue
-		}
-
-		hasTranslation := false
-		msgstrValue := ""
-
-		if len(e.MsgStrPlural) > 0 {
-			for _, s := range e.MsgStrPlural {
-				if s != "" {
-					hasTranslation = true
-					break
-				}
-			}
-			if len(e.MsgStrPlural) > 0 {
-				msgstrValue = e.MsgStrPlural[0]
-			}
-		} else {
-			hasTranslation = e.MsgStr != ""
-			msgstrValue = e.MsgStr
-		}
-
-		if e.IsFuzzy {
-			stats.Fuzzy++
-			continue
-		}
-		if !hasTranslation {
-			stats.Untranslated++
-			continue
-		}
-		if msgstrValue == e.MsgID {
-			stats.Same++
-			// To be compatible with msgfmt --statistics, we count same as translated.
-			stats.Translated++
-			continue
-		}
-		stats.Translated++
+	if j == nil {
+		return stats
 	}
-
-	return stats, nil
-}
-
-// CountJSONReportStats reads a gettext JSON file and returns entry statistics.
-// Uses the same schema as msg-select --json output (GettextJSON in gettext_json.go).
-func CountJSONReportStats(jsonFile string) (*PoReportStats, error) {
-	data, err := os.ReadFile(jsonFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read %s: %w", jsonFile, err)
-	}
-
-	j, err := ParseGettextJSONBytes(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", jsonFile, err)
-	}
-
-	stats := &PoReportStats{}
-
 	for _, e := range j.Entries {
-		// Skip header (empty msgid)
 		if e.MsgID == "" {
 			continue
 		}
-		// Skip obsolete entries; count them separately
 		if e.Obsolete {
 			stats.Obsolete++
 			continue
 		}
-
 		hasTranslation := false
 		msgstrValue := ""
-
 		if len(e.MsgStrPlural) > 0 {
 			for _, s := range e.MsgStrPlural {
 				if s != "" {
@@ -128,7 +51,6 @@ func CountJSONReportStats(jsonFile string) (*PoReportStats, error) {
 			hasTranslation = e.MsgStr != ""
 			msgstrValue = e.MsgStr
 		}
-
 		if e.Fuzzy {
 			stats.Fuzzy++
 			continue
@@ -144,25 +66,21 @@ func CountJSONReportStats(jsonFile string) (*PoReportStats, error) {
 		}
 		stats.Translated++
 	}
-
-	return stats, nil
+	return stats
 }
 
 // CountReportStats reads a PO or gettext JSON file and returns entry statistics.
-// Format is auto-detected: JSON if file starts with '{' after whitespace.
+// Uses LoadFileToGettextJSON for unified loading (same interface as msg-select, msg-cat, compare).
 func CountReportStats(file string) (*PoReportStats, error) {
-	peek, err := os.ReadFile(file)
+	data, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", file, err)
 	}
-	if len(peek) > 512 {
-		peek = peek[:512]
+	j, err := LoadFileToGettextJSON(data, file)
+	if err != nil {
+		return nil, err
 	}
-	trimmed := bytes.TrimLeft(peek, " \t\r\n")
-	if len(trimmed) > 0 && trimmed[0] == '{' {
-		return CountJSONReportStats(file)
-	}
-	return CountPoReportStats(file)
+	return countStatsFromGettextJSON(j), nil
 }
 
 // FormatMsgfmtStatistics formats stats to match msgfmt --statistics output.

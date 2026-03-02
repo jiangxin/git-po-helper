@@ -9,6 +9,86 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// GettextEntriesEqual checks if two GettextEntry values are equal.
+func GettextEntriesEqual(e1, e2 *GettextEntry) bool {
+	if e1.Fuzzy != e2.Fuzzy {
+		return false
+	}
+	if e1.Obsolete != e2.Obsolete {
+		return false
+	}
+	if e1.MsgID != e2.MsgID {
+		return false
+	}
+	if e1.MsgStr != e2.MsgStr {
+		return false
+	}
+	if e1.MsgIDPlural != e2.MsgIDPlural {
+		return false
+	}
+	if len(e1.MsgStrPlural) != len(e2.MsgStrPlural) {
+		return false
+	}
+	for i := range e1.MsgStrPlural {
+		if e1.MsgStrPlural[i] != e2.MsgStrPlural[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// CompareGettextEntries compares old and new GettextJSON. Returns DiffStat and
+// review entries (new or changed in new compared to old). Skips obsolete entries.
+func CompareGettextEntries(oldJ, newJ *GettextJSON) (DiffStat, []GettextEntry) {
+	oldEntries := filterObsolete(oldJ.Entries)
+	newEntries := filterObsolete(newJ.Entries)
+	sort.Slice(oldEntries, func(i, j int) bool { return oldEntries[i].MsgID < oldEntries[j].MsgID })
+	sort.Slice(newEntries, func(i, j int) bool { return newEntries[i].MsgID < newEntries[j].MsgID })
+
+	var stat DiffStat
+	var reviewEntries []GettextEntry
+	i, j := 0, 0
+	for i < len(oldEntries) && j < len(newEntries) {
+		cmp := strings.Compare(oldEntries[i].MsgID, newEntries[j].MsgID)
+		if cmp < 0 {
+			stat.Deleted++
+			i++
+		} else if cmp > 0 {
+			stat.Added++
+			reviewEntries = append(reviewEntries, newEntries[j])
+			j++
+		} else {
+			if !GettextEntriesEqual(&oldEntries[i], &newEntries[j]) {
+				stat.Changed++
+				reviewEntries = append(reviewEntries, newEntries[j])
+			}
+			i++
+			j++
+		}
+	}
+	for i < len(oldEntries) {
+		stat.Deleted++
+		i++
+	}
+	for j < len(newEntries) {
+		stat.Added++
+		reviewEntries = append(reviewEntries, newEntries[j])
+		j++
+	}
+	log.Debugf("review stats: deleted=%d, added=%d, changed=%d", stat.Deleted, stat.Added, stat.Changed)
+	return stat, reviewEntries
+}
+
+func filterObsolete(entries []GettextEntry) []GettextEntry {
+	var out []GettextEntry
+	for _, e := range entries {
+		if !e.Obsolete {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // CompareTarget holds the resolved old/new commit and file for compare operations.
 type CompareTarget struct {
 	OldCommit string
@@ -128,111 +208,30 @@ type DiffStat struct {
 	Deleted int // Entries in src but not in dest
 }
 
-// EntriesEqual checks if two PO entries are equal (same msgid and msgstr).
-func EntriesEqual(e1, e2 *PoEntry) bool {
-	if e1.IsFuzzy != e2.IsFuzzy {
-		return false
-	}
-	if e1.MsgID != e2.MsgID {
-		return false
-	}
-	if e1.MsgStr != e2.MsgStr {
-		return false
-	}
-	if e1.MsgIDPlural != e2.MsgIDPlural {
-		return false
-	}
-	if len(e1.MsgStrPlural) != len(e2.MsgStrPlural) {
-		return false
-	}
-	for i := range e1.MsgStrPlural {
-		if e1.MsgStrPlural[i] != e2.MsgStrPlural[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // PoCompare compares src and dest PO file content. Returns DiffStat, header lines,
 // and review entries (new or changed in dest compared to src). The caller may build
 // PO via BuildPoContent(header, entries) or JSON via PoEntriesToGettextJSON.
 // When noHeader is true, header is nil (use empty header for JSON output).
 func PoCompare(src, dest []byte, noHeader bool) (DiffStat, []string, []*PoEntry, error) {
-	origEntries, _, err := ParsePoEntries(src)
+	oldJ, err := LoadFileToGettextJSON(src, "src")
 	if err != nil {
 		return DiffStat{}, nil, nil, fmt.Errorf("failed to parse src file: %w", err)
 	}
-	newEntries, newHeader, err := ParsePoEntries(dest)
+	newJ, err := LoadFileToGettextJSON(dest, "dest")
 	if err != nil {
 		return DiffStat{}, nil, nil, fmt.Errorf("failed to parse dest file: %w", err)
 	}
 
-	// Sort entries by MsgID for consistent ordering
-	sort.Slice(origEntries, func(i, j int) bool {
-		return origEntries[i].MsgID < origEntries[j].MsgID
-	})
-	sort.Slice(newEntries, func(i, j int) bool {
-		return newEntries[i].MsgID < newEntries[j].MsgID
-	})
+	stat, reviewEntries := CompareGettextEntries(oldJ, newJ)
+	poEntries := GettextEntriesToPoEntries(reviewEntries)
 
-	if len(src) == 0 {
-		log.Debugf("src file is empty, all entries in dest will be included in review-input")
+	_, newHeader, err := ParsePoEntries(dest)
+	if err != nil {
+		return DiffStat{}, nil, nil, fmt.Errorf("failed to parse dest header: %w", err)
 	}
-
-	// Two-pointer merge of sorted origEntries and newEntries
-	var stat DiffStat
-	var reviewEntries []*PoEntry
-	i, j := 0, 0
-	for i < len(origEntries) && j < len(newEntries) {
-		for origEntries[i].IsObsolete {
-			i++
-		}
-		for newEntries[j].IsObsolete {
-			j++
-		}
-		if i >= len(origEntries) || j >= len(newEntries) {
-			break
-		}
-		cmp := strings.Compare(origEntries[i].MsgID, newEntries[j].MsgID)
-		if cmp < 0 {
-			stat.Deleted++
-			i++
-		} else if cmp > 0 {
-			stat.Added++
-			reviewEntries = append(reviewEntries, newEntries[j])
-			j++
-		} else {
-			if !EntriesEqual(origEntries[i], newEntries[j]) {
-				stat.Changed++
-				reviewEntries = append(reviewEntries, newEntries[j])
-			}
-			i++
-			j++
-		}
-	}
-	for i < len(origEntries) {
-		if origEntries[i].IsObsolete {
-			i++
-			continue
-		}
-		stat.Deleted++
-		i++
-	}
-	for j < len(newEntries) {
-		if newEntries[j].IsObsolete {
-			j++
-			continue
-		}
-		stat.Added++
-		reviewEntries = append(reviewEntries, newEntries[j])
-		j++
-	}
-
-	log.Debugf("review stats: deleted=%d, added=%d, changed=%d", stat.Deleted, stat.Added, stat.Changed)
-
 	header := newHeader
 	if noHeader {
 		header = nil
 	}
-	return stat, header, reviewEntries, nil
+	return stat, header, poEntries, nil
 }

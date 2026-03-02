@@ -413,44 +413,44 @@ msgstr "世界"
 	}
 }
 
-// TestEntriesEqual tests EntriesEqual.
-func TestEntriesEqual(t *testing.T) {
+// TestGettextEntriesEqual tests GettextEntriesEqual.
+func TestGettextEntriesEqual(t *testing.T) {
 	tests := []struct {
 		name string
-		e1   *PoEntry
-		e2   *PoEntry
+		e1   *GettextEntry
+		e2   *GettextEntry
 		want bool
 	}{
 		{
 			name: "identical",
-			e1:   &PoEntry{MsgID: "a", MsgStr: "x"},
-			e2:   &PoEntry{MsgID: "a", MsgStr: "x"},
+			e1:   &GettextEntry{MsgID: "a", MsgStr: "x"},
+			e2:   &GettextEntry{MsgID: "a", MsgStr: "x"},
 			want: true,
 		},
 		{
 			name: "different msgstr",
-			e1:   &PoEntry{MsgID: "a", MsgStr: "x"},
-			e2:   &PoEntry{MsgID: "a", MsgStr: "y"},
+			e1:   &GettextEntry{MsgID: "a", MsgStr: "x"},
+			e2:   &GettextEntry{MsgID: "a", MsgStr: "y"},
 			want: false,
 		},
 		{
 			name: "different msgid",
-			e1:   &PoEntry{MsgID: "a", MsgStr: "x"},
-			e2:   &PoEntry{MsgID: "b", MsgStr: "x"},
+			e1:   &GettextEntry{MsgID: "a", MsgStr: "x"},
+			e2:   &GettextEntry{MsgID: "b", MsgStr: "x"},
 			want: false,
 		},
 		{
-			name: "different IsFuzzy",
-			e1:   &PoEntry{MsgID: "a", MsgStr: "x", IsFuzzy: false},
-			e2:   &PoEntry{MsgID: "a", MsgStr: "x", IsFuzzy: true},
+			name: "different Fuzzy",
+			e1:   &GettextEntry{MsgID: "a", MsgStr: "x", Fuzzy: false},
+			e2:   &GettextEntry{MsgID: "a", MsgStr: "x", Fuzzy: true},
 			want: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := EntriesEqual(tt.e1, tt.e2)
+			got := GettextEntriesEqual(tt.e1, tt.e2)
 			if got != tt.want {
-				t.Errorf("EntriesEqual() = %v, want %v", got, tt.want)
+				t.Errorf("GettextEntriesEqual() = %v, want %v", got, tt.want)
 			}
 		})
 	}

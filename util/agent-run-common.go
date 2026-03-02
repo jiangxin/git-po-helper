@@ -33,7 +33,7 @@ func getRelativePath(absPath string) string {
 
 // ValidatePotEntryCount validates the entry count in a POT file.
 // If expectedCount is nil or 0, validation is disabled and the function returns nil.
-// Otherwise, it counts entries using CountPoReportStats() and compares with expectedCount.
+// Otherwise, it counts entries using CountReportStats() and compares with expectedCount.
 // Returns an error if counts don't match, nil if they match or validation is disabled.
 // The stage parameter is used for error messages ("before update" or "after update").
 // For "before update" stage, if the file doesn't exist, the entry count is treated as 0.
@@ -60,7 +60,7 @@ func ValidatePotEntryCount(potFile string, expectedCount *int, stage string) err
 	} else {
 		// Count entries in POT file
 		var stats *PoReportStats
-		stats, err = CountPoReportStats(potFile)
+		stats, err = CountReportStats(potFile)
 		if err != nil {
 			return fmt.Errorf("failed to count entries %s in %s: %w", stage, potFile, err)
 		}
@@ -78,7 +78,7 @@ func ValidatePotEntryCount(potFile string, expectedCount *int, stage string) err
 
 // ValidatePoEntryCount validates the entry count in a PO file.
 // If expectedCount is nil or 0, validation is disabled and the function returns nil.
-// Otherwise, it counts entries using CountPoReportStats() and compares with expectedCount.
+// Otherwise, it counts entries using CountReportStats() and compares with expectedCount.
 // Returns an error if counts don't match, nil if they match or validation is disabled.
 // The stage parameter is used for error messages ("before update" or "after update").
 // For "before update" stage, if the file doesn't exist, the entry count is treated as 0.
@@ -105,7 +105,7 @@ func ValidatePoEntryCount(poFile string, expectedCount *int, stage string) error
 	} else {
 		// Count entries in PO file
 		var stats *PoReportStats
-		stats, err = CountPoReportStats(poFile)
+		stats, err = CountReportStats(poFile)
 		if err != nil {
 			return fmt.Errorf("failed to count entries %s in %s: %w", stage, poFile, err)
 		}

@@ -50,7 +50,7 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	// Pre-validation: Count new and fuzzy entries before translation
 	log.Infof("performing pre-validation: counting new and fuzzy entries")
 
-	statsBefore, err := CountPoReportStats(poFile)
+	statsBefore, err := CountReportStats(poFile)
 	if err != nil {
 		return result, fmt.Errorf("failed to count PO stats: %w", err)
 	}
@@ -187,7 +187,7 @@ func RunAgentTranslate(cfg *config.AgentConfig, agentName, poFile string, agentT
 	// Post-validation: Count new and fuzzy entries after translation
 	log.Infof("performing post-validation: counting new and fuzzy entries")
 
-	statsAfter, err := CountPoReportStats(poFile)
+	statsAfter, err := CountReportStats(poFile)
 	if err != nil {
 		return result, fmt.Errorf("failed to count PO stats after translation: %w", err)
 	}
