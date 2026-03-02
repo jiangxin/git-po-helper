@@ -153,18 +153,18 @@ func EntriesEqual(e1, e2 *PoEntry) bool {
 	return true
 }
 
-// PoCompare compares src and dest PO file content. Returns DiffStat, the generated
-// review-input data (newHeader + reviewEntries), and error. reviewEntries are entries
-// that are new or changed in dest compared to src.
-// When noHeader is true, the output has an empty header (only content entries).
-func PoCompare(src, dest []byte, noHeader bool) (DiffStat, []byte, error) {
+// PoCompare compares src and dest PO file content. Returns DiffStat, header lines,
+// and review entries (new or changed in dest compared to src). The caller may build
+// PO via BuildPoContent(header, entries) or JSON via PoEntriesToGettextJSON.
+// When noHeader is true, header is nil (use empty header for JSON output).
+func PoCompare(src, dest []byte, noHeader bool) (DiffStat, []string, []*PoEntry, error) {
 	origEntries, _, err := ParsePoEntries(src)
 	if err != nil {
-		return DiffStat{}, nil, fmt.Errorf("failed to parse src file: %w", err)
+		return DiffStat{}, nil, nil, fmt.Errorf("failed to parse src file: %w", err)
 	}
 	newEntries, newHeader, err := ParsePoEntries(dest)
 	if err != nil {
-		return DiffStat{}, nil, fmt.Errorf("failed to parse dest file: %w", err)
+		return DiffStat{}, nil, nil, fmt.Errorf("failed to parse dest file: %w", err)
 	}
 
 	// Sort entries by MsgID for consistent ordering
@@ -234,6 +234,5 @@ func PoCompare(src, dest []byte, noHeader bool) (DiffStat, []byte, error) {
 	if noHeader {
 		header = nil
 	}
-	data := BuildPoContent(header, reviewEntries)
-	return stat, data, nil
+	return stat, header, reviewEntries, nil
 }

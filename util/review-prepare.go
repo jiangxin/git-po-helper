@@ -11,7 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string, noHeader bool) error {
+func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string, noHeader, useJSON bool) error {
 	var (
 		err                    error
 		relOldFile, relNewFile string
@@ -120,18 +120,49 @@ func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string
 		return fmt.Errorf("failed to read new file: %w", err)
 	}
 
-	log.Debugf("extracting differences to review-input.po")
-	_, data, err := PoCompare(origData, newData, noHeader)
+	log.Debugf("extracting differences to review-input")
+	_, header, entries, err := PoCompare(origData, newData, noHeader)
 	if err != nil {
 		return err
 	}
 
+	if len(entries) == 0 {
+		// Empty output when no new or changed entries
+		return WriteFile(outputFile, nil)
+	}
+
+	if useJSON {
+		headerComment, headerMeta := "", ""
+		if len(header) > 0 {
+			var splitErr error
+			headerComment, headerMeta, splitErr = SplitHeader(header)
+			if splitErr != nil {
+				return fmt.Errorf("failed to split header: %w", splitErr)
+			}
+		}
+		j := PoEntriesToGettextJSON(headerComment, headerMeta, entries)
+		return writeGettextJSONToPath(outputFile, j)
+	}
+
+	data := BuildPoContent(header, entries)
 	log.Infof("review data prepared: review-input=%s", outputFile)
 	if err = WriteFile(outputFile, data); err != nil {
 		return fmt.Errorf("failed to extract review input: %w", err)
 	}
 
 	return nil
+}
+
+func writeGettextJSONToPath(outputFile string, j *GettextJSON) error {
+	if outputFile == "-" || outputFile == "" {
+		return WriteGettextJSONToJSON(j, os.Stdout)
+	}
+	f, err := os.Create(outputFile)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer f.Close()
+	return WriteGettextJSONToJSON(j, f)
 }
 
 func WriteFile(outputFile string, data []byte) error {

@@ -20,7 +20,7 @@ msgstr "你好"
 msgstr "世界"
 `
 
-	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent), false)
+	stat, header, entries, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -33,6 +33,7 @@ msgstr "世界"
 	if stat.Deleted != 0 {
 		t.Errorf("expected Deleted=0, got %d", stat.Deleted)
 	}
+	data := BuildPoContent(header, entries)
 	if len(data) == 0 {
 		t.Errorf("expected non-empty review data")
 	}
@@ -47,7 +48,7 @@ func TestPoCompare_NoChange(t *testing.T) {
 msgstr "你好"
 `
 
-	stat, data, err := PoCompare([]byte(content), []byte(content), false)
+	stat, header, entries, err := PoCompare([]byte(content), []byte(content), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -55,6 +56,7 @@ msgstr "你好"
 		t.Errorf("expected all zeros, got Added=%d Changed=%d Deleted=%d",
 			stat.Added, stat.Changed, stat.Deleted)
 	}
+	data := BuildPoContent(header, entries)
 	if len(data) != 0 {
 		t.Errorf("expected empty review data when no change, got %d bytes", len(data))
 	}
@@ -72,7 +74,7 @@ msgstr "世界"
 msgstr "你好"
 `
 
-	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent), false)
+	stat, header, entries, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -85,6 +87,7 @@ msgstr "你好"
 	if stat.Deleted != 1 {
 		t.Errorf("expected Deleted=1, got %d", stat.Deleted)
 	}
+	data := BuildPoContent(header, entries)
 	if len(data) != 0 {
 		t.Errorf("expected empty review data (no new/changed), got %d bytes", len(data))
 	}
@@ -99,7 +102,7 @@ msgstr "你好"
 msgstr "您好"
 `
 
-	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent), false)
+	stat, header, entries, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -112,6 +115,7 @@ msgstr "您好"
 	if stat.Deleted != 0 {
 		t.Errorf("expected Deleted=0, got %d", stat.Deleted)
 	}
+	data := BuildPoContent(header, entries)
 	if !bytes.Contains(data, []byte("您好")) {
 		t.Errorf("review data should contain changed entry, got: %s", data)
 	}
@@ -137,7 +141,7 @@ msgid "World"
 msgstr "世界"
 `
 
-	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent), false)
+	stat, header, entries, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -150,6 +154,7 @@ msgstr "世界"
 	if stat.Deleted != 0 {
 		t.Errorf("expected Deleted=0 (obsolete not counted), got %d", stat.Deleted)
 	}
+	data := BuildPoContent(header, entries)
 	if len(data) != 0 {
 		t.Errorf("expected empty review data when no real change, got %d bytes", len(data))
 	}
@@ -172,7 +177,7 @@ msgid "World"
 msgstr "世界"
 `
 
-	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent), false)
+	stat, header, entries, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -182,6 +187,7 @@ msgstr "世界"
 	if stat.Deleted != 0 {
 		t.Errorf("expected Deleted=0, got %d", stat.Deleted)
 	}
+	data := BuildPoContent(header, entries)
 	if !bytes.Contains(data, []byte("World")) {
 		t.Errorf("review data should contain new entry 'World', got: %s", data)
 	}
@@ -201,7 +207,7 @@ msgstr "你好"
 msgstr "你好"
 `
 
-	stat, _, err := PoCompare([]byte(srcContent), []byte(destContent), false)
+	stat, _, _, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -321,7 +327,7 @@ func TestPoCompare_EmptySrc(t *testing.T) {
 msgstr "你好"
 `
 
-	stat, data, err := PoCompare([]byte{}, []byte(destContent), false)
+	stat, header, entries, err := PoCompare([]byte{}, []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -331,6 +337,7 @@ msgstr "你好"
 	if stat.Deleted != 0 {
 		t.Errorf("expected Deleted=0, got %d", stat.Deleted)
 	}
+	data := BuildPoContent(header, entries)
 	if !bytes.Contains(data, []byte("Hello")) {
 		t.Errorf("review data should contain entry, got: %s", data)
 	}
@@ -345,30 +352,31 @@ msgstr "你好"
 msgstr "世界"
 `
 
-	_, data, err := PoCompare([]byte(srcContent), []byte(destContent), false)
+	_, header, entries, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
-	if len(data) == 0 {
+	if len(entries) == 0 {
 		t.Skip("no data to round-trip")
 	}
 
-	entries, header, err := ParsePoEntries(data)
+	data := BuildPoContent(header, entries)
+	parsedEntries, parsedHeader, err := ParsePoEntries(data)
 	if err != nil {
 		t.Fatalf("ParsePoEntries of output failed: %v", err)
 	}
-	if len(entries) != 1 {
-		t.Errorf("expected 1 entry in review output, got %d", len(entries))
+	if len(parsedEntries) != 1 {
+		t.Errorf("expected 1 entry in review output, got %d", len(parsedEntries))
 	}
-	if len(entries) > 0 && entries[0].MsgID != "World" {
-		t.Errorf("expected MsgID 'World', got %q", entries[0].MsgID)
+	if len(parsedEntries) > 0 && parsedEntries[0].MsgID != "World" {
+		t.Errorf("expected MsgID 'World', got %q", parsedEntries[0].MsgID)
 	}
-	if len(header) == 0 {
+	if len(parsedHeader) == 0 {
 		t.Errorf("expected non-empty header")
 	}
 
 	// Round-trip: BuildPoContent should produce same bytes
-	rebuilt := BuildPoContent(header, entries)
+	rebuilt := BuildPoContent(parsedHeader, parsedEntries)
 	if !bytes.Equal(data, rebuilt) {
 		t.Errorf("round-trip mismatch: BuildPoContent output differs from PoCompare output")
 	}
@@ -383,13 +391,14 @@ msgstr "你好"
 msgstr "世界"
 `
 
-	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent), true)
+	stat, header, entries, err := PoCompare([]byte(srcContent), []byte(destContent), true)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
 	if stat.Added != 1 {
 		t.Errorf("expected Added=1, got %d", stat.Added)
 	}
+	data := BuildPoContent(header, entries)
 	if !bytes.Contains(data, []byte("World")) {
 		t.Errorf("review data should contain new entry 'World', got: %s", data)
 	}
