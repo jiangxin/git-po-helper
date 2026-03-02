@@ -156,7 +156,8 @@ func EntriesEqual(e1, e2 *PoEntry) bool {
 // PoCompare compares src and dest PO file content. Returns DiffStat, the generated
 // review-input data (newHeader + reviewEntries), and error. reviewEntries are entries
 // that are new or changed in dest compared to src.
-func PoCompare(src, dest []byte) (DiffStat, []byte, error) {
+// When noHeader is true, the output has an empty header (only content entries).
+func PoCompare(src, dest []byte, noHeader bool) (DiffStat, []byte, error) {
 	origEntries, _, err := ParsePoEntries(src)
 	if err != nil {
 		return DiffStat{}, nil, fmt.Errorf("failed to parse src file: %w", err)
@@ -229,6 +230,10 @@ func PoCompare(src, dest []byte) (DiffStat, []byte, error) {
 
 	log.Debugf("review stats: deleted=%d, added=%d, changed=%d", stat.Deleted, stat.Added, stat.Changed)
 
-	data := BuildPoContent(newHeader, reviewEntries)
+	header := newHeader
+	if noHeader {
+		header = nil
+	}
+	data := BuildPoContent(header, reviewEntries)
 	return stat, data, nil
 }

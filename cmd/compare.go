@@ -13,11 +13,12 @@ import (
 type compareCommand struct {
 	cmd *cobra.Command
 	O   struct {
-		Range  string
-		Commit string
-		Since  string
-		Stat   bool
-		Output string
+		Range    string
+		Commit   string
+		Since    string
+		Stat     bool
+		Output   string
+		NoHeader bool
 	}
 }
 
@@ -56,6 +57,7 @@ Output is empty when there are no new or changed entries.`,
 		"equivalent to -r <commit>.. (compare commit with working tree)")
 	v.cmd.Flags().StringVarP(&v.O.Output, "output", "o", "",
 		"write output to file (use - for stdout); empty output overwrites file")
+	v.cmd.Flags().BoolVar(&v.O.NoHeader, "no-header", false, "omit header from output (empty header in PO)")
 
 	_ = viper.BindPFlag("compare--range", v.cmd.Flags().Lookup("range"))
 	_ = viper.BindPFlag("compare--commit", v.cmd.Flags().Lookup("commit"))
@@ -84,7 +86,7 @@ func (v compareCommand) executeNew(oldCommit, oldFile, newCommit, newFile string
 	}
 	log.Debugf("outputting new entries from '%s:%s' to '%s:%s'",
 		oldCommit, oldFile, newCommit, newFile)
-	err := util.PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputDest)
+	err := util.PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputDest, v.O.NoHeader)
 	if err != nil {
 		return NewStandardErrorF("failed to prepare review data: %v", err)
 	}
@@ -118,7 +120,7 @@ func (v compareCommand) executeStat(oldCommit, oldFile, newCommit, newFile strin
 		return NewStandardErrorF("failed to read new file: %v", err)
 	}
 
-	stat, _, err := util.PoCompare(srcData, destData)
+	stat, _, err := util.PoCompare(srcData, destData, false)
 	if err != nil {
 		return NewStandardErrorF("%v", err)
 	}

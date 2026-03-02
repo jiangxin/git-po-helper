@@ -13,6 +13,7 @@ type msgCatCommand struct {
 	O   struct {
 		Output       string
 		JSON         bool
+		NoHeader     bool
 		Translated   bool
 		Untranslated bool
 		Fuzzy        bool
@@ -56,8 +57,10 @@ Use --json to output gettext JSON; otherwise output is PO format.`,
 	fs.StringVarP(&v.O.Output, "output", "o", "",
 		"write output to file (use - for stdout); default is stdout")
 	fs.BoolVar(&v.O.JSON, "json", false, "output JSON instead of PO text")
+	fs.BoolVar(&v.O.NoHeader, "no-header", false, "omit header from output (empty header in PO/JSON)")
 	fs.SetAnnotation("output", "group", []string{"General options"})
 	fs.SetAnnotation("json", "group", []string{"General options"})
+	fs.SetAnnotation("no-header", "group", []string{"General options"})
 
 	// State filter: translated, untranslated, fuzzy (OR when combined)
 	fs.BoolVar(&v.O.Translated, "translated", false, "select translated entries")
@@ -162,9 +165,17 @@ func (v msgCatCommand) Execute(args []string) error {
 	}
 
 	if v.O.JSON {
-		return util.WriteGettextJSONToJSON(merged, w)
+		out := merged
+		if v.O.NoHeader {
+			out = &util.GettextJSON{
+				HeaderComment: "",
+				HeaderMeta:    "",
+				Entries:       merged.Entries,
+			}
+		}
+		return util.WriteGettextJSONToJSON(out, w)
 	}
-	return util.WriteGettextJSONToPO(merged, w, false, false)
+	return util.WriteGettextJSONToPO(merged, w, v.O.NoHeader, false)
 }
 
 func (v msgCatCommand) buildFilter() (*util.EntryStateFilter, error) {

@@ -480,7 +480,7 @@ func RunAgentReview(cfg *config.AgentConfig, agentName string, target *CompareTa
 	} else {
 		// Step 2: Extract entries
 		log.Infof("preparing review data: %s", reviewPOFile)
-		if err := PrepareReviewData(target.OldCommit, target.OldFile, target.NewCommit, target.NewFile, reviewPOFile); err != nil {
+		if err := PrepareReviewData(target.OldCommit, target.OldFile, target.NewCommit, target.NewFile, reviewPOFile, false); err != nil {
 			return result, fmt.Errorf("failed to prepare review data: %w", err)
 		}
 

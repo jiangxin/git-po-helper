@@ -464,9 +464,10 @@ func entryHasFuzzyFlag(comments []string) bool {
 
 // BuildPoContent builds PO file content from header and entries.
 // It is the inverse of ParsePoEntries: the output can be parsed back to produce the same header and entries.
+// When header is nil or empty, no header block is written (only content entries).
 func BuildPoContent(header []string, entries []*PoEntry) []byte {
 	var b strings.Builder
-	if len(entries) > 0 {
+	if len(entries) > 0 && len(header) > 0 {
 		for _, line := range header {
 			b.WriteString(line)
 			if !strings.HasSuffix(line, "\n") {

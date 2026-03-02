@@ -20,7 +20,7 @@ msgstr "你好"
 msgstr "世界"
 `
 
-	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent))
+	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestPoCompare_NoChange(t *testing.T) {
 msgstr "你好"
 `
 
-	stat, data, err := PoCompare([]byte(content), []byte(content))
+	stat, data, err := PoCompare([]byte(content), []byte(content), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -72,7 +72,7 @@ msgstr "世界"
 msgstr "你好"
 `
 
-	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent))
+	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -99,7 +99,7 @@ msgstr "你好"
 msgstr "您好"
 `
 
-	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent))
+	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -137,7 +137,7 @@ msgid "World"
 msgstr "世界"
 `
 
-	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent))
+	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -172,7 +172,7 @@ msgid "World"
 msgstr "世界"
 `
 
-	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent))
+	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -201,7 +201,7 @@ msgstr "你好"
 msgstr "你好"
 `
 
-	stat, _, err := PoCompare([]byte(srcContent), []byte(destContent))
+	stat, _, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestPoCompare_EmptySrc(t *testing.T) {
 msgstr "你好"
 `
 
-	stat, data, err := PoCompare([]byte{}, []byte(destContent))
+	stat, data, err := PoCompare([]byte{}, []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -345,7 +345,7 @@ msgstr "你好"
 msgstr "世界"
 `
 
-	_, data, err := PoCompare([]byte(srcContent), []byte(destContent))
+	_, data, err := PoCompare([]byte(srcContent), []byte(destContent), false)
 	if err != nil {
 		t.Fatalf("PoCompare returned error: %v", err)
 	}
@@ -371,6 +371,36 @@ msgstr "世界"
 	rebuilt := BuildPoContent(header, entries)
 	if !bytes.Equal(data, rebuilt) {
 		t.Errorf("round-trip mismatch: BuildPoContent output differs from PoCompare output")
+	}
+}
+
+// TestPoCompare_NoHeader tests PoCompare with noHeader=true (empty header in output).
+func TestPoCompare_NoHeader(t *testing.T) {
+	srcContent := poHeader + `msgid "Hello"
+msgstr "你好"
+`
+	destContent := srcContent + `msgid "World"
+msgstr "世界"
+`
+
+	stat, data, err := PoCompare([]byte(srcContent), []byte(destContent), true)
+	if err != nil {
+		t.Fatalf("PoCompare returned error: %v", err)
+	}
+	if stat.Added != 1 {
+		t.Errorf("expected Added=1, got %d", stat.Added)
+	}
+	if !bytes.Contains(data, []byte("World")) {
+		t.Errorf("review data should contain new entry 'World', got: %s", data)
+	}
+	// With noHeader, output should not contain msgid "" header block
+	if bytes.Contains(data, []byte("msgid \"\"\nmsgstr \"\"")) {
+		t.Errorf("output with noHeader should not contain header block, got: %s", data)
+	}
+	// Should start with first content entry
+	trimmed := bytes.TrimLeft(data, " \t\r\n")
+	if !bytes.HasPrefix(trimmed, []byte("msgid ")) {
+		t.Errorf("output should start with msgid, got: %s", data)
 	}
 }
 

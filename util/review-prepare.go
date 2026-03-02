@@ -11,7 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string) error {
+func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string, noHeader bool) error {
 	var (
 		err                    error
 		relOldFile, relNewFile string
@@ -121,7 +121,7 @@ func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string
 	}
 
 	log.Debugf("extracting differences to review-input.po")
-	_, data, err := PoCompare(origData, newData)
+	_, data, err := PoCompare(origData, newData, noHeader)
 	if err != nil {
 		return err
 	}
