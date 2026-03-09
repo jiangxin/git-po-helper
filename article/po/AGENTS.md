@@ -79,12 +79,15 @@ in `#` comments and is preserved when extracting with `msgattrib`.
 ### Single-line vs Multi-line Entries
 
 **Single-line entries**:
+
 ```po
 msgid "commit message"
 msgstr "提交说明"
 ```
 
-**Multi-line entries** (first line of `msgid` and `msgstr` is empty string):
+**Multi-line entries** (the first line of both `msgid` and `msgstr` is an empty
+string):
+
 ```po
 msgid ""
 "Line 1\n"
@@ -94,9 +97,9 @@ msgstr ""
 "行 2"
 ```
 
-**CRITICAL** for multi-line: first line is `msgid ""` / `msgstr ""`; following
-lines are quoted strings; use `\n` for line breaks. Preserve quotes and
-structure exactly.
+**CRITICAL** for multi-line: the first line is `msgid ""` / `msgstr ""`; the
+following lines are quoted strings; use `\n` for line breaks. Preserve quotes
+and structure exactly.
 
 Because multi-line entries also use `msgstr ""` on the first line, `grep
 '^msgstr ""'` yields false positives when locating untranslated strings. See
@@ -180,8 +183,8 @@ msgstr ""
 Original order 1,2,3,4; in translation 2,1,3,4. Each line must be a complete
 quoted string.
 
-**Rules**: Use `%n$` (n = 1-based position); place position before
-width/precision; for `%.*s` map both precision and string; verify all
+**Rules**: Use `%n$` (n = 1-based position); place the position number before
+width/precision modifiers; for `%.*s` map both precision and string; verify all
 placeholders are mapped.
 
 
@@ -200,7 +203,7 @@ Common validation errors include:
 - Malformed multi-line entries
 - Incorrect line breaks in multi-line strings
 
-**Handling validation errors with automatic repair**:
+**Handling validation errors**:
 When `msgfmt` reports an error, it provides the line number where the error
 was detected. Use this information to locate and fix the issue.
 
@@ -210,14 +213,13 @@ was detected. Use this information to locate and fix the issue.
 [git-po-helper](https://github.com/git-l10n/git-po-helper) is a helper program
 for Git localization (l10n) contributions. It serves two main purposes:
 **quality checking** (conventions for git-l10n pull requests) and
-**AI-assisted translation** (evaluate; help establish and assess the impact
-of this document on automated translation). git-po-helper provides subcommands
-that simplify the AI translation workflow and improve efficiency. When
-available, this document uses `git-po-helper` for PO operations; otherwise it
-falls back to gettext tools.
+**AI-assisted translation** (evaluating the impact of this document on
+automated translation; providing subcommands that simplify the AI translation
+workflow and improve efficiency). When available, this document uses
+`git-po-helper` for PO operations; otherwise it falls back to gettext tools.
 
-**This section serves as reference for Housekeeping tasks.** AI Agent should
-follow the Task steps when executing; this content provides command reference
+**This section serves as a reference for housekeeping tasks.** AI agents should
+follow the task steps when executing; this content provides command reference
 information. Do not run commands in isolation.
 
 
@@ -261,8 +263,8 @@ Use `git-po-helper compare` for scenarios that `git diff` or `git show` cannot
 handle well:
 
 - **Show changes with full context**: Get new and modified entries with
-  complete `msgid` and `msgstr`. Plain `git diff` fragments or loses PO
-  context.
+  complete `msgid` and `msgstr`. Plain `git diff` either fragments the output
+  or loses PO context.
 - **Detect msgid tampering**: When an AI-generated PO file may have altered
   `msgid`, a translation becomes an add instead of a replace. Use `--msgid`
   to compare by msgid only. No diff output means the target and source files
@@ -310,9 +312,9 @@ includes a valid PO header.
 
 Use `git-po-helper msg-cat` to merge one or more input files (PO, POT, or
 gettext JSON) into a single output. Input format is auto-detected by content
-or extension. For duplicate `msgid`, the first occurrence by file order wins.
-Use `-o <file>` for output; omit or use `-o -` for stdout. Use `--json` for
-JSON output; otherwise output is PO format.
+or extension. For duplicate `msgid` values, the first occurrence by file
+order wins. Use `-o <file>` for output; omit or use `-o -` for stdout. Use
+`--json` for JSON output; otherwise the output is in PO format.
 
 ```shell
 # Convert JSON to PO (e.g. after translation)
@@ -340,23 +342,23 @@ read and write this format.
 }
 ```
 
-| Field            | Description                                                                   |
-|------------------|-------------------------------------------------------------------------------|
-| `header_comment` | Lines above the first `msgid ""` (comments, glossary). Directly concatenated. |
-| `header_meta`    | Decoded `msgstr` of the header entry (Project-Id-Version, Plural-Forms, etc.).|
-| `entries`        | List of PO entries. Order matches source.                                     |
+| Field            | Description                                                                    |
+|------------------|--------------------------------------------------------------------------------|
+| `header_comment` | Lines above the first `msgid ""` (comments, glossary), directly concatenated.  |
+| `header_meta`    | Decoded `msgstr` of the header entry (Project-Id-Version, Plural-Forms, etc.). |
+| `entries`        | List of PO entries. Order matches source.                                      |
 
 **Entry object** (each element of `entries`):
 
-| Field           | Type     | Description                                           |
-|-----------------|----------|-------------------------------------------------------|
-| `msgid`         | string   | Singular message ID. PO escapes encoded.              |
-| `msgstr`        | string   | Singular message string. Empty for plural entries.    |
-| `msgid_plural`  | string   | Plural form of msgid. Omit for non-plural.            |
-| `msgstr_plural` | []string | Array of msgstr[0], msgstr[1], … Omit for non-plural. |
-| `comments`      | []string | Comment lines (`#`, `#.`, `#:`, `#,`, etc.).          |
-| `fuzzy`         | bool     | True if entry has fuzzy flag.                         |
-| `obsolete`      | bool     | True for `#~` obsolete entries. Omit if false.        |
+| Field           | Type     | Description                                                  |
+|-----------------|----------|--------------------------------------------------------------|
+| `msgid`         | string   | Singular message ID. PO escapes encoded (e.g. `\n` → `\\n`). |
+| `msgstr`        | string   | Singular message string. Empty for plural entries.           |
+| `msgid_plural`  | string   | Plural form of msgid. Omit for non-plural.                   |
+| `msgstr_plural` | []string | Array of msgstr[0], msgstr[1], … Omit for non-plural.        |
+| `comments`      | []string | Comment lines (`#`, `#.`, `#:`, `#,`, etc.).                 |
+| `fuzzy`         | bool     | True if entry has fuzzy flag.                                |
+| `obsolete`      | bool     | True for `#~` obsolete entries. Omit if false.               |
 
 **Example (single-line entry)**:
 
@@ -443,7 +445,7 @@ any task.
 
 ### Task 1: Generating or updating po/git.pot
 
-When asked to "update po/git.pot" or similar requests:
+When asked to "update po/git.pot" or given similar requests:
 
 1. **Directly execute** the command `make po/git.pot` without checking
    if the file exists beforehand.
@@ -457,7 +459,7 @@ update automatically.
 
 ### Task 2: Updating po/XX.po
 
-When asked to "update po/XX.po" or similar requests (where XX is a
+When asked to "update po/XX.po" or given similar requests (where XX is a
 language code):
 
 1. **Directly execute** the command `make po-update PO_FILE=po/XX.po`
@@ -600,7 +602,7 @@ and fuzzy entry; do not stop before the loop completes.
 
 4. **Validate `po/l10n-done.po`**:
 
-   Whether from step 3a (JSON converted to PO) or step 3b (PO output directly),
+   Whether from step 3a (JSON converted to PO) or step 3b (direct PO output),
    the result may have two kinds of issues. Run the validation script; proceed to
    step 5 only if it succeeds:
 
@@ -737,37 +739,57 @@ commit. When asked to review, follow the steps below. **Note**: This task uses
 `git-po-helper compare`; if `git-po-helper` is not available, the task
 cannot be performed.
 
-1. **Check for existing review**: Evaluate the following in order:
+1. **Check for existing review (resume support)**: Evaluate the following in order:
 
-   - If `po/review-input.po` does **not** exist, proceed to step 2 regardless
-     of any other files (e.g., batch or JSON files).
-   - If both `po/review-input.po` and `po/review-result.json` exist, go
-     directly to step 5 (Merge and summary) and display the report.
-     Do **not** check for batch or other temporary files; no further review
-     steps are needed.
-   - If `po/review-input.po` exists but `po/review-result.json` does not,
-     go to step 4 (Process one batch) to continue the previous review.
+   - If `po/review-result.json` exists, go to step 8 (Merge and summary).
+   - If `po/review-pending.po` does **not** exist, proceed to step 2 (Clean
+     up stale intermediate files) for a fresh start.
+   - If `po/review-pending.po` exists:
+     - If `po/review-done.json` exists, go to step 6 (Rename result).
+     - Else if `po/review-todo.json` exists, go to step 5 (Review the current
+       batch).
+     - Else go to step 4 (Extract next batch).
 
-2. **Extract entries**: Run `git-po-helper compare` with the desired range and
-   redirect the output to `po/review-input.po`. Do not use `git show` or
+2. **Clean up stale intermediate files**: Run the script below to remove
+   leftover files from previous reviews before starting a fresh run:
+
+   ```shell
+   rm -f po/review-batch.txt po/review-todo.json po/review-done.json \
+         po/review-result.json po/review-result-*.json
+   ```
+
+3. **Extract entries**: Run `git-po-helper compare` with the desired range and
+   redirect the output to `po/review-pending.po`. Do not use `git show` or
    `git diff`—they can fragment or lose PO context (see "Comparing PO files
    for translation and review" under git-po-helper).
 
-3. **Prepare review batches**: Run the script below to clean up any leftover
-   files from previous reviews and split `po/review-input.po` into one or
-   more `po/review-input-<N>.json` files (dynamic batch sizing). Run as a
-   single script (define the function, then call it):
+4. **Prepare one batch**: Run the script below. It reads the batch number from
+   `po/review-batch.txt` (initializes to 0 if the file is missing), increments
+   it, extracts the first NUM entries to `po/review-todo.json`, and moves the
+   remainder to `po/review-pending.po`. If `po/review-done.json` exists, go to
+   step 6. If there are no entries to review, skip to step 8.
 
    ```shell
-   review_split_batches () {
-       min_batch_size=${1:-50}
-       rm -f po/review-input-*.json
-       rm -f po/review-result-*.json
-       rm -f po/review-result.json
-       rm -f po/review-output.po
+   review_one_batch () {
+       min_batch_size=${1:-100}
+       PENDING="po/review-pending.po"
+       BATCH_FILE="po/review-batch.txt"
+       DONE_JSON="po/review-done.json"
 
-       ENTRY_COUNT=$(grep -c '^msgid ' po/review-input.po 2>/dev/null || true)
+       if test -f "$DONE_JSON" && test -f "$BATCH_FILE"
+       then
+           echo "po/review-done.json exists. Proceed to step 6 (Rename result)."
+           exit 0
+       fi
+
+       rm -f po/review-todo.json "${PENDING}.tmp"
+       ENTRY_COUNT=$(grep -c '^msgid ' "$PENDING" 2>/dev/null || true)
        ENTRY_COUNT=$((ENTRY_COUNT > 0 ? ENTRY_COUNT - 1 : 0))
+       if test "$ENTRY_COUNT" -eq 0
+       then
+           echo "No entries to review. Proceed to step 8 (Merge and summary)."
+           exit 0
+       fi
 
        if test "$ENTRY_COUNT" -gt $min_batch_size
        then
@@ -780,72 +802,58 @@ cannot be performed.
            else
                NUM=$min_batch_size
            fi
-           BATCH_COUNT=$(( (ENTRY_COUNT + NUM - 1) / NUM ))
-           for i in $(seq 1 "$BATCH_COUNT")
-           do
-               START=$(((i - 1) * NUM + 1))
-               END=$((i * NUM))
-               if test "$END" -gt "$ENTRY_COUNT"
-               then
-                   END=$ENTRY_COUNT
-               fi
-               if test "$i" -eq 1
-               then
-                   git-po-helper msg-select --json --range "-$NUM" \
-                       -o "po/review-input-$i.json" po/review-input.po
-               elif test "$END" -ge "$ENTRY_COUNT"
-               then
-                   git-po-helper msg-select --json --range "$START-" \
-                       -o "po/review-input-$i.json" po/review-input.po
-               else
-                   git-po-helper msg-select --json --range "$START-$END" \
-                       -o "po/review-input-$i.json" po/review-input.po
-               fi
-           done
        else
-           git-po-helper msg-cat --json \
-               -o po/review-input-1.json po/review-input.po
+           NUM=$ENTRY_COUNT
        fi
+
+       BATCH=$(cat "$BATCH_FILE" 2>/dev/null || echo 0)
+       BATCH=$((BATCH + 1))
+       echo "$BATCH" >"$BATCH_FILE"
+
+       git-po-helper msg-select --json --range "-$NUM" -o po/review-todo.json "$PENDING"
+       git-po-helper msg-select --range "$((NUM + 1))-" -o "${PENDING}.tmp" "$PENDING"
+       mv "${PENDING}.tmp" "$PENDING"
+
+       echo "Processing batch $BATCH ($NUM entries, $ENTRY_COUNT remaining)"
    }
-   # Parameter controls batch size; reduce if the batch file is too large for
-   # the Agent to process.
-   review_split_batches 20
+   # The parameter controls batch size; reduce if the batch file is too large.
+   review_one_batch 100
    ```
 
-4. **Process one batch (repeat until none left)**:
+5. **Review the current batch**: Read `po/review-todo.json` and evaluate
+   translation quality. Consult the "Background knowledge for localization
+   workflows" section for PO format, JSON format, placeholder rules, and
+   terminology. If the batch has a glossary in `header_comment`, use it for
+   consistency. Do not review the header (`header_comment`, `header_meta`).
+   For all other entries, check `msgstr` and `msgstr_plural` against `msgid`
+   and `msgid_plural` using the "Quality checklist" above.
 
-   a. If no `po/review-input-*.json` files exist, proceed to step 5.
+   Write the result to `po/review-done.json` using the "Review result JSON
+   format" below. If no issues are found, write `{"issues": []}`. Always write
+   this file; it marks the batch as complete.
 
-   b. Select the smallest remaining index N (e.g. `po/review-input-1.json`).
-      The current batch is `po/review-input-<N>.json`.
+6. **Rename result**: Rename `po/review-done.json` to `po/review-result-<N>.json`,
+   where N is the value in `po/review-batch.txt` (the batch just completed).
+   Run the script below:
 
-   c. Review translation quality in the current batch: Read the current
-      batch file (`po/review-input-<N>.json`) and:
-      - Consult the "Background knowledge for localization workflows" section
-        for PO format, JSON format, placeholder rules, and terminology. If the
-        current batch file has a glossary in the `header_comment` field, add
-        it to your context for consistent terminology.
-      - Do not review or modify the header entry (in PO format: empty `msgid`
-        with metadata in `msgstr`; in JSON format: `header_comment` and
-        `header_meta`).
-      - For all other entries, check the quality of translations in `msgstr`
-        (singular form) and `msgstr_plural` (plural forms) against `msgid` and
-        `msgid_plural`. See the "Quality checklist" above for criteria.
+   ```shell
+   review_rename_result () {
+       DONE="po/review-done.json"
+       BATCH_FILE="po/review-batch.txt"
+       if test -f "$DONE"
+       then
+           N=$(cat "$BATCH_FILE" 2>/dev/null) || { echo "ERROR: $BATCH_FILE not found." >&2; exit 1; }
+           mv "$DONE" "po/review-result-$N.json"
+           echo "Renamed to po/review-result-$N.json"
+       fi
+   }
+   review_rename_result
+   ```
 
-   d. After reviewing all entries in the current batch, write the issues you
-      found to `po/review-result-<N>.json` using the format described in the
-      "Review result JSON format" section below. If no issues found, write
-      `{"issues": []}` to `po/review-result-<N>.json`. Always write this file;
-      it marks the batch as complete.
+7. **Loop**: Return to step 4 (Prepare one batch) and repeat until
+   `po/review-pending.po` is empty.
 
-   e. Delete the current batch file (`po/review-input-<N>.json`).
-
-   f. Return to step 4a.
-
-   This loop is resumable: remaining `po/review-input-*.json` files indicate
-   batches still to process.
-
-5. **Merge and summary**: Run the command below to merge all
+8. **Merge and summary**: Run the command below to merge all
    `po/review-result-*.json` files into `po/review-result.json`, apply the
    result to `po/review-output.po`, and display the report.
 
@@ -854,7 +862,7 @@ cannot be performed.
    ```
 
    **Do not delete** `po/review-result.json`, `po/review-output.po`, or
-   `po/review-input.po`.
+   `po/review-pending.po`.
 
 **Review result JSON format**:
 
@@ -870,8 +878,8 @@ object as follows:
   from 0 to 3 (3 = perfect, no issues; 0 = critical, 1 = major, 2 = minor).
 - Place the suggested translation in `suggest_msgstr` (singular) or
   `suggest_msgstr_plural` (plural).
-- Include only entries with issues (score less than 3). When no issues
-  are found in the batch, write `{"issues": []}`.
+- Include only entries with issues (score less than 3). When no issues are
+  found in the batch, write `{"issues": []}`.
 
 Example review result (with issues):
 
@@ -937,5 +945,5 @@ AI tools, if used, only accelerate routine tasks:
 
 AI-generated output should always be treated as rough drafts requiring human
 review, editing, and approval by someone who understands both the technical
-context and the target language.  The best results come from combining AI
+context and the target language. The best results come from combining AI
 efficiency with human judgment, cultural insight, and community engagement.
