@@ -342,8 +342,23 @@ msgstr "Hi"
 func TestCheckPoFilterContent_mismatchProducesWarn(t *testing.T) {
 	// checkPoFilterContent is skipped when GitHubActionEvent() is non-empty (e.g. make gh-ut sets
 	// GITHUB_ACTIONS=true, or a developer exports GITHUB_EVENT_NAME). Force a local-like env here.
-	t.Setenv("GITHUB_ACTIONS", "")
-	t.Setenv("GITHUB_EVENT_NAME", "")
+	// Go 1.16 has no testing.T.Setenv; restore GITHUB_* with LookupEnv and t.Cleanup.
+	prevGA, hadGA := os.LookupEnv("GITHUB_ACTIONS")
+	prevGEN, hadGEN := os.LookupEnv("GITHUB_EVENT_NAME")
+	t.Cleanup(func() {
+		if !hadGA {
+			_ = os.Unsetenv("GITHUB_ACTIONS")
+		} else {
+			_ = os.Setenv("GITHUB_ACTIONS", prevGA)
+		}
+		if !hadGEN {
+			_ = os.Unsetenv("GITHUB_EVENT_NAME")
+		} else {
+			_ = os.Setenv("GITHUB_EVENT_NAME", prevGEN)
+		}
+	})
+	_ = os.Unsetenv("GITHUB_ACTIONS")
+	_ = os.Unsetenv("GITHUB_EVENT_NAME")
 	oldEv := viper.GetString("github-action-event")
 	viper.Set("github-action-event", "")
 	t.Cleanup(func() { viper.Set("github-action-event", oldEv) })
@@ -369,6 +384,7 @@ msgstr "Hi"
 }
 
 func TestCheckPoFilterContent_skipsInGitHubActionsEnv(t *testing.T) {
+	// Go 1.16 has no testing.T.Setenv; restore GITHUB_ACTIONS with defer.
 	oldGA := os.Getenv("GITHUB_ACTIONS")
 	defer func() {
 		if oldGA == "" {

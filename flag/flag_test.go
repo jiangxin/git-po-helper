@@ -1,13 +1,35 @@
 package flag
 
 import (
+	"os"
 	"testing"
 
 	"github.com/spf13/viper"
 )
 
+// setenvWithCleanup sets key for the duration of the test and restores the previous value.
+// Go 1.16 has no testing.T.Setenv (added in Go 1.17); use os.Setenv/os.Unsetenv and t.Cleanup instead.
+func setenvWithCleanup(t *testing.T, key, val string) {
+	t.Helper()
+	prev, had := os.LookupEnv(key)
+	t.Cleanup(func() {
+		if !had {
+			_ = os.Unsetenv(key)
+		} else {
+			_ = os.Setenv(key, prev)
+		}
+	})
+	if val == "" {
+		_ = os.Unsetenv(key)
+		return
+	}
+	if err := os.Setenv(key, val); err != nil {
+		t.Fatalf("Setenv %s: %v", key, err)
+	}
+}
+
 func TestReportTypos_githubActionsExplicitError(t *testing.T) {
-	t.Setenv("GITHUB_ACTIONS", "true")
+	setenvWithCleanup(t, "GITHUB_ACTIONS", "true")
 	k := "check-po--report-typos"
 	before := viper.GetString(k)
 	t.Cleanup(func() { viper.Set(k, before) })
@@ -19,7 +41,7 @@ func TestReportTypos_githubActionsExplicitError(t *testing.T) {
 }
 
 func TestReportFileLocations_githubActionsExplicitNone(t *testing.T) {
-	t.Setenv("GITHUB_ACTIONS", "true")
+	setenvWithCleanup(t, "GITHUB_ACTIONS", "true")
 	k := "check-po--report-file-locations"
 	before := viper.GetString(k)
 	t.Cleanup(func() { viper.Set(k, before) })
@@ -31,7 +53,7 @@ func TestReportFileLocations_githubActionsExplicitNone(t *testing.T) {
 }
 
 func TestReportTypos_githubActionsUnsetDefaultsToWarn(t *testing.T) {
-	t.Setenv("GITHUB_ACTIONS", "true")
+	setenvWithCleanup(t, "GITHUB_ACTIONS", "true")
 	keys := []string{"check--report-typos", "check-po--report-typos", "check-commits--report-typos"}
 	before := make([]string, len(keys))
 	for i, k := range keys {
