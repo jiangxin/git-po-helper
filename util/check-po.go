@@ -199,29 +199,42 @@ func checkPoNoObsoleteEntries(po *GettextPO) ([]string, bool) {
 // CheckPoFile checks syntax of "po/xx.po".
 // When compareWithPot is true, also checks incomplete translations against the POT template.
 func CheckPoFile(locale, poFile string, compareWithPot bool) bool {
-	return CheckPoFileWithPrompt(locale, poFile, compareWithPot, "", "", true, "")
+	fr := &FileRevision{Revision: "", File: poFile, IsTipCommit: true}
+	return CheckPoFileWithPrompt(locale, compareWithPot, "", fr)
 }
 
 // CheckPoFileWithPrompt checks syntax of "po/xx.po", and use specific prompt.
 // When compareWithPot is true, also checks incomplete translations against the POT template
 // (subject to --pot-file; use "no" to skip acquisition inside CheckWithPoFile).
-// filterRepoRelPath, when non-empty, is the path under the repo root used for git check-attr
-// (e.g. "po/zh_CN.po") while poFile may be a temp file; use "" when poFile is already in the worktree.
-// When isTipCommit is false, PO filter (.gitattributes) attribute errors are still reported
-// at WARNING if the filter check would have failed, but not as a failing check (ret is not
-// forced false by that section alone).
-// attrSourceCommit, when non-empty, is passed to git check-attr --source so attributes (including
-// .gitattributes) are read from that revision; use the commit being checked (e.g. in check-commits)
-// so bare partial clones can resolve filters without a populated worktree.
-func CheckPoFileWithPrompt(locale, poFile string, compareWithPot bool, prompt string, filterRepoRelPath string, isTipCommit bool, attrSourceCommit string) bool {
+// fileRev identifies the PO content and filter policy context (see FileRevision). Call GetFile
+// before this function when using a non-empty Revision so git show materializes once; passing
+// the same *FileRevision avoids a second git show. When Revision is empty, File is the worktree
+// path to the .po file. When Revision is non-empty, File must be repo-relative (e.g. "po/zh_CN.po")
+// for git check-attr; attributes use git check-attr --source=Revision. IsTipCommit controls
+// whether PO filter (.gitattributes) failures fail the check or are reported as warnings when
+// not at tip. The receiver is cleaned up on return (Cleanup); callers may still defer Cleanup
+// on the same pointer for earlier cleanup after other uses.
+func CheckPoFileWithPrompt(locale string, compareWithPot bool, prompt string, fileRev *FileRevision) bool {
 	var (
 		ret  = true
 		ok   bool
 		errs []string
 	)
 
+	if fileRev == nil {
+		log.Errorf("CheckPoFileWithPrompt: fileRev is nil")
+		return false
+	}
+	defer fileRev.Cleanup()
+
 	if prompt == "" {
 		prompt = fmt.Sprintf("[%s]", locale+".po")
+	}
+
+	poFile, err := fileRev.GetFile()
+	if err != nil {
+		log.Errorf(`%s\tfail to materialize PO file: %v`, prompt, err)
+		return false
 	}
 
 	if !Exist(poFile) {
@@ -280,7 +293,7 @@ func CheckPoFileWithPrompt(locale, poFile string, compareWithPot bool, prompt st
 
 	// Policy check: git check-attr filter must be a supported driver name (see checkPoFilterFormat).
 	if !flag.NoCheckFilter() {
-		errs, filterOk := checkPoFilterFormat(poFile, filterRepoRelPath, attrSourceCommit, "")
+		errs, filterOk := checkPoFilterFormat(poFile, fileRev.File, fileRev.Revision, "")
 		filterReportLevel := log.InfoLevel
 
 		ok = filterOk
@@ -291,7 +304,7 @@ func CheckPoFileWithPrompt(locale, poFile string, compareWithPot bool, prompt st
 		} else if flag.ReportFileLocations() == flag.ReportIssueWarn {
 			filterReportLevel = log.WarnLevel
 			ok = true
-		} else if !isTipCommit {
+		} else if !fileRev.IsTipCommit {
 			filterReportLevel = log.WarnLevel
 			ok = true
 		}

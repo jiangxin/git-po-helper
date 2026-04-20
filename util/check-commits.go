@@ -119,7 +119,7 @@ func checkCommitNotL10nChanges(commit string, notL10nChanges, l10nChanges []stri
 // ok is false when PO checks fail; errs holds checkout or TEAMS parse errors.
 func checkCommitL10nFile(commit, fileName string, isTipCommit bool) (ok bool, errs []string) {
 	ok = true
-	tmpFile := FileRevision{
+	tmpFile := &FileRevision{
 		Revision:    commit,
 		File:        fileName,
 		IsTipCommit: isTipCommit,
@@ -150,7 +150,7 @@ func checkCommitL10nFile(commit, fileName string, isTipCommit bool) (ok bool, er
 	// Do not compare with POT template for tmpFile, because:
 	// 1. we only know path of tmpfile, not the real PO file, fail to build POT,
 	// 2. the temporary PO file is translated based on a history POT template.
-	if !CheckPoFileWithPrompt(locale, filePath, false, prompt, fileName, tmpFile.IsTipCommit, commit) {
+	if !CheckPoFileWithPrompt(locale, false, prompt, tmpFile) {
 		// Error errs in CheckPoFileWithPrompt() have been output already,
 		// mark ok as false
 		ok = false
