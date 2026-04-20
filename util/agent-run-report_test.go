@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestCountReviewIssueScores(t *testing.T) {
@@ -310,15 +311,97 @@ func TestPrintReviewReportResult_IncludesIssueDetails(t *testing.T) {
 	var out bytes.Buffer
 	_, _ = out.ReadFrom(r)
 	output := out.String()
-	if !strings.Contains(output, "Issues (score < 3)") {
-		t.Fatalf("expected issues section, got: %s", output)
+	if !strings.Contains(output, "🔍 Review Report") || strings.Contains(output, "## ") {
+		t.Fatalf("expected plain title line without '#', got: %s", output)
+	}
+	if !strings.Contains(output, "  - Review score:") || !strings.Contains(output, "  - Total entries:") {
+		t.Fatalf("expected indented markdown list bullets, got: %s", output)
+	}
+	if !strings.Contains(output, "Issues (score < 3)") || strings.Contains(output, "### ") {
+		t.Fatalf("expected plain issues section title without '#', got: %s", output)
+	}
+	if !strings.Contains(output, `  1. "bad 0"`) || !strings.Contains(output, `  2. "bad 1"`) {
+		t.Fatalf("expected indented ordered list titles as quoted msgid, got: %s", output)
+	}
+	if !strings.Contains(output, "- score: 0") || !strings.Contains(output, "- score: 2") {
+		t.Fatalf("expected score as first sub-item, got: %s", output)
 	}
 	if !strings.Contains(output, "description: desc0") ||
-		!strings.Contains(output, `msgid: "bad 0"`) ||
-		!strings.Contains(output, `suggest_msgstr: "fix0"`) {
+		!strings.Contains(output, `suggest-msgstr: "fix0"`) {
 		t.Fatalf("expected score<3 issue details in output, got: %s", output)
 	}
-	if strings.Contains(output, `msgid: "ok"`) {
+	if strings.Contains(output, `  1. "ok"`) || strings.Contains(output, `suggest-msgstr: "fix3"`) {
 		t.Fatalf("did not expect score=3 issue in details, got: %s", output)
 	}
+}
+
+func TestWrapPrefixValue_respectsWidth(t *testing.T) {
+	prefix := "  - Report JSON: "
+	cont := "    "
+	long := strings.Repeat("abcdef ", 20) // many short tokens with spaces
+	lines := wrapPrefixValue(prefix, cont, long, reviewReportWrapWidth)
+	for _, ln := range lines {
+		if utf8.RuneCountInString(ln) > reviewReportWrapWidth {
+			t.Errorf("line longer than %d runes: %q", reviewReportWrapWidth, ln)
+		}
+	}
+	if len(lines) < 2 {
+		t.Fatalf("expected multiple lines for long value, got %d lines", len(lines))
+	}
+}
+
+func TestPrintReviewReportResult_longDescriptionWrapped(t *testing.T) {
+	tmpDir := t.TempDir()
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir %s: %v", tmpDir, err)
+	}
+	if err := os.MkdirAll("po", 0755); err != nil {
+		t.Fatalf("MkdirAll po: %v", err)
+	}
+	ps := GetReviewPathSet("po")
+	if err := os.WriteFile(ps.InputPO, []byte(minimalPoWithEntries(1)), 0644); err != nil {
+		t.Fatalf("write po failed: %v", err)
+	}
+	longDesc := strings.Repeat("word ", 30) // > 80 runes, breaks at spaces
+	reviewJSON := `{"total_entries":1,"issues":[{"msgid":"x","score":0,"description":` + jsonString(longDesc) + `,"suggest_msgstr":["y"]}]}`
+	if err := os.WriteFile(ps.ResultJSON, []byte(reviewJSON), 0644); err != nil {
+		t.Fatalf("write review-result.json: %v", err)
+	}
+	result, err := GetReviewReport("po")
+	if err != nil {
+		t.Fatalf("GetReviewReport failed: %v", err)
+	}
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
+	PrintReviewReportResult(result)
+	_ = w.Close()
+	var out bytes.Buffer
+	_, _ = out.ReadFrom(r)
+	output := out.String()
+	for _, ln := range strings.Split(strings.TrimSuffix(output, "\n"), "\n") {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		if utf8.RuneCountInString(ln) > reviewReportWrapWidth {
+			t.Errorf("line exceeds %d runes: %q", reviewReportWrapWidth, ln)
+		}
+	}
+}
+
+func jsonString(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
 }

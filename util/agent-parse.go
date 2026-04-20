@@ -178,7 +178,7 @@ func GetAgentDiagnostics(result *AgentRunResult, streamResult AgentStreamResult)
 }
 
 // PrintAgentDiagnosticsFromResult prints diagnostics from AgentRunResult (fields set by GetAgentDiagnostics).
-// Format aligns with PrintReviewReportResult (ReportLabelWidth, two-space indent, label: value).
+// Format uses fixed-width labels (ReportLabelWidth); review report output is Markdown separately.
 func PrintAgentDiagnosticsFromResult(result *AgentRunResult) {
 	if result == nil {
 		return

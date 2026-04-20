@@ -7,7 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
@@ -20,6 +23,111 @@ var DefaultReviewBase = filepath.Join(PoDir, "review")
 // ReportLabelWidth is the column width for left-aligned labels in report output
 // (agent-run Report, agent-test summary, review stats). Used with "  " prefix for alignment.
 var ReportLabelWidth = 22
+
+// reviewReportWrapWidth is the maximum rune width for review report text lines
+// (Markdown output for agent-run review --report); long segments break at whitespace.
+const reviewReportWrapWidth = 80
+
+func sanitizeReviewReportText(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	return strings.TrimSpace(s)
+}
+
+// lastWhitespaceBreak returns an index into chunk (exclusive) such that chunk[:i]
+// ends at a non-space rune before whitespace, or 0 when no space is found in (0,len(chunk)].
+func lastWhitespaceBreak(chunk []rune) int {
+	for i := len(chunk) - 1; i > 0; i-- {
+		if unicode.IsSpace(chunk[i]) {
+			return i
+		}
+	}
+	return 0
+}
+
+// wrapPlainParagraph breaks s into lines of at most maxWidth runes, preferring breaks at spaces.
+func wrapPlainParagraph(s string, maxWidth int) []string {
+	s = sanitizeReviewReportText(s)
+	if maxWidth <= 0 {
+		maxWidth = reviewReportWrapWidth
+	}
+	vr := []rune(s)
+	if len(vr) == 0 {
+		return nil
+	}
+	var out []string
+	for len(vr) > 0 {
+		if len(vr) <= maxWidth {
+			out = append(out, string(vr))
+			break
+		}
+		chunk := vr[:maxWidth]
+		br := lastWhitespaceBreak(chunk)
+		if br <= 0 {
+			br = maxWidth
+		}
+		line := strings.TrimSpace(string(vr[:br]))
+		if line == "" {
+			br = maxWidth
+			line = strings.TrimSpace(string(vr[:br]))
+		}
+		out = append(out, line)
+		vr = []rune(strings.TrimSpace(string(vr[br:])))
+	}
+	return out
+}
+
+// wrapPrefixValue formats value across lines: first line uses prefix, later lines use cont.
+// Each output line is at most maxWidth runes; breaks prefer whitespace inside value.
+func wrapPrefixValue(prefix, cont string, value string, maxWidth int) []string {
+	value = sanitizeReviewReportText(value)
+	if maxWidth <= 0 {
+		maxWidth = reviewReportWrapWidth
+	}
+	pr := []rune(prefix)
+	cr := []rune(cont)
+	vr := []rune(value)
+	if len(vr) == 0 {
+		return []string{string(pr)}
+	}
+	var out []string
+	for len(vr) > 0 {
+		avail := maxWidth - len(pr)
+		if avail < 1 {
+			avail = 1
+		}
+		if len(vr) <= avail {
+			out = append(out, string(pr)+string(vr))
+			break
+		}
+		chunk := vr[:avail]
+		br := lastWhitespaceBreak(chunk)
+		if br <= 0 {
+			br = avail
+		}
+		piece := strings.TrimSpace(string(vr[:br]))
+		if piece == "" {
+			br = avail
+			piece = strings.TrimSpace(string(vr[:br]))
+		}
+		out = append(out, string(pr)+piece)
+		vr = []rune(strings.TrimSpace(string(vr[br:])))
+		pr = cr
+	}
+	return out
+}
+
+// reviewReportListIndent is two spaces before list markers (- or 1.) for report output.
+const reviewReportListIndent = "  "
+
+func printMarkdownReviewBullet(label, value string) {
+	prefix := reviewReportListIndent + "- " + label + ": "
+	cont := reviewReportListIndent + "  "
+	for _, ln := range wrapPrefixValue(prefix, cont, value, reviewReportWrapWidth) {
+		fmt.Println(ln)
+	}
+}
 
 // CountReviewIssueScores returns counts by issue score from a review.
 // ReviewIssueScoreCritical, ReviewIssueScoreMajor, ReviewIssueScoreMinor. Perfect count is derived: TotalEntries - (critical + major + minor).
@@ -253,7 +361,8 @@ func GetReviewReport(pathName string) (*ReviewResult, error) {
 	return review, nil
 }
 
-// PrintReviewReportResult prints "## Review Statistics" when the result has content.
+// PrintReviewReportResult prints a Markdown-style summary for agent-run review --report
+// (bullets and numbered lists; section titles are plain text without '#' heading markers).
 func PrintReviewReportResult(r *ReviewResult) {
 	if r == nil {
 		return
@@ -261,39 +370,47 @@ func PrintReviewReportResult(r *ReviewResult) {
 	score, errScore := r.GetScore()
 	totalEntries, errTotal := r.GetTotalEntries()
 	if errScore != nil || errTotal != nil {
+		fmt.Println("🔍 Review Report")
+		fmt.Println()
+		errMsg := ""
 		if errTotal != nil {
-			fmt.Printf("  Review init error: %v\n", errTotal)
+			errMsg = fmt.Sprintf("Review init error: %v", errTotal)
 		} else {
-			fmt.Printf("  Review init error: %v\n", errScore)
+			errMsg = fmt.Sprintf("Review init error: %v", errScore)
 		}
+		for _, ln := range wrapPlainParagraph(errMsg, reviewReportWrapWidth) {
+			fmt.Println(ln)
+		}
+		fmt.Println()
 		return
 	}
-	w := ReportLabelWidth
 
 	fmt.Println("🔍 Review Report")
 	fmt.Println()
-	fmt.Printf("  %-*s %d/100\n", w, "Review score:", score)
-	fmt.Printf("  %-*s %d\n", w, "Total entries:", totalEntries)
-	fmt.Printf("  %-*s %d\n", w, "Perfect (no issue):", r.PerfectCount())
-	fmt.Printf("  %-*s %d\n", w, "With issues:", r.IssueCount())
+	printMarkdownReviewBullet("Review score", fmt.Sprintf("%d/100", score))
+	printMarkdownReviewBullet("Total entries", fmt.Sprintf("%d", totalEntries))
+	printMarkdownReviewBullet("Perfect (no issue)", fmt.Sprintf("%d", r.PerfectCount()))
+	printMarkdownReviewBullet("With issues", fmt.Sprintf("%d", r.IssueCount()))
 	fmt.Println()
 	critical, _ := r.GetCriticalCount()
 	major, _ := r.GetMajorCount()
 	minor, _ := r.GetMinorCount()
-	fmt.Printf("  %-*s %d\n", w, fmt.Sprintf("Critical (score %d):", ReviewIssueScoreCritical), critical)
-	fmt.Printf("  %-*s %d\n", w, fmt.Sprintf("Major (score %d):", ReviewIssueScoreMajor), major)
-	fmt.Printf("  %-*s %d\n", w, fmt.Sprintf("Minor (score %d):", ReviewIssueScoreMinor), minor)
+	printMarkdownReviewBullet(fmt.Sprintf("Critical (score %d)", ReviewIssueScoreCritical), fmt.Sprintf("%d", critical))
+	printMarkdownReviewBullet(fmt.Sprintf("Major (score %d)", ReviewIssueScoreMajor), fmt.Sprintf("%d", major))
+	printMarkdownReviewBullet(fmt.Sprintf("Minor (score %d)", ReviewIssueScoreMinor), fmt.Sprintf("%d", minor))
 	fmt.Println()
 	appliedFile, _ := r.GetAppliedFile()
 	if appliedFile != "" {
-		fmt.Printf("  %-*s %s\n", w, "Applied PO:", appliedFile)
+		printMarkdownReviewBullet("Applied PO", appliedFile)
 	}
 	reportFile, _ := r.GetReportFile()
 	if reportFile != "" {
-		fmt.Printf("  %-*s %s\n", w, "Report JSON:", reportFile)
+		printMarkdownReviewBullet("Report JSON", reportFile)
 		printReviewIssueDetails(r)
 		fmt.Println()
-		fmt.Println("For full review details, see the report JSON file")
+		for _, ln := range wrapPlainParagraph("For full review details, see the report JSON file", reviewReportWrapWidth) {
+			fmt.Println(ln)
+		}
 		fmt.Println()
 	}
 }
@@ -321,18 +438,33 @@ func printReviewIssueDetails(r *ReviewResult) {
 	})
 
 	fmt.Println()
-	fmt.Printf("⚠️ Issues (score < %d):", ReviewIssueScorePerfect)
+	fmt.Printf("⚠️ Issues (score < %d)\n", ReviewIssueScorePerfect)
+	fmt.Println()
 	for i, issue := range issues {
-		if issue.Score >= ReviewIssueScorePerfect {
-			continue
+		marker := fmt.Sprintf("%s%d. ", reviewReportListIndent, i+1)
+		subIndent := strings.Repeat(" ", utf8.RuneCountInString(marker))
+		cont := subIndent + "  "
+		title := strconv.Quote(issue.MsgID)
+		for _, ln := range wrapPrefixValue(marker, cont, title, reviewReportWrapWidth) {
+			fmt.Println(ln)
 		}
-		fmt.Printf("  %d) score: %d\n", i+1, issue.Score)
-		fmt.Printf("     description: %s\n", issue.Description)
-		fmt.Printf("     msgid: %q\n", issue.MsgID)
+		for _, ln := range wrapPrefixValue(subIndent+"- score: ", cont, strconv.Itoa(issue.Score), reviewReportWrapWidth) {
+			fmt.Println(ln)
+		}
+		for _, ln := range wrapPrefixValue(subIndent+"- description: ", cont, issue.Description, reviewReportWrapWidth) {
+			fmt.Println(ln)
+		}
 		if issue.MsgIDPlural != "" {
-			fmt.Printf("     msgid_plural: %q\n", issue.MsgIDPlural)
+			for _, ln := range wrapPrefixValue(subIndent+"- msgid-plural: ", cont, strconv.Quote(issue.MsgIDPlural), reviewReportWrapWidth) {
+				fmt.Println(ln)
+			}
 		}
-		fmt.Printf("     suggest_msgstr: %s\n", formatMsgstrForDisplay(issue.SuggestMsgstr))
+		for _, ln := range wrapPrefixValue(subIndent+"- suggest-msgstr: ", cont, formatMsgstrForDisplay(issue.SuggestMsgstr), reviewReportWrapWidth) {
+			fmt.Println(ln)
+		}
+		if i < len(issues)-1 {
+			fmt.Println()
+		}
 	}
 }
 
