@@ -12,6 +12,84 @@ import (
 	"github.com/git-l10n/git-po-helper/repository"
 )
 
+// getGitFilterAttribute resolves the Git `filter` attribute for relPath (repository-relative, for
+// git check-attr). If injectedFilter is non-empty after trimming, it is used instead of running git.
+// attrSourceCommit is passed as git check-attr --source when non-empty. When git reports unspecified,
+// unset, or empty, guidance messages are appended and the effective filter is gettext-no-location.
+// For any other unsupported driver, errs receives a warning and the effective value falls back to
+// gettext-no-location.
+// On git check-attr failure or unparseable output, effectiveFilter is empty and errs has a single line;
+// the caller should treat that as fatal and return without running further filter checks.
+func getGitFilterAttribute(relPath, attrSourceCommit, injectedFilter string) (effectiveFilter string, errs []string) {
+	attrSourceCommit = strings.TrimSpace(attrSourceCommit)
+	filterValue := strings.TrimSpace(injectedFilter)
+	if filterValue == "" {
+		var checkAttrArgs []string
+		if repository.IsBare() {
+			// Bare repos have no work tree; -C workDir would be invalid (empty workDir).
+			checkAttrArgs = []string{"check-attr"}
+		} else {
+			workDir := repository.WorkDir()
+			checkAttrArgs = []string{"-C", workDir, "check-attr"}
+		}
+		if attrSourceCommit != "" {
+			checkAttrArgs = append(checkAttrArgs, "--source="+attrSourceCommit)
+		}
+		checkAttrArgs = append(checkAttrArgs, "filter", relPath)
+		cmd := exec.Command("git", checkAttrArgs...)
+		cmd.Stderr = nil
+		out, err := cmd.Output()
+		if err != nil {
+			return "", []string{fmt.Sprintf("git check-attr failed for %s: %s", relPath, err)}
+		}
+		line := strings.TrimSpace(string(out))
+		parts := strings.SplitN(line, ": ", 3)
+		if len(parts) < 3 {
+			return "", []string{fmt.Sprintf("unexpected git check-attr output: %s", line)}
+		}
+		filterValue = strings.TrimSpace(parts[2])
+	}
+
+	missingFilter := filterValue == "unspecified" || filterValue == "unset" || filterValue == ""
+	if missingFilter {
+		errs = append(errs,
+			"No Git `filter` attribute is set for *.po files on this path.",
+			"",
+			"The filter attribute describes how Git should normalize #: location comments on each",
+			"PO entry when you commit. Those comments change often as source files move; committing",
+			"their churn produces noisy diffs and inflates the repository.",
+			"",
+			"Setting filter=gettext-no-location or filter=gettext-no-line-number in .gitattributes",
+			"tells git-po-helper which location style you intend, so it can flag bad #: lines in",
+			"the PO (for example references that still include line numbers).",
+			"",
+			"Please configure the filter for XX.po, for example:",
+			"",
+			"    .gitattributes: *.po filter=gettext-no-location",
+			"",
+			"See:",
+			"",
+			"    https://lore.kernel.org/git/20220504124121.12683-1-worldhello.net@gmail.com/",
+		)
+		effectiveFilter = "gettext-no-location"
+		return effectiveFilter, errs
+	}
+
+	effectiveFilter = filterValue
+	if filterValue != "gettext-no-location" && filterValue != "gettext-no-line-number" {
+		if len(errs) > 0 {
+			errs = append(errs, "")
+		}
+		errs = append(errs, fmt.Sprintf(
+			"Unsupported filter attribute %q for %s; "+
+				`using "gettext-no-location" rules as fallback (PO must not contain #: location comments). `+
+				`Prefer filter=gettext-no-location or filter=gettext-no-line-number in .gitattributes.`,
+			filterValue, relPath))
+		effectiveFilter = "gettext-no-location"
+	}
+	return effectiveFilter, errs
+}
+
 // checkPoFilterFormat checks git attributes for the filter driver and matches PO #: comments
 // to that policy: gettext-no-line-number allows #: lines but refs must be file-only (no line
 // numbers; see checkPoLocationCommentsNoLineNumbers); gettext-no-location (and unsupported
@@ -52,8 +130,6 @@ func checkPoFilterFormat(fr *FileRevision, filterAttribute string) ([]string, bo
 		return []string{"Not in a git repository. Skipping filter attribute check for file locations."}, true
 	}
 
-	attrSourceCommit := strings.TrimSpace(fr.Revision)
-
 	displayPath := contentPath
 
 	var relPath string
@@ -82,74 +158,11 @@ func checkPoFilterFormat(fr *FileRevision, filterAttribute string) ([]string, bo
 		relPath = rel
 	}
 
-	filterValue := strings.TrimSpace(filterAttribute)
-	if filterValue == "" {
-		var checkAttrArgs []string
-		if repository.IsBare() {
-			// Bare repos have no work tree; -C workDir would be invalid (empty workDir).
-			checkAttrArgs = []string{"check-attr"}
-		} else {
-			workDir := repository.WorkDir()
-			checkAttrArgs = []string{"-C", workDir, "check-attr"}
-		}
-		// Query git check-attr [--source=<rev>] filter <path>
-		if attrSourceCommit != "" {
-			checkAttrArgs = append(checkAttrArgs, "--source="+attrSourceCommit)
-		}
-		checkAttrArgs = append(checkAttrArgs, "filter", relPath)
-		cmd := exec.Command("git", checkAttrArgs...)
-		cmd.Stderr = nil
-		out, err := cmd.Output()
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("git check-attr failed for %s: %s", displayPath, err))
-			return errs, false
-		}
-
-		// Parse: "path: filter: value"
-		line := strings.TrimSpace(string(out))
-		parts := strings.SplitN(line, ": ", 3)
-		if len(parts) < 3 {
-			errs = append(errs, fmt.Sprintf("unexpected git check-attr output: %s", line))
-			return errs, false
-		}
-		filterValue = strings.TrimSpace(parts[2])
+	effectiveFilter, filterErrs := getGitFilterAttribute(relPath, fr.Revision, filterAttribute)
+	if effectiveFilter == "" {
+		return append(errs, filterErrs...), false
 	}
-
-	missingFilter := filterValue == "unspecified" || filterValue == "unset" || filterValue == ""
-	if missingFilter {
-		errs = append(errs,
-			"No Git `filter` attribute is set for *.po files on this path.",
-			"",
-			"The filter attribute describes how Git should normalize #: location comments on each",
-			"PO entry when you commit. Those comments change often as source files move; committing",
-			"their churn produces noisy diffs and inflates the repository.",
-			"",
-			"Setting filter=gettext-no-location or filter=gettext-no-line-number in .gitattributes",
-			"tells git-po-helper which location style you intend, so it can flag bad #: lines in",
-			"the PO (for example references that still include line numbers).",
-			"",
-			"Please configure the filter for XX.po, for example:",
-			"",
-			"    .gitattributes: *.po filter=gettext-no-location",
-			"",
-			"See:",
-			"",
-			"    https://lore.kernel.org/git/20220504124121.12683-1-worldhello.net@gmail.com/",
-		)
-	}
-
-	effectiveFilter := filterValue
-	if !missingFilter && filterValue != "gettext-no-location" && filterValue != "gettext-no-line-number" {
-		if len(errs) > 0 {
-			errs = append(errs, "")
-		}
-		errs = append(errs, fmt.Sprintf(
-			"Unsupported filter attribute %q for %s; "+
-				`using "gettext-no-location" rules as fallback (PO must not contain #: location comments). `+
-				`Prefer filter=gettext-no-location or filter=gettext-no-line-number in .gitattributes.`,
-			filterValue, displayPath))
-		effectiveFilter = "gettext-no-location"
-	}
+	errs = append(errs, filterErrs...)
 
 	poData, err := os.ReadFile(contentPath)
 	if err != nil {
