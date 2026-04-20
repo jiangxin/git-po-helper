@@ -66,6 +66,12 @@ func GitDir() string {
 	return theRepository.repository.GitDir()
 }
 
+// IsBare reports whether the repository is bare (no working tree).
+func IsBare() bool {
+	AssertRepositoryNotNil()
+	return theRepository.repository.IsBare()
+}
+
 // WorkDir returns root dir of worktree.
 func WorkDir() string {
 	AssertRepositoryNotNil()

@@ -52,7 +52,6 @@ func checkPoFilterFormat(fr *FileRevision, filterAttribute string) ([]string, bo
 		return []string{"Not in a git repository. Skipping filter attribute check for file locations."}, true
 	}
 
-	workDir := repository.WorkDir()
 	attrSourceCommit := strings.TrimSpace(fr.Revision)
 
 	displayPath := contentPath
@@ -85,8 +84,15 @@ func checkPoFilterFormat(fr *FileRevision, filterAttribute string) ([]string, bo
 
 	filterValue := strings.TrimSpace(filterAttribute)
 	if filterValue == "" {
+		var checkAttrArgs []string
+		if repository.IsBare() {
+			// Bare repos have no work tree; -C workDir would be invalid (empty workDir).
+			checkAttrArgs = []string{"check-attr"}
+		} else {
+			workDir := repository.WorkDir()
+			checkAttrArgs = []string{"-C", workDir, "check-attr"}
+		}
 		// Query git check-attr [--source=<rev>] filter <path>
-		checkAttrArgs := []string{"-C", workDir, "check-attr"}
 		if attrSourceCommit != "" {
 			checkAttrArgs = append(checkAttrArgs, "--source="+attrSourceCommit)
 		}
