@@ -2,6 +2,9 @@
 package flag
 
 import (
+	"os"
+	"strings"
+
 	"github.com/spf13/viper"
 )
 
@@ -27,11 +30,18 @@ func Force() bool {
 }
 
 // GitHubActionEvent returns option "--github-action-event".
-// When not set, also checks GITHUB_ACTIONS env (set by GitHub Actions to "true"),
-// so --pot-file defaults to "download" when running in CI without explicit flag.
+// When not set, uses GITHUB_EVENT_NAME from GitHub Actions (e.g. pull_request, push).
+// If that is unset but GITHUB_ACTIONS is true, returns "workflow" so CI defaults
+// (e.g. --pot-file download, skipping local PO filter clean comparison) still apply.
 func GitHubActionEvent() string {
-	if v := viper.GetString("github-action-event"); v != "" {
+	if v := strings.TrimSpace(viper.GetString("github-action-event")); v != "" {
 		return v
+	}
+	if ev := strings.TrimSpace(os.Getenv("GITHUB_EVENT_NAME")); ev != "" {
+		return ev
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GITHUB_ACTIONS")), "true") {
+		return "workflow"
 	}
 	return ""
 }
@@ -115,7 +125,7 @@ func Core() bool {
 }
 
 // NoCheckFilter returns true when --no-check-filter is set (check-po / check-commits),
-// skipping PO .gitattributes filter and msgcat format verification.
+// skipping PO .gitattributes filter, filter clean-output comparison, and related checks.
 func NoCheckFilter() bool {
 	return viper.GetBool("check--no-check-filter") ||
 		viper.GetBool("check-po--no-check-filter") ||
