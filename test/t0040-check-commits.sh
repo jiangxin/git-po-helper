@@ -128,7 +128,9 @@ test_expect_success "new commits with datetime in the future" '
 '
 
 test_expect_success "show errors of commit-date drift" '
-	test_must_fail git -C workdir $HELPER \
+	# CI sets GITHUB_ACTIONS; then GitHubActionEvent() is non-empty and future dates within
+	# 15 minutes are allowed. Drop those vars so both drifted commits fail like a local run.
+	test_must_fail env -u GITHUB_ACTIONS -u GITHUB_EVENT_NAME git -C workdir $HELPER \
 		check-commits $POT_NO HEAD~2..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out |
 		sed -e "s/in the future, .* from now/in the future, XX from now/g" >actual &&
