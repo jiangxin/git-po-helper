@@ -1,6 +1,7 @@
 package util
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,136 @@ func gitTestEnv() []string {
 		filtered = append(filtered, e)
 	}
 	return append(filtered, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+}
+
+func TestGetRepoRelPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.Unsetenv("GIT_DIR")
+	os.Unsetenv("GIT_WORK_TREE")
+	os.Unsetenv("GIT_INDEX_FILE")
+	os.Unsetenv("GIT_COMMON_DIR")
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = os.Chdir(origWd)
+		repository.OpenRepository(origWd)
+	}()
+
+	gitEnv := gitTestEnv()
+	init := exec.Command("git", "init")
+	init.Dir = tmpDir
+	init.Env = gitEnv
+	if err := init.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "po"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	po := filepath.Join(tmpDir, "po", "zh_CN.po")
+	if err := os.WriteFile(po, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	repository.OpenRepository(tmpDir)
+
+	t.Run("repo-relative", func(t *testing.T) {
+		rel, err := GetRepoRelPath("po/zh_CN.po")
+		if err != nil || rel != "po/zh_CN.po" {
+			t.Fatalf("GetRepoRelPath = %q, %v; want po/zh_CN.po, nil", rel, err)
+		}
+	})
+
+	t.Run("absolute inside repo", func(t *testing.T) {
+		rel, err := GetRepoRelPath(po)
+		if err != nil || rel != "po/zh_CN.po" {
+			t.Fatalf("GetRepoRelPath = %q, %v; want po/zh_CN.po, nil", rel, err)
+		}
+	})
+
+	t.Run("outside worktree", func(t *testing.T) {
+		safe := strings.ReplaceAll(t.Name(), "/", "_")
+		outside := filepath.Join(tmpDir, "..", "outside-getreporelpath-"+safe+".po")
+		if err := os.WriteFile(outside, []byte("y"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Remove(outside) })
+		_, err := GetRepoRelPath(outside)
+		if !errors.Is(err, ErrOutsideWorktree) {
+			t.Fatalf("expected ErrOutsideWorktree, got %v", err)
+		}
+	})
+
+	t.Run("repo-relative escapes", func(t *testing.T) {
+		safe := strings.ReplaceAll(t.Name(), "/", "_")
+		escapePo := filepath.Join(filepath.Dir(tmpDir), "git-po-helper-getreporel-"+safe+".po")
+		if err := os.WriteFile(escapePo, []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Remove(escapePo) })
+		_, err := GetRepoRelPath(filepath.Join("..", filepath.Base(escapePo)))
+		if !errors.Is(err, ErrOutsideWorktree) {
+			t.Fatalf("expected ErrOutsideWorktree, got %v", err)
+		}
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		_, err := GetRepoRelPath("  ")
+		if err == nil || !strings.Contains(err.Error(), "empty") {
+			t.Fatalf("expected empty path error, got %v", err)
+		}
+	})
+}
+
+func TestGetRepoRelPath_bareRepository(t *testing.T) {
+	bareDir := t.TempDir()
+	os.Unsetenv("GIT_DIR")
+	os.Unsetenv("GIT_WORK_TREE")
+	os.Unsetenv("GIT_INDEX_FILE")
+	os.Unsetenv("GIT_COMMON_DIR")
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(bareDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = os.Chdir(origWd)
+		repository.OpenRepository(origWd)
+	}()
+
+	init := exec.Command("git", "init", "--bare")
+	init.Dir = bareDir
+	init.Env = gitTestEnv()
+	if err := init.Run(); err != nil {
+		t.Fatal(err)
+	}
+	repository.OpenRepository(bareDir)
+
+	if strings.TrimSpace(repository.WorkDir()) != "" {
+		t.Skip("goconfig reports a work tree for this bare repo; skipping bare GetRepoRelPath checks")
+	}
+
+	t.Run("non-absolute returns normalized repo path", func(t *testing.T) {
+		rel, err := GetRepoRelPath("po/zh_CN.po")
+		if err != nil || rel != "po/zh_CN.po" {
+			t.Fatalf("GetRepoRelPath = %q, %v; want po/zh_CN.po, nil", rel, err)
+		}
+	})
+
+	t.Run("absolute returns error", func(t *testing.T) {
+		abs := filepath.Join(bareDir, "objects") // exists under bare .git layout
+		_, err := GetRepoRelPath(abs)
+		if err == nil || !strings.Contains(err.Error(), "bare repository") {
+			t.Fatalf("expected bare repository error, got %v", err)
+		}
+	})
 }
 
 // TestGetChangedPoFiles tests GetChangedPoFiles with a temporary git repository.

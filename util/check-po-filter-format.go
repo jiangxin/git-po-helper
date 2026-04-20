@@ -1,6 +1,7 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,44 +55,32 @@ func checkPoFilterFormat(fr *FileRevision, filterAttribute string) ([]string, bo
 	workDir := repository.WorkDir()
 	attrSourceCommit := strings.TrimSpace(fr.Revision)
 
-	repoAttrRelPath := fr.File
 	displayPath := contentPath
-	if repoAttrRelPath != "" && !filepath.IsAbs(repoAttrRelPath) {
-		displayPath = repoAttrRelPath
-	}
 
 	var relPath string
-	if repoAttrRelPath != "" && !filepath.IsAbs(repoAttrRelPath) {
-		clean := filepath.Clean(filepath.FromSlash(filepath.ToSlash(repoAttrRelPath)))
-		joined := filepath.Join(workDir, clean)
-		absJoined, err := filepath.Abs(joined)
+	if fr.File != "" && !filepath.IsAbs(fr.File) {
+		displayPath = fr.File
+		rel, err := GetRepoRelPath(fr.File)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("cannot resolve filter attr path %q: %s", repoAttrRelPath, err))
+			if errors.Is(err, ErrOutsideWorktree) {
+				errs = append(errs, fmt.Sprintf("filter attr path escapes repository: %s", fr.File))
+				return errs, false
+			}
+			errs = append(errs, err.Error())
 			return errs, false
 		}
-		absWork, err := filepath.Abs(workDir)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("cannot resolve work tree: %s", err))
-			return errs, false
-		}
-		rel, err := filepath.Rel(absWork, absJoined)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			errs = append(errs, fmt.Sprintf("filter attr path escapes repository: %s", repoAttrRelPath))
-			return errs, false
-		}
-		relPath = filepath.ToSlash(rel)
+		relPath = rel
 	} else {
-		absPath, err := filepath.Abs(contentPath)
+		rel, err := GetRepoRelPath(contentPath)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("cannot resolve path %s: %s", contentPath, err))
+			if errors.Is(err, ErrOutsideWorktree) {
+				// File is outside repo and no logical repo-relative path; skip filter check
+				return nil, true
+			}
+			errs = append(errs, err.Error())
 			return errs, false
 		}
-		relPath, err = filepath.Rel(workDir, absPath)
-		if err != nil || strings.HasPrefix(relPath, "..") {
-			// File is outside repo and no logical repo-relative path; skip filter check
-			return nil, true
-		}
-		relPath = filepath.ToSlash(relPath)
+		relPath = rel
 	}
 
 	filterValue := strings.TrimSpace(filterAttribute)

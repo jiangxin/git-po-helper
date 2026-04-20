@@ -2,6 +2,7 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,10 @@ import (
 	"github.com/git-l10n/git-po-helper/repository"
 	log "github.com/sirupsen/logrus"
 )
+
+// ErrOutsideWorktree is returned by GetRepoRelPath when the path resolves outside
+// the repository work tree (including repo-relative paths that escape with "..").
+var ErrOutsideWorktree = errors.New("path is outside repository worktree")
 
 // FileRevision identifies a path at a revision for materialization via GetFile.
 // IsTipCommit is metadata for callers (e.g. check-commits PO policy); GetFile does not use it.
@@ -98,6 +103,59 @@ func (f *FileRevision) Cleanup() {
 		f.tmpfile = ""
 	}
 	f.cached = false
+}
+
+// GetRepoRelPath returns file as a slash-separated path relative to the opened repository
+// work tree. If file is not absolute, it is interpreted relative to the work tree root
+// (same rules as check-po-filter-format / git check-attr path handling). If the resolved
+// path lies outside the work tree, the error wraps ErrOutsideWorktree (use errors.Is).
+//
+// Bare repositories have no work tree (repository.WorkDir is empty). In that case an
+// absolute file path cannot be mapped to a repo-relative path and returns an error; a
+// non-absolute file is returned normalized with slash separators (the path is used as-is
+// for object/commit operations such as git check-attr --source).
+func GetRepoRelPath(file string) (string, error) {
+	file = strings.TrimSpace(file)
+	if file == "" {
+		return "", fmt.Errorf("file path is empty")
+	}
+	if err := repository.RequireOpened(); err != nil {
+		return "", err
+	}
+	workDir := strings.TrimSpace(repository.WorkDir())
+	if workDir == "" {
+		if filepath.IsAbs(file) {
+			return "", fmt.Errorf("bare repository has no work tree: cannot use absolute path %q as a repository-relative path", file)
+		}
+		clean := filepath.Clean(filepath.FromSlash(filepath.ToSlash(file)))
+		return filepath.ToSlash(clean), nil
+	}
+
+	absWork, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve work tree: %w", err)
+	}
+
+	var absJoined string
+	if !filepath.IsAbs(file) {
+		clean := filepath.Clean(filepath.FromSlash(filepath.ToSlash(file)))
+		joined := filepath.Join(workDir, clean)
+		absJoined, err = filepath.Abs(joined)
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve path %q: %w", file, err)
+		}
+	} else {
+		absJoined, err = filepath.Abs(file)
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve path %q: %w", file, err)
+		}
+	}
+
+	rel, err := filepath.Rel(absWork, absJoined)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("%w: %s", ErrOutsideWorktree, file)
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 // GetChangedPoFiles returns the list of changed po/XX.po files between two git versions.
