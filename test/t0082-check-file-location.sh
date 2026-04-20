@@ -17,14 +17,14 @@ test_expect_success "setup" '
 '
 
 test_expect_success "zh_CN.po: has file-locations (--report-file-location=error)" '
-	test_must_fail git -C workdir $HELPER check-po $POT_NO \
+	test_must_fail git -C workdir $HELPER check-po --report-typos=error $POT_NO \
 		--report-file-locations=error po/zh_CN.po >out 2>&1 &&
 	test_grep "inflates the repository" out &&
 	test_grep "mismatched patterns" out
 '
 
 test_expect_success "zh_CN.po: has file-locations (no --report-file-location option)" '
-	test_must_fail git -C workdir $HELPER check-po $POT_NO \
+	test_must_fail git -C workdir $HELPER check-po --report-typos=error $POT_NO \
 		po/zh_CN.po >out 2>&1 &&
 	test_grep "inflates the repository" out &&
 	test_grep "mismatched patterns" out
@@ -54,7 +54,7 @@ test_expect_success "zh_CN.po: remove locations" '
 		msgcat --add-location=file po/zh_CN.po -o po/zh_CN.poX &&
 		mv po/zh_CN.poX po/zh_CN.po
 	) &&
-	test_must_fail git -C workdir $HELPER check-po $POT_NO \
+	test_must_fail git -C workdir $HELPER check-po --report-typos=error $POT_NO \
 		po/zh_CN.po >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 	test_cmp expect actual
@@ -67,7 +67,7 @@ test_expect_success "zh_CN.po: remove both files and locations" '
 		msgcat --no-location po/zh_CN.po -o po/zh_CN.poX &&
 		mv po/zh_CN.poX po/zh_CN.po
 	) &&
-	test_must_fail git -C workdir $HELPER check-po $POT_NO \
+	test_must_fail git -C workdir $HELPER check-po --report-typos=error $POT_NO \
 		po/zh_CN.po >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 	test_cmp expect actual

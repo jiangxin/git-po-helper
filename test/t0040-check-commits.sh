@@ -28,7 +28,10 @@ test_expect_success "new commit with changes outside of po/" '
 		git commit -F .git/commit-message
 	) &&
 
-	test_must_fail git -C workdir $HELPER \
+	# Without clearing GA env, GitHubActionEvent() is non-empty: commits with non-l10n paths and
+	# no tracked *.po/TEAMS changes take the CI-only early-break path and skip checkCommitLog(),
+	# so output no longer matches a normal local run.
+	test_must_fail env -u GITHUB_ACTIONS -u GITHUB_EVENT_NAME git -C workdir $HELPER \
 		check-commits $POT_NO HEAD~..HEAD >out 2>&1 &&
 	make_user_friendly_and_stable_output <out >actual &&
 
