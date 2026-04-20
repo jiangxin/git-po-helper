@@ -46,24 +46,31 @@ func GitHubActionEvent() string {
 	return ""
 }
 
+// firstNonEmptyViperString returns the first non-empty strings.TrimSpace(viper.GetString(k)) among keys.
+func firstNonEmptyViperString(keys ...string) string {
+	for _, k := range keys {
+		if v := strings.TrimSpace(viper.GetString(k)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // NoGPG returns option "--no-gpg".
+// In GitHub Actions this is always true (no override): CI jobs typically have no usable signing keys.
 func NoGPG() bool {
 	return GitHubActionEvent() != "" || viper.GetBool("check--no-gpg") || viper.GetBool("check-commits--no-gpg")
 }
 
 // ReportTypos returns way to display typos (none, warn, error).
+// In GitHub Actions, defaults to warn when no --report-typos was set; an explicit flag value always wins.
 func ReportTypos() int {
-	var value = ""
+	value := firstNonEmptyViperString("check--report-typos", "check-po--report-typos", "check-commits--report-typos")
 
-	if GitHubActionEvent() != "" {
+	// In GitHub Actions, default to warn so typo noise does not fail the job unless configured.
+	// Explicit --report-typos=... on check-po / check-commits (or check-- alias) always wins.
+	if GitHubActionEvent() != "" && value == "" {
 		return ReportIssueWarn
-	}
-	if v := viper.GetString("check--report-typos"); v != "" {
-		value = v
-	} else if v := viper.GetString("check-po--report-typos"); v != "" {
-		value = v
-	} else if v := viper.GetString("check-commits--report-typos"); v != "" {
-		value = v
 	}
 	switch value {
 	case "none":
@@ -83,17 +90,14 @@ func AllowObsoleteEntries() bool {
 	return viper.GetBool("check--allow-obsolete")
 }
 
-// ReportFileLocations returns way to display typos (none, warn, error).
+// ReportFileLocations returns way to display file-location / filter issues (none, warn, error).
+// In GitHub Actions, defaults to error when no --report-file-locations was set; an explicit flag wins.
 func ReportFileLocations() int {
-	var value = ""
-
-	if v := viper.GetString("check--report-file-locations"); v != "" {
-		value = v
-	} else if v := viper.GetString("check-po--report-file-locations"); v != "" {
-		value = v
-	} else if v := viper.GetString("check-commits--report-file-locations"); v != "" {
-		value = v
-	}
+	value := firstNonEmptyViperString(
+		"check--report-file-locations",
+		"check-po--report-file-locations",
+		"check-commits--report-file-locations",
+	)
 	if value == "" && GitHubActionEvent() != "" {
 		return ReportIssueError
 	}
