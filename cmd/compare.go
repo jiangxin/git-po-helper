@@ -149,20 +149,22 @@ func (v compareCommand) executeNew(oldCommit, oldFile, newCommit, newFile string
 func (v compareCommand) executeStat(oldCommit, oldFile, newCommit, newFile string) error {
 	oldRev := util.FileRevision{Revision: oldCommit, File: oldFile}
 	defer oldRev.Cleanup()
-	if _, err := oldRev.GetFile(); err != nil {
+	oldPath, err := oldRev.GetFile()
+	if err != nil {
 		return NewStandardErrorF("failed to checkout %s@%s: %v", oldFile, oldCommit, err)
 	}
 	newRev := util.FileRevision{Revision: newCommit, File: newFile}
 	defer newRev.Cleanup()
-	if _, err := newRev.GetFile(); err != nil {
+	newPath, err := newRev.GetFile()
+	if err != nil {
 		return NewStandardErrorF("failed to checkout %s@%s: %v", newFile, newCommit, err)
 	}
 
-	srcData, err := os.ReadFile(oldRev.Tmpfile)
+	srcData, err := os.ReadFile(oldPath)
 	if err != nil {
 		return NewStandardErrorF("failed to read old file: %v", err)
 	}
-	destData, err := os.ReadFile(newRev.Tmpfile)
+	destData, err := os.ReadFile(newPath)
 	if err != nil {
 		return NewStandardErrorF("failed to read new file: %v", err)
 	}

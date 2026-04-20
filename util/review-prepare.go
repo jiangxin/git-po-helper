@@ -20,27 +20,28 @@ func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string
 		repository.AssertRepositoryNotNil() // assert repo when using revisions
 	}
 
-	// Use temp files for orig and new; they are deleted when the function returns
-	oldTmpFile, err := os.CreateTemp("", "review-old-*.po")
-	if err != nil {
-		return fmt.Errorf("failed to create temp old file: %w", err)
+	var oldTmpName, newTmpName string
+	if oldCommit != "" {
+		oldTmpFile, err := os.CreateTemp("", "review-old-*.po")
+		if err != nil {
+			return fmt.Errorf("failed to create temp old file: %w", err)
+		}
+		oldTmpName = oldTmpFile.Name()
+		oldTmpFile.Close()
+		defer func() { _ = os.Remove(oldTmpName) }()
 	}
-	oldTmpFile.Close()
-	defer func() {
-		os.Remove(oldTmpFile.Name())
-	}()
-
-	newTmpFile, err := os.CreateTemp("", "review-new-*.po")
-	if err != nil {
-		return fmt.Errorf("failed to create temp new file: %w", err)
+	if newCommit != "" {
+		newTmpFile, err := os.CreateTemp("", "review-new-*.po")
+		if err != nil {
+			return fmt.Errorf("failed to create temp new file: %w", err)
+		}
+		newTmpName = newTmpFile.Name()
+		newTmpFile.Close()
+		defer func() { _ = os.Remove(newTmpName) }()
 	}
-	newTmpFile.Close()
-	defer func() {
-		os.Remove(newTmpFile.Name())
-	}()
 
 	log.Debugf("preparing review data: orig=%s, new=%s, review-input=%s",
-		oldTmpFile.Name(), newTmpFile.Name(), outputFile)
+		oldTmpName, newTmpName, outputFile)
 
 	// Get original file (from git when revision set, else from worktree)
 	log.Infof("getting old file from commit: %s", oldCommit)
@@ -61,18 +62,17 @@ func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string
 	oldFileRevision := FileRevision{
 		Revision: oldCommit,
 		File:     relOldFile,
-		Tmpfile:  oldTmpFile.Name(),
+		tmpfile:  oldTmpName,
 	}
-	if _, err := oldFileRevision.GetFile(); err != nil {
-		// Check if error is because file doesn't exist in the commit
-		if strings.Contains(err.Error(), "does not exist in") {
-			// If file doesn't exist in that commit, create empty file
+	oldPath, err := oldFileRevision.GetFile()
+	if err != nil {
+		if oldFileRevision.Revision != "" && strings.Contains(err.Error(), "does not exist in") {
 			log.Infof("file %s not found in commit %s, using empty file as original", relOldFile, oldCommit)
-			if err := os.WriteFile(oldFileRevision.Tmpfile, []byte{}, 0644); err != nil {
+			if err := os.WriteFile(oldFileRevision.tmpfile, []byte{}, 0644); err != nil {
 				return fmt.Errorf("failed to create empty orig file: %w", err)
 			}
+			oldPath = oldFileRevision.tmpfile
 		} else {
-			// For other errors, return them
 			return fmt.Errorf("failed to get original file from commit %s: %w", oldCommit, err)
 		}
 	}
@@ -95,27 +95,26 @@ func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string
 	newFileRevision := FileRevision{
 		Revision: newCommit,
 		File:     relNewFile,
-		Tmpfile:  newTmpFile.Name(),
+		tmpfile:  newTmpName,
 	}
-	if _, err := newFileRevision.GetFile(); err != nil {
-		// Check if error is because file doesn't exist in the commit
-		if strings.Contains(err.Error(), "does not exist in") {
-			// If file doesn't exist in that commit, create empty file
+	newPath, err := newFileRevision.GetFile()
+	if err != nil {
+		if newFileRevision.Revision != "" && strings.Contains(err.Error(), "does not exist in") {
 			log.Infof("file %s not found in commit %s, using empty file as original", relNewFile, newCommit)
-			if err := os.WriteFile(newFileRevision.Tmpfile, []byte{}, 0644); err != nil {
+			if err := os.WriteFile(newFileRevision.tmpfile, []byte{}, 0644); err != nil {
 				return fmt.Errorf("failed to create empty new file: %w", err)
 			}
+			newPath = newFileRevision.tmpfile
 		} else {
-			// For other errors, return them
 			return fmt.Errorf("failed to get new file from commit %s: %w", newCommit, err)
 		}
 	}
 
-	origData, err := os.ReadFile(oldFileRevision.Tmpfile)
+	origData, err := os.ReadFile(oldPath)
 	if err != nil {
 		return fmt.Errorf("failed to read orig file: %w", err)
 	}
-	newData, err := os.ReadFile(newFileRevision.Tmpfile)
+	newData, err := os.ReadFile(newPath)
 	if err != nil {
 		return fmt.Errorf("failed to read new file: %w", err)
 	}

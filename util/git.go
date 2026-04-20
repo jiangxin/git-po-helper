@@ -13,37 +13,40 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// FileRevision identifies a path at a revision for checkout to a temp file (see GetFile).
+// FileRevision identifies a path at a revision for materialization via GetFile.
 // IsTipCommit is metadata for callers (e.g. check-commits PO policy); GetFile does not use it.
 type FileRevision struct {
 	Revision    string
 	File        string
-	Tmpfile     string
+	tmpfile     string
 	IsTipCommit bool
 }
 
-// GetFile materializes the file at Revision:File into a temp file and returns that path.
-// If Revision is empty, copies f.File from disk. If Tmpfile is already set, content is
-// written there; otherwise a new temp file is created. Call Cleanup when done to remove Tmpfile.
+// GetFile returns a path to the file contents. When Revision is empty, returns File after
+// verifying it exists (worktree path; no temp file is used). When Revision is non-empty,
+// runs git show into tmpfile: if tmpfile is already set, content is written there; otherwise
+// a new temp file is created. Call Cleanup when done to remove tmpfile only for the non-empty
+// Revision case.
 func (f *FileRevision) GetFile() (string, error) {
-	if f.Tmpfile == "" {
-		tmpfile, err := os.CreateTemp("", "*--"+filepath.Base(f.File))
+	if strings.TrimSpace(f.Revision) == "" {
+		if f.File == "" {
+			return "", fmt.Errorf("file path is empty")
+		}
+		if _, err := os.Stat(f.File); err != nil {
+			return "", fmt.Errorf("fail to access file: %w", err)
+		}
+		f.tmpfile = ""
+		log.Debugf("using worktree file %s directly", f.File)
+		return f.File, nil
+	}
+
+	if f.tmpfile == "" {
+		tf, err := os.CreateTemp("", "*--"+filepath.Base(f.File))
 		if err != nil {
 			return "", fmt.Errorf("fail to create tmpfile: %s", err)
 		}
-		f.Tmpfile = tmpfile.Name()
-		tmpfile.Close()
-	}
-	if f.Revision == "" {
-		data, err := os.ReadFile(f.File)
-		if err != nil {
-			return "", fmt.Errorf("fail to read file: %w", err)
-		}
-		if err := os.WriteFile(f.Tmpfile, data, 0644); err != nil {
-			return "", fmt.Errorf("fail to write tmpfile: %w", err)
-		}
-		log.Debugf("read file %s from %s and write to %s", f.File, f.Revision, f.Tmpfile)
-		return f.Tmpfile, nil
+		f.tmpfile = tf.Name()
+		tf.Close()
 	}
 	if err := repository.RequireOpened(); err != nil {
 		return "", fmt.Errorf("git show requires a repository: %w", err)
@@ -67,18 +70,19 @@ func (f *FileRevision) GetFile() (string, error) {
 	if err := cmd.Wait(); err != nil {
 		return "", fmt.Errorf("fail to wait git-show command: %s", err)
 	}
-	if err := os.WriteFile(f.Tmpfile, data, 0644); err != nil {
+	if err := os.WriteFile(f.tmpfile, data, 0644); err != nil {
 		return "", fmt.Errorf("fail to write tmpfile: %w", err)
 	}
-	log.Debugf(`creating "%s" file using command: %s`, f.Tmpfile, cmd.String())
-	return f.Tmpfile, nil
+	log.Debugf(`creating "%s" file using command: %s`, f.tmpfile, cmd.String())
+	return f.tmpfile, nil
 }
 
-// Cleanup removes the temp file created by GetFile and clears Tmpfile.
+// Cleanup removes the temp file created by GetFile for a non-empty Revision and clears tmpfile.
+// When Revision was empty, GetFile leaves tmpfile unset and Cleanup is a no-op.
 func (f *FileRevision) Cleanup() {
-	if f.Tmpfile != "" {
-		_ = os.Remove(f.Tmpfile)
-		f.Tmpfile = ""
+	if f.tmpfile != "" {
+		_ = os.Remove(f.tmpfile)
+		f.tmpfile = ""
 	}
 }
 
