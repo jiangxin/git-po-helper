@@ -16,17 +16,19 @@ import (
 // FileRevision identifies a path at a revision for materialization via GetFile.
 // IsTipCommit is metadata for callers (e.g. check-commits PO policy); GetFile does not use it.
 type FileRevision struct {
-	Revision    string
-	File        string
-	tmpfile     string
+	Revision string
+	File     string
+	tmpfile  string
+	// cached is true after git show successfully wrote tmpfile for non-empty Revision.
+	cached      bool
 	IsTipCommit bool
 }
 
 // GetFile returns a path to the file contents. When Revision is empty, returns File after
 // verifying it exists (worktree path; no temp file is used). When Revision is non-empty,
-// runs git show into tmpfile: if tmpfile is already set, content is written there; otherwise
-// a new temp file is created. Call Cleanup when done to remove tmpfile only for the non-empty
-// Revision case.
+// runs git show once into a temp file and reuses that path on later GetFile calls without
+// running git show again until Cleanup. Call Cleanup when done to remove tmpfile only for
+// the non-empty Revision case.
 func (f *FileRevision) GetFile() (string, error) {
 	if strings.TrimSpace(f.Revision) == "" {
 		if f.File == "" {
@@ -36,8 +38,18 @@ func (f *FileRevision) GetFile() (string, error) {
 			return "", fmt.Errorf("fail to access file: %w", err)
 		}
 		f.tmpfile = ""
+		f.cached = false
 		log.Debugf("using worktree file %s directly", f.File)
 		return f.File, nil
+	}
+
+	if f.cached && f.tmpfile != "" {
+		if _, err := os.Stat(f.tmpfile); err == nil {
+			log.Debugf("reusing cached git show output %s", f.tmpfile)
+			return f.tmpfile, nil
+		}
+		f.tmpfile = ""
+		f.cached = false
 	}
 
 	if f.tmpfile == "" {
@@ -73,6 +85,7 @@ func (f *FileRevision) GetFile() (string, error) {
 	if err := os.WriteFile(f.tmpfile, data, 0644); err != nil {
 		return "", fmt.Errorf("fail to write tmpfile: %w", err)
 	}
+	f.cached = true
 	log.Debugf(`creating "%s" file using command: %s`, f.tmpfile, cmd.String())
 	return f.tmpfile, nil
 }
@@ -84,6 +97,7 @@ func (f *FileRevision) Cleanup() {
 		_ = os.Remove(f.tmpfile)
 		f.tmpfile = ""
 	}
+	f.cached = false
 }
 
 // GetChangedPoFiles returns the list of changed po/XX.po files between two git versions.
