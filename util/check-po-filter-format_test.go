@@ -11,6 +11,21 @@ import (
 	"github.com/spf13/viper"
 )
 
+func TestPoFilterStyleSubstrings(t *testing.T) {
+	if !poFilterIsNoLineNumberStyle("my-gettext-no-line-number-filter") {
+		t.Fatal("expected substring match for no-line-number")
+	}
+	if !poFilterIsNoLocationStyle("wrap-no-location-extra") {
+		t.Fatal("expected substring match for no-location")
+	}
+	if poFilterIsNoLocationStyle("gettext-no-line-number") {
+		t.Fatal("standard no-line-number driver name must not match no-location substring")
+	}
+	if poFilterIsNoLineNumberStyle("gettext-no-location") {
+		t.Fatal("standard no-location driver name must not match no-line-number substring")
+	}
+}
+
 // preparePoFilterTestRepo creates a repo with po/test.po and gettext-no-location in .gitattributes,
 // commits, opens it as the current repository, and chdirs into the repo root. t.Cleanup restores cwd
 // and re-opens the original repository.

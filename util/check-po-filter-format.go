@@ -11,18 +11,32 @@ import (
 
 	"github.com/git-l10n/git-po-helper/flag"
 	"github.com/git-l10n/git-po-helper/repository"
+	log "github.com/sirupsen/logrus"
 )
+
+// poFilterIsNoLineNumberStyle reports whether a filter driver name should follow the
+// gettext-no-line-number policy (file-only #: refs) and msgcat --add-location=file normalization.
+// Matching is by substring so custom driver names like "acme-gettext-no-line-number" still work.
+func poFilterIsNoLineNumberStyle(filterName string) bool {
+	return strings.Contains(strings.ToLower(filterName), "no-line-number")
+}
+
+// poFilterIsNoLocationStyle reports whether a filter driver name should follow the
+// gettext-no-location policy (no #: lines) and msgcat --no-location normalization.
+// Checked after poFilterIsNoLineNumberStyle so names containing both substrings prefer line-number.
+func poFilterIsNoLocationStyle(filterName string) bool {
+	return strings.Contains(strings.ToLower(filterName), "no-location")
+}
 
 // getGitFilterAttribute resolves the Git `filter` attribute for relPath (repository-relative, for
 // git check-attr). If injectedFilter is non-empty after trimming, it is used instead of running git.
 // attrSourceCommit is passed as git check-attr --source when non-empty. When git reports unspecified,
 // unset, or empty, guidance messages are appended and the effective filter is gettext-no-location.
-// For any other unsupported driver, errs receives a warning and the effective value falls back to
-// gettext-no-location.
-// declaredFilter is always the attribute value from git or injection before unsupported fallback
-// (e.g. still "rot13" when effective becomes gettext-no-location); use it for filter.<name>.clean
-// lookup. On git check-attr failure or unparseable output, effectiveFilter and declaredFilter are
-// empty and errs has a single line; treat that as fatal and skip further filter checks.
+// Uncommon driver names are kept as-is (effective equals declared); callers apply #: rules by substring.
+// declaredFilter is always the attribute value from git or injection (same as effective when set);
+// use it for filter.<name>.clean lookup. On git check-attr failure or unparseable output,
+// effectiveFilter and declaredFilter are empty and errs has a single line; treat that as fatal and
+// skip further filter checks.
 func getGitFilterAttribute(relPath, attrSourceCommit, injectedFilter string) (effectiveFilter string, declaredFilter string, errs []string) {
 	attrSourceCommit = strings.TrimSpace(attrSourceCommit)
 	filterValue := strings.TrimSpace(injectedFilter)
@@ -80,15 +94,7 @@ func getGitFilterAttribute(relPath, attrSourceCommit, injectedFilter string) (ef
 
 	effectiveFilter = filterValue
 	if filterValue != "gettext-no-location" && filterValue != "gettext-no-line-number" {
-		if len(errs) > 0 {
-			errs = append(errs, "")
-		}
-		errs = append(errs, fmt.Sprintf(
-			"Unsupported filter attribute %q for %s; "+
-				`using "gettext-no-location" rules as fallback (PO must not contain #: location comments). `+
-				`Prefer filter=gettext-no-location or filter=gettext-no-line-number in .gitattributes.`,
-			filterValue, relPath))
-		effectiveFilter = "gettext-no-location"
+		log.Infof("uncommon filter attribute %q for %s; will check git config for driver command", filterValue, relPath)
 	}
 	return effectiveFilter, declaredFilter, errs
 }
@@ -119,9 +125,9 @@ func poFilterAttrRelPath(fr *FileRevision, contentPath string) (displayPath, rel
 }
 
 // checkPoFilterFormat checks git attributes for the filter driver and matches PO #: comments
-// to that policy: gettext-no-line-number allows #: lines but refs must be file-only (no line
-// numbers; see checkPoLocationCommentsNoLineNumbers); gettext-no-location (and unsupported
-// drivers, which fall back to gettext-no-location) require no #: lines (checkPoLocationCommentsAbsent).
+// to that policy: names containing "no-line-number" allow #: lines but refs must be file-only (no line
+// numbers; see checkPoLocationCommentsNoLineNumbers); otherwise (including names containing
+// "no-location" and uncommon drivers) require no #: lines (checkPoLocationCommentsAbsent).
 // If no filter is set, this function appends the missing-attribute guidance but does not return
 // early so the caller's "Location comments (#:)" section can still run.
 // It does not run msgcat or compare normalized bytes, and does not read filter.<driver>.clean.
@@ -186,7 +192,7 @@ func checkPoFilterFormat(fr *FileRevision, filterAttribute string) ([]string, bo
 		errs = append(errs, fmt.Sprintf("cannot parse %s: %s", displayPath, err))
 		return errs, false
 	}
-	if effectiveFilter == "gettext-no-line-number" {
+	if poFilterIsNoLineNumberStyle(effectiveFilter) {
 		locErrs, locOk := checkPoLocationCommentsNoLineNumbers(po)
 		if !locOk {
 			if len(errs) > 0 {
@@ -195,6 +201,7 @@ func checkPoFilterFormat(fr *FileRevision, filterAttribute string) ([]string, bo
 			errs = append(errs, locErrs...)
 		}
 	} else {
+		// gettext-no-location, names containing "no-location", or uncommon drivers: no #: lines.
 		locErrs, locOk := checkPoLocationCommentsAbsent(po)
 		if !locOk {
 			if len(errs) > 0 {
@@ -212,9 +219,10 @@ func checkPoFilterFormat(fr *FileRevision, filterAttribute string) ([]string, bo
 	return errs, filterOk
 }
 
-// checkPoFilterContent runs filter.<driver>.clean from git config when set; otherwise for
-// gettext-no-location and gettext-no-line-number it uses the same msgcat defaults as Git's
-// recommended smudge/clean setup. It compares filter stdout to the on-disk PO; any mismatch
+// checkPoFilterContent runs filter.<driver>.clean from git config when set; otherwise when the
+// declared driver name contains "no-line-number" or "no-location" (substring match), it uses the
+// same msgcat defaults as Git's recommended smudge/clean setup ("no-line-number" wins if both match).
+// It compares filter stdout to the on-disk PO; any mismatch
 // yields warning lines only (never fails check-po). Skipped when flag.GitHubActionEvent() is
 // non-empty (GitHub Actions / --github-action-event), when no filter attribute applies, or when
 // an unknown driver has no filter.<name>.clean configured.
@@ -266,11 +274,11 @@ func checkPoFilterContent(fr *FileRevision, filterAttribute string) []string {
 		cmdArgs = strings.Fields(string(bytes.TrimSpace(cleanOut)))
 	}
 	if len(cmdArgs) == 0 {
-		switch filterValue {
-		case "gettext-no-location":
-			cmdArgs = []string{"msgcat", "--no-location", "-"}
-		case "gettext-no-line-number":
+		switch {
+		case poFilterIsNoLineNumberStyle(filterValue):
 			cmdArgs = []string{"msgcat", "--add-location=file", "-"}
+		case poFilterIsNoLocationStyle(filterValue):
+			cmdArgs = []string{"msgcat", "--no-location", "-"}
 		default:
 			return nil
 		}
