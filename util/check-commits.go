@@ -120,19 +120,21 @@ func checkCommitNotL10nChanges(commit string, notL10nChanges, l10nChanges []stri
 func checkCommitL10nFile(commit, fileName string, isTipCommit bool) (ok bool, errs []string) {
 	ok = true
 	tmpFile := FileRevision{
-		Revision: commit,
-		File:     fileName,
+		Revision:    commit,
+		File:        fileName,
+		IsTipCommit: isTipCommit,
 	}
-	if err := CheckoutTmpfile(&tmpFile); err != nil || tmpFile.Tmpfile == "" {
+	defer tmpFile.Cleanup()
+	filePath, err := tmpFile.GetFile()
+	if err != nil || filePath == "" {
 		errs = append(errs,
 			fmt.Sprintf("commit %s: fail to checkout %s of revision %s: %s",
 				AbbrevCommit(commit), tmpFile.File, tmpFile.Revision, err))
 		return ok, errs
 	}
-	defer os.Remove(tmpFile.Tmpfile)
 
 	if fileName == "po/TEAMS" {
-		if _, errors := ParseTeams(tmpFile.Tmpfile); len(errors) > 0 {
+		if _, errors := ParseTeams(filePath); len(errors) > 0 {
 			for _, e := range errors {
 				errs = append(errs,
 					fmt.Sprintf("commit %s: %s",
@@ -148,7 +150,7 @@ func checkCommitL10nFile(commit, fileName string, isTipCommit bool) (ok bool, er
 	// Do not compare with POT template for tmpFile, because:
 	// 1. we only know path of tmpfile, not the real PO file, fail to build POT,
 	// 2. the temporary PO file is translated based on a history POT template.
-	if !CheckPoFileWithPrompt(locale, tmpFile.Tmpfile, false, prompt, fileName, isTipCommit, commit) {
+	if !CheckPoFileWithPrompt(locale, filePath, false, prompt, fileName, tmpFile.IsTipCommit, commit) {
 		// Error errs in CheckPoFileWithPrompt() have been output already,
 		// mark ok as false
 		ok = false

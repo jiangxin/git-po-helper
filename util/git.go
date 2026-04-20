@@ -13,11 +13,73 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// FileRevision is used as an argument for diff function
+// FileRevision identifies a path at a revision for checkout to a temp file (see GetFile).
+// IsTipCommit is metadata for callers (e.g. check-commits PO policy); GetFile does not use it.
 type FileRevision struct {
-	Revision string
-	File     string
-	Tmpfile  string
+	Revision    string
+	File        string
+	Tmpfile     string
+	IsTipCommit bool
+}
+
+// GetFile materializes the file at Revision:File into a temp file and returns that path.
+// If Revision is empty, copies f.File from disk. If Tmpfile is already set, content is
+// written there; otherwise a new temp file is created. Call Cleanup when done to remove Tmpfile.
+func (f *FileRevision) GetFile() (string, error) {
+	if f.Tmpfile == "" {
+		tmpfile, err := os.CreateTemp("", "*--"+filepath.Base(f.File))
+		if err != nil {
+			return "", fmt.Errorf("fail to create tmpfile: %s", err)
+		}
+		f.Tmpfile = tmpfile.Name()
+		tmpfile.Close()
+	}
+	if f.Revision == "" {
+		data, err := os.ReadFile(f.File)
+		if err != nil {
+			return "", fmt.Errorf("fail to read file: %w", err)
+		}
+		if err := os.WriteFile(f.Tmpfile, data, 0644); err != nil {
+			return "", fmt.Errorf("fail to write tmpfile: %w", err)
+		}
+		log.Debugf("read file %s from %s and write to %s", f.File, f.Revision, f.Tmpfile)
+		return f.Tmpfile, nil
+	}
+	if err := repository.RequireOpened(); err != nil {
+		return "", fmt.Errorf("git show requires a repository: %w", err)
+	}
+	cmd := exec.Command("git",
+		"show",
+		f.Revision+":"+f.File)
+	cmd.Stderr = os.Stderr
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf(`get StdoutPipe failed: %s`, err)
+	}
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("fail to start git-show command: %s", err)
+	}
+	data, err := io.ReadAll(out)
+	out.Close()
+	if err != nil {
+		return "", fmt.Errorf("fail to read git-show output: %w", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		return "", fmt.Errorf("fail to wait git-show command: %s", err)
+	}
+	if err := os.WriteFile(f.Tmpfile, data, 0644); err != nil {
+		return "", fmt.Errorf("fail to write tmpfile: %w", err)
+	}
+	log.Debugf(`creating "%s" file using command: %s`, f.Tmpfile, cmd.String())
+	return f.Tmpfile, nil
+}
+
+// Cleanup removes the temp file created by GetFile and clears Tmpfile.
+func (f *FileRevision) Cleanup() {
+	if f.Tmpfile != "" {
+		_ = os.Remove(f.Tmpfile)
+		f.Tmpfile = ""
+	}
 }
 
 // GetChangedPoFiles returns the list of changed po/XX.po files between two git versions.
@@ -80,55 +142,4 @@ func GetChangedPoFilesRange(rev1, rev2 string) ([]string, error) {
 		}
 	}
 	return poFiles, nil
-}
-
-// CheckoutTmpfile checks out a file revision to a temp file for reading.
-func CheckoutTmpfile(f *FileRevision) error {
-	if f.Tmpfile == "" {
-		tmpfile, err := os.CreateTemp("", "*--"+filepath.Base(f.File))
-		if err != nil {
-			return fmt.Errorf("fail to create tmpfile: %s", err)
-		}
-		f.Tmpfile = tmpfile.Name()
-		tmpfile.Close()
-	}
-	if f.Revision == "" {
-		// Read file from f.File and write to f.Tmpfile (no git needed)
-		data, err := os.ReadFile(f.File)
-		if err != nil {
-			return fmt.Errorf("fail to read file: %w", err)
-		}
-		if err := os.WriteFile(f.Tmpfile, data, 0644); err != nil {
-			return fmt.Errorf("fail to write tmpfile: %w", err)
-		}
-		log.Debugf("read file %s from %s and write to %s", f.File, f.Revision, f.Tmpfile)
-		return nil
-	}
-	if err := repository.RequireOpened(); err != nil {
-		return fmt.Errorf("git show requires a repository: %w", err)
-	}
-	cmd := exec.Command("git",
-		"show",
-		f.Revision+":"+f.File)
-	cmd.Stderr = os.Stderr
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf(`get StdoutPipe failed: %s`, err)
-	}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("fail to start git-show command: %s", err)
-	}
-	data, err := io.ReadAll(out)
-	out.Close()
-	if err != nil {
-		return fmt.Errorf("fail to read git-show output: %w", err)
-	}
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("fail to wait git-show command: %s", err)
-	}
-	if err := os.WriteFile(f.Tmpfile, data, 0644); err != nil {
-		return fmt.Errorf("fail to write tmpfile: %w", err)
-	}
-	log.Debugf(`creating "%s" file using command: %s`, f.Tmpfile, cmd.String())
-	return nil
 }

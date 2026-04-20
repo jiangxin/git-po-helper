@@ -41,15 +41,16 @@ func CheckWithPotFile(commit, projectName, poFile string) bool {
 			Revision: commit,
 			File:     poFile,
 		}
-		if err := CheckoutTmpfile(&tmpFile); err != nil || tmpFile.Tmpfile == "" {
+		defer tmpFile.Cleanup()
+		path, err := tmpFile.GetFile()
+		if err != nil || path == "" {
 			ReportSection("Incomplete translations found", false, log.WarnLevel,
 				fmt.Sprintf("[%s@%s]", locale+".po", AbbrevCommit(commit)),
 				fmt.Sprintf("commit %s: fail to checkout %s of revision %s: %s",
 					AbbrevCommit(commit), tmpFile.File, tmpFile.Revision, err))
 			return false
 		}
-		defer os.Remove(tmpFile.Tmpfile)
-		fileToCheck = tmpFile.Tmpfile
+		fileToCheck = path
 		prompt = fmt.Sprintf("[%s@%s]", locale+".po", AbbrevCommit(commit))
 	} else {
 		prompt = fmt.Sprintf("[%s]", filepath.Base(poFile))
@@ -81,11 +82,12 @@ func getProjectNameFromPoFile(poFile, commit string) string {
 	fileToRead := poFile
 	if commit != "" && commit != "HEAD" {
 		tmpFile := FileRevision{Revision: commit, File: poFile}
-		if err := CheckoutTmpfile(&tmpFile); err != nil || tmpFile.Tmpfile == "" {
+		defer tmpFile.Cleanup()
+		path, err := tmpFile.GetFile()
+		if err != nil || path == "" {
 			return ""
 		}
-		fileToRead = tmpFile.Tmpfile
-		defer os.Remove(tmpFile.Tmpfile)
+		fileToRead = path
 	}
 	data, err := os.ReadFile(fileToRead)
 	if err != nil {

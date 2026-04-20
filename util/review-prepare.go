@@ -63,7 +63,7 @@ func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string
 		File:     relOldFile,
 		Tmpfile:  oldTmpFile.Name(),
 	}
-	if err := CheckoutTmpfile(&oldFileRevision); err != nil {
+	if _, err := oldFileRevision.GetFile(); err != nil {
 		// Check if error is because file doesn't exist in the commit
 		if strings.Contains(err.Error(), "does not exist in") {
 			// If file doesn't exist in that commit, create empty file
@@ -97,7 +97,7 @@ func PrepareReviewData(oldCommit, oldFile, newCommit, newFile, outputFile string
 		File:     relNewFile,
 		Tmpfile:  newTmpFile.Name(),
 	}
-	if err := CheckoutTmpfile(&newFileRevision); err != nil {
+	if _, err := newFileRevision.GetFile(); err != nil {
 		// Check if error is because file doesn't exist in the commit
 		if strings.Contains(err.Error(), "does not exist in") {
 			// If file doesn't exist in that commit, create empty file
