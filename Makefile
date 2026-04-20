@@ -69,6 +69,10 @@ lint:
 
 test: $(TARGET) lint ut it
 
+# Variables set for github-test (simulate a GitHub-hosted runner; see flag.GitHubActionEvent,
+# checkCommitDate slack, ReportTypos defaults, checkPoFilterContent skip, etc.).
+GITHUB_TEST_ENV = GITHUB_ACTIONS=true CI=true
+
 ut: $(TARGET)
 	$(call message,Testing git-po-helper for unit tests)
 	$(GOTEST) $(PKG)/...
@@ -77,9 +81,19 @@ it: $(TARGET)
 	$(call message,Testing git-po-helper for integration tests)
 	@make -C test GIT_TEST_OPTS="--debug --verbose-log -x" prove
 
+# Unit tests with GITHUB_ACTIONS/CI set (see flag.GitHubActionEvent, ReportTypos defaults, etc.).
+gh-ut: $(TARGET)
+	$(call message,Unit tests with GitHub Actions-like environment)
+	env $(GITHUB_TEST_ENV) $(GOTEST) $(PKG)/...
+
+# Integration tests with the same GitHub Actions-like environment (lighter GIT_TEST_OPTS than "it").
 gh-it: $(TARGET)
-	$(call message,Testing git-po-helper for integration tests)
-	@make -C test GIT_TEST_OPTS="--debug --verbose" DEFAULT_TEST_TARGET=test
+	$(call message,Integration tests with GitHub Actions-like environment)
+	env $(GITHUB_TEST_ENV) $(MAKE) -C test GIT_TEST_OPTS="--debug --verbose-log -x" DEFAULT_TEST_TARGET=prove
+
+# Same coverage as "make test" (lint + unit + integration) under GITHUB_ACTIONS=true and CI=true.
+# GITHUB_EVENT_NAME is left unset so GitHubActionEvent() uses the GITHUB_ACTIONS fallback ("workflow").
+github-test: $(TARGET) lint gh-ut gh-it
 
 clean:
 	$(call message,Cleaning $(TARGET))
@@ -89,4 +103,4 @@ clean:
 .PHONY: test clean
 .PHONY: go-gen
 .PHONY: FORCE
-.PHONY: ut it gh-it
+.PHONY: ut it gh-ut gh-it github-test
