@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -18,15 +19,16 @@ import (
 // unset, or empty, guidance messages are appended and the effective filter is gettext-no-location.
 // For any other unsupported driver, errs receives a warning and the effective value falls back to
 // gettext-no-location.
-// On git check-attr failure or unparseable output, effectiveFilter is empty and errs has a single line;
-// the caller should treat that as fatal and return without running further filter checks.
-func getGitFilterAttribute(relPath, attrSourceCommit, injectedFilter string) (effectiveFilter string, errs []string) {
+// declaredFilter is always the attribute value from git or injection before unsupported fallback
+// (e.g. still "rot13" when effective becomes gettext-no-location); use it for filter.<name>.clean
+// lookup. On git check-attr failure or unparseable output, effectiveFilter and declaredFilter are
+// empty and errs has a single line; treat that as fatal and skip further filter checks.
+func getGitFilterAttribute(relPath, attrSourceCommit, injectedFilter string) (effectiveFilter string, declaredFilter string, errs []string) {
 	attrSourceCommit = strings.TrimSpace(attrSourceCommit)
 	filterValue := strings.TrimSpace(injectedFilter)
 	if filterValue == "" {
 		var checkAttrArgs []string
 		if repository.IsBare() {
-			// Bare repos have no work tree; -C workDir would be invalid (empty workDir).
 			checkAttrArgs = []string{"check-attr"}
 		} else {
 			workDir := repository.WorkDir()
@@ -40,15 +42,16 @@ func getGitFilterAttribute(relPath, attrSourceCommit, injectedFilter string) (ef
 		cmd.Stderr = nil
 		out, err := cmd.Output()
 		if err != nil {
-			return "", []string{fmt.Sprintf("git check-attr failed for %s: %s", relPath, err)}
+			return "", "", []string{fmt.Sprintf("git check-attr failed for %s: %s", relPath, err)}
 		}
 		line := strings.TrimSpace(string(out))
 		parts := strings.SplitN(line, ": ", 3)
 		if len(parts) < 3 {
-			return "", []string{fmt.Sprintf("unexpected git check-attr output: %s", line)}
+			return "", "", []string{fmt.Sprintf("unexpected git check-attr output: %s", line)}
 		}
 		filterValue = strings.TrimSpace(parts[2])
 	}
+	declaredFilter = filterValue
 
 	missingFilter := filterValue == "unspecified" || filterValue == "unset" || filterValue == ""
 	if missingFilter {
@@ -72,7 +75,7 @@ func getGitFilterAttribute(relPath, attrSourceCommit, injectedFilter string) (ef
 			"    https://lore.kernel.org/git/20220504124121.12683-1-worldhello.net@gmail.com/",
 		)
 		effectiveFilter = "gettext-no-location"
-		return effectiveFilter, errs
+		return effectiveFilter, declaredFilter, errs
 	}
 
 	effectiveFilter = filterValue
@@ -87,7 +90,32 @@ func getGitFilterAttribute(relPath, attrSourceCommit, injectedFilter string) (ef
 			filterValue, relPath))
 		effectiveFilter = "gettext-no-location"
 	}
-	return effectiveFilter, errs
+	return effectiveFilter, declaredFilter, errs
+}
+
+// poFilterAttrRelPath maps materialized contentPath to the repository-relative path used for
+// git check-attr and user-facing displayPath (repo-relative fr.File when set and not absolute).
+func poFilterAttrRelPath(fr *FileRevision, contentPath string) (displayPath, relPath string, err error) {
+	if fr.File != "" && !filepath.IsAbs(fr.File) {
+		displayPath = fr.File
+		relPath, err = GetRepoRelPath(fr.File)
+		if err != nil {
+			if errors.Is(err, ErrOutsideWorktree) {
+				return displayPath, "", fmt.Errorf("filter attr path escapes repository: %s", fr.File)
+			}
+			return displayPath, "", err
+		}
+		return displayPath, relPath, nil
+	}
+	displayPath = contentPath
+	relPath, err = GetRepoRelPath(contentPath)
+	if err != nil {
+		if errors.Is(err, ErrOutsideWorktree) {
+			return displayPath, "", fmt.Errorf("file %s is not under repository root", contentPath)
+		}
+		return displayPath, "", err
+	}
+	return displayPath, relPath, nil
 }
 
 // checkPoFilterFormat checks git attributes for the filter driver and matches PO #: comments
@@ -100,7 +128,7 @@ func getGitFilterAttribute(relPath, attrSourceCommit, injectedFilter string) (ef
 // fr identifies the PO and attribute context: content is read from fr.GetFile(); when fr.File is
 // non-empty and not an absolute path, it is treated as repo-relative for git check-attr (and for
 // display in messages). When fr.File is empty or absolute, relPath for check-attr is derived from
-// the materialized content path under the worktree (skipped when that path is outside the repo).
+// the materialized content path under the worktree (fails when that path is outside the repo).
 // fr.Revision (when non-empty) is passed as git check-attr --source so attributes resolve at that
 // commit (important for bare partial clones).
 //
@@ -130,35 +158,13 @@ func checkPoFilterFormat(fr *FileRevision, filterAttribute string) ([]string, bo
 		return []string{"Not in a git repository. Skipping filter attribute check for file locations."}, true
 	}
 
-	displayPath := contentPath
-
-	var relPath string
-	if fr.File != "" && !filepath.IsAbs(fr.File) {
-		displayPath = fr.File
-		rel, err := GetRepoRelPath(fr.File)
-		if err != nil {
-			if errors.Is(err, ErrOutsideWorktree) {
-				errs = append(errs, fmt.Sprintf("filter attr path escapes repository: %s", fr.File))
-				return errs, false
-			}
-			errs = append(errs, err.Error())
-			return errs, false
-		}
-		relPath = rel
-	} else {
-		rel, err := GetRepoRelPath(contentPath)
-		if err != nil {
-			if errors.Is(err, ErrOutsideWorktree) {
-				// File is outside repo and no logical repo-relative path; skip filter check
-				return nil, true
-			}
-			errs = append(errs, err.Error())
-			return errs, false
-		}
-		relPath = rel
+	displayPath, relPath, pathErr := poFilterAttrRelPath(fr, contentPath)
+	if pathErr != nil {
+		errs = append(errs, pathErr.Error())
+		return errs, false
 	}
 
-	effectiveFilter, filterErrs := getGitFilterAttribute(relPath, fr.Revision, filterAttribute)
+	effectiveFilter, _, filterErrs := getGitFilterAttribute(relPath, fr.Revision, filterAttribute)
 	if effectiveFilter == "" {
 		return append(errs, filterErrs...), false
 	}
@@ -204,4 +210,134 @@ func checkPoFilterFormat(fr *FileRevision, filterAttribute string) ([]string, bo
 		filterOk = true
 	}
 	return errs, filterOk
+}
+
+// checkPoFilterContent runs filter.<driver>.clean from git config when set; otherwise for
+// gettext-no-location and gettext-no-line-number it uses the same msgcat defaults as Git's
+// recommended smudge/clean setup. It compares filter stdout to the on-disk PO; any mismatch
+// yields warning lines only (never fails check-po). Skipped when flag.GitHubActionEvent() is
+// non-empty (GitHub Actions / --github-action-event), when no filter attribute applies, or when
+// an unknown driver has no filter.<name>.clean configured.
+func checkPoFilterContent(fr *FileRevision, filterAttribute string) []string {
+	if strings.TrimSpace(flag.GitHubActionEvent()) != "" {
+		return nil
+	}
+	if !repository.Opened() {
+		return nil
+	}
+	if fr == nil {
+		return []string{"internal error: nil FileRevision for filter clean comparison"}
+	}
+
+	contentPath, err := fr.GetFile()
+	if err != nil {
+		return []string{fmt.Sprintf("cannot materialize PO for filter clean comparison: %s", err)}
+	}
+	if !Exist(contentPath) {
+		return []string{fmt.Sprintf("cannot open %s: file does not exist", contentPath)}
+	}
+
+	displayPath, relPath, pathErr := poFilterAttrRelPath(fr, contentPath)
+	if pathErr != nil {
+		return append([]string{"PO filter clean comparison could not run:"}, pathErr.Error())
+	}
+
+	effective, declared, policyErrs := getGitFilterAttribute(relPath, fr.Revision, filterAttribute)
+	if effective == "" {
+		return append([]string{"PO filter clean comparison could not run:"}, policyErrs...)
+	}
+
+	missingFilter := declared == "unspecified" || declared == "unset" || declared == ""
+	if missingFilter {
+		return nil
+	}
+
+	filterValue := declared
+	var cmdArgs []string
+	cleanKey := "filter." + filterValue + ".clean"
+	var cleanCmd *exec.Cmd
+	if repository.IsBare() {
+		cleanCmd = exec.Command("git", "config", "--get", cleanKey)
+	} else {
+		cleanCmd = exec.Command("git", "-C", repository.WorkDir(), "config", "--get", cleanKey)
+	}
+	cleanOut, err := cleanCmd.Output()
+	if err == nil && len(bytes.TrimSpace(cleanOut)) > 0 {
+		cmdArgs = strings.Fields(string(bytes.TrimSpace(cleanOut)))
+	}
+	if len(cmdArgs) == 0 {
+		switch filterValue {
+		case "gettext-no-location":
+			cmdArgs = []string{"msgcat", "--no-location", "-"}
+		case "gettext-no-line-number":
+			cmdArgs = []string{"msgcat", "--add-location=file", "-"}
+		default:
+			return nil
+		}
+	}
+
+	exe, err := exec.LookPath(cmdArgs[0])
+	if err != nil {
+		return []string{fmt.Sprintf("cannot run filter clean for %s: %q not in PATH", displayPath, cmdArgs[0])}
+	}
+
+	original, err := os.ReadFile(contentPath)
+	if err != nil {
+		return []string{fmt.Sprintf("cannot read %s for filter clean comparison: %s", displayPath, err)}
+	}
+
+	filterExe := exec.Command(exe, cmdArgs[1:]...)
+	filterExe.Stdin = bytes.NewReader(original)
+	filterExe.Stderr = nil
+	formatted, err := filterExe.Output()
+	if err != nil {
+		return []string{fmt.Sprintf("filter %q clean command failed for %s: %v", filterValue, displayPath, err)}
+	}
+
+	if bytes.Equal(original, formatted) {
+		return nil
+	}
+
+	origTmp, err := os.CreateTemp("", "git-po-helper-orig-*.po")
+	if err != nil {
+		return []string{
+			fmt.Sprintf("cannot create temp file for diff: %s", err),
+			fmt.Sprintf("PO on disk differs from filter clean output for %s (warning only).", displayPath),
+		}
+	}
+	_, _ = origTmp.Write(original)
+	_ = origTmp.Close()
+	defer os.Remove(origTmp.Name())
+
+	formTmp, err := os.CreateTemp("", "git-po-helper-fmt-*.po")
+	if err != nil {
+		return []string{
+			fmt.Sprintf("cannot create temp file for diff: %s", err),
+			fmt.Sprintf("PO on disk differs from filter clean output for %s (warning only).", displayPath),
+		}
+	}
+	_, _ = formTmp.Write(formatted)
+	_ = formTmp.Close()
+	defer os.Remove(formTmp.Name())
+
+	diffCmd := exec.Command("diff", "-u", origTmp.Name(), formTmp.Name())
+	diffOut, _ := diffCmd.Output()
+
+	filterCmdLine := strings.Join(cmdArgs, " ")
+	warns := []string{
+		fmt.Sprintf("PO on disk does not match filter %q clean output for %s (warning only, not a failing check).", filterValue, displayPath),
+		fmt.Sprintf("Filter clean command: %s", filterCmdLine),
+		"Run this filter on the file and commit the normalized result.",
+		"",
+		"Diff (disk vs filtered):",
+		"",
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(string(diffOut), "\n"), "\n") {
+		if line == "" {
+			warns = append(warns, "")
+			continue
+		}
+		warns = append(warns, "    "+line)
+	}
+	return warns
 }

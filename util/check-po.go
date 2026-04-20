@@ -310,6 +310,10 @@ func CheckPoFileWithPrompt(locale string, compareWithPot bool, prompt string, fi
 		}
 		ReportSection("PO filter (.gitattributes)", ok, filterReportLevel, prompt, errs...)
 		ret = ret && ok
+
+		if filterContentWarns := checkPoFilterContent(fileRev, ""); len(filterContentWarns) > 0 {
+			ReportSection("PO filter clean output", true, log.WarnLevel, prompt, filterContentWarns...)
+		}
 	}
 
 	// Check possible typos in a .po file (Git project only).

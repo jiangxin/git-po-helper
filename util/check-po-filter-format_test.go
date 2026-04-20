@@ -11,6 +11,53 @@ import (
 	"github.com/spf13/viper"
 )
 
+// preparePoFilterTestRepo creates a repo with po/test.po and gettext-no-location in .gitattributes,
+// commits, opens it as the current repository, and chdirs into the repo root. t.Cleanup restores cwd
+// and re-opens the original repository.
+func preparePoFilterTestRepo(t *testing.T, poBody string) (repoPo string) {
+	t.Helper()
+	tmpDir := t.TempDir()
+	gitEnv := gitTestEnv()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		cmd.Env = gitEnv
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(output))
+		}
+	}
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(origWd)
+		repository.OpenRepository(origWd)
+	})
+	poDir := filepath.Join(tmpDir, "po")
+	if err := os.MkdirAll(poDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	repoPo = filepath.Join(poDir, "test.po")
+	if err := os.WriteFile(repoPo, []byte(poBody), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, ".gitattributes"), []byte("po/*.po filter=gettext-no-location\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("init")
+	runGit("config", "user.email", "t@t.com")
+	runGit("config", "user.name", "T")
+	runGit("add", "po/test.po", ".gitattributes")
+	runGit("commit", "--no-verify", "-m", "init")
+	repository.OpenRepository(tmpDir)
+	return repoPo
+}
+
 func TestCheckPoFilterFormat_repoAttrPathWithTempContent(t *testing.T) {
 	tmpDir := t.TempDir()
 	gitEnv := gitTestEnv()
@@ -78,7 +125,7 @@ msgstr "Hi"
 	}
 }
 
-func TestCheckPoFilterFormat_outsideRepoWithoutAttrPathSkips(t *testing.T) {
+func TestCheckPoFilterFormat_outsideRepoWithoutAttrPathFails(t *testing.T) {
 	tmpDir := t.TempDir()
 	outside := filepath.Join(tmpDir, "orphan.po")
 	if err := os.WriteFile(outside, []byte(`msgid ""
@@ -115,8 +162,11 @@ msgstr ""
 	fr := &FileRevision{File: outside, Revision: ""}
 	defer fr.Cleanup()
 	errs, ok := checkPoFilterFormat(fr, "")
-	if !ok || len(errs) > 0 {
-		t.Fatalf("expected skip (ok=true, no errs), ok=%v errs=%v", ok, errs)
+	if ok || len(errs) == 0 {
+		t.Fatalf("expected failure when path outside repo without repo-relative File, ok=%v errs=%v", ok, errs)
+	}
+	if !strings.Contains(strings.Join(errs, "\n"), "not under repository root") {
+		t.Fatalf("expected outside-repo message, got: %v", errs)
 	}
 }
 
@@ -253,5 +303,95 @@ msgstr "Hi"
 	}
 	if !strings.Contains(strings.Join(errs, "\n"), "No Git `filter` attribute") {
 		t.Fatalf("expected missing-filter message for rev without .gitattributes: %v", errs)
+	}
+}
+
+func TestCheckPoFilterContent_normalizedMatchesNoWarn(t *testing.T) {
+	poBody := `msgid ""
+msgstr ""
+"Project-Id-Version: Git\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Hello"
+msgstr "Hi"
+`
+	repoPo := preparePoFilterTestRepo(t, poBody)
+
+	fr := &FileRevision{File: repoPo, Revision: ""}
+	defer fr.Cleanup()
+	if warns := checkPoFilterContent(fr, ""); len(warns) != 0 {
+		t.Fatalf("expected no filter clean warnings, got: %q", strings.Join(warns, "\n"))
+	}
+}
+
+func TestCheckPoFilterContent_mismatchProducesWarn(t *testing.T) {
+	poBody := `msgid ""
+msgstr ""
+"Project-Id-Version: Git\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#: main.c:42
+msgid "Hello"
+msgstr "Hi"
+`
+	repoPo := preparePoFilterTestRepo(t, poBody)
+
+	fr := &FileRevision{File: repoPo, Revision: ""}
+	defer fr.Cleanup()
+	warns := checkPoFilterContent(fr, "")
+	joined := strings.Join(warns, "\n")
+	if len(warns) == 0 || !strings.Contains(joined, "does not match") {
+		t.Fatalf("expected mismatch warning, got len=%d: %s", len(warns), joined)
+	}
+}
+
+func TestCheckPoFilterContent_skipsInGitHubActionsEnv(t *testing.T) {
+	oldGA := os.Getenv("GITHUB_ACTIONS")
+	defer func() {
+		if oldGA == "" {
+			_ = os.Unsetenv("GITHUB_ACTIONS")
+		} else {
+			_ = os.Setenv("GITHUB_ACTIONS", oldGA)
+		}
+	}()
+	if err := os.Setenv("GITHUB_ACTIONS", "true"); err != nil {
+		t.Fatal(err)
+	}
+
+	poBody := `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#: x.c:1
+msgid "Hello"
+msgstr "Hi"
+`
+	repoPo := preparePoFilterTestRepo(t, poBody)
+
+	fr := &FileRevision{File: repoPo, Revision: ""}
+	defer fr.Cleanup()
+	if w := checkPoFilterContent(fr, ""); len(w) != 0 {
+		t.Fatalf("expected skip in GITHUB_ACTIONS, got: %q", strings.Join(w, "\n"))
+	}
+}
+
+func TestCheckPoFilterContent_skipsWithGithubActionEventViper(t *testing.T) {
+	viper.Set("github-action-event", "push")
+	defer viper.Set("github-action-event", "")
+
+	poBody := `msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#: x.c:1
+msgid "Hello"
+msgstr "Hi"
+`
+	repoPo := preparePoFilterTestRepo(t, poBody)
+
+	fr := &FileRevision{File: repoPo, Revision: ""}
+	defer fr.Cleanup()
+	if w := checkPoFilterContent(fr, ""); len(w) != 0 {
+		t.Fatalf("expected skip with github-action-event, got: %q", strings.Join(w, "\n"))
 	}
 }
