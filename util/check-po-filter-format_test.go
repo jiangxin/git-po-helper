@@ -61,23 +61,14 @@ msgstr "Hi"
 	runGit("add", "po/test.po")
 	runGit("commit", "--no-verify", "-m", "init")
 
-	outside, err := os.CreateTemp("", "git-po-helper-filter-*.po")
-	if err != nil {
-		t.Fatal(err)
-	}
-	outsidePath := outside.Name()
-	_ = outside.Close()
-	defer os.Remove(outsidePath)
-	if err := os.WriteFile(outsidePath, []byte(poBody), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	repository.OpenRepository(tmpDir)
 	viper.Set("check--report-file-locations", "error")
 	defer viper.Set("check--report-file-locations", "")
 
 	// gettext-no-location disallows any #: line in the PO (injected filter; no .gitattributes).
-	errs, ok := checkPoFilterFormat(outsidePath, "po/test.po", "", "gettext-no-location")
+	fr := &FileRevision{File: repoPo, Revision: ""}
+	defer fr.Cleanup()
+	errs, ok := checkPoFilterFormat(fr, "gettext-no-location")
 	if ok || len(errs) == 0 {
 		t.Fatalf("expected failure for #: under gettext-no-location, ok=%v errs=%v", ok, errs)
 	}
@@ -121,7 +112,9 @@ msgstr ""
 	viper.Set("check--report-file-locations", "error")
 	defer viper.Set("check--report-file-locations", "")
 
-	errs, ok := checkPoFilterFormat(outside, "", "", "")
+	fr := &FileRevision{File: outside, Revision: ""}
+	defer fr.Cleanup()
+	errs, ok := checkPoFilterFormat(fr, "")
 	if !ok || len(errs) > 0 {
 		t.Fatalf("expected skip (ok=true, no errs), ok=%v errs=%v", ok, errs)
 	}
@@ -129,10 +122,6 @@ msgstr ""
 
 func TestCheckPoFilterFormat_invalidRepoAttrPath(t *testing.T) {
 	tmpDir := t.TempDir()
-	poPath := filepath.Join(tmpDir, "x.po")
-	if err := os.WriteFile(poPath, []byte("x"), 0644); err != nil {
-		t.Fatal(err)
-	}
 
 	origWd, _ := os.Getwd()
 	if err := os.Chdir(tmpDir); err != nil {
@@ -154,7 +143,15 @@ func TestCheckPoFilterFormat_invalidRepoAttrPath(t *testing.T) {
 	viper.Set("check--report-file-locations", "error")
 	defer viper.Set("check--report-file-locations", "")
 
-	_, ok := checkPoFilterFormat(poPath, "../outside.po", "", "")
+	escapePo := filepath.Join(filepath.Dir(tmpDir), "git-po-helper-filter-escape-"+t.Name()+".po")
+	if err := os.WriteFile(escapePo, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(escapePo) })
+
+	fr := &FileRevision{File: filepath.Join("..", filepath.Base(escapePo)), Revision: ""}
+	defer fr.Cleanup()
+	_, ok := checkPoFilterFormat(fr, "")
 	if ok {
 		t.Fatal("expected failure for attr path escaping repo")
 	}
@@ -238,7 +235,9 @@ msgstr "Hi"
 	viper.Set("check--report-file-locations", "error")
 	defer viper.Set("check--report-file-locations", "")
 
-	errs, ok := checkPoFilterFormat(repoPo, "po/test.po", commitWithFilter, "")
+	frOld := &FileRevision{File: "po/test.po", Revision: commitWithFilter}
+	defer frOld.Cleanup()
+	errs, ok := checkPoFilterFormat(frOld, "")
 	if ok || len(errs) == 0 {
 		t.Fatalf("expected failure (#: under gettext-no-location at old rev), ok=%v errs=%v", ok, errs)
 	}
@@ -246,7 +245,9 @@ msgstr "Hi"
 		t.Fatalf("expected no-location message: %v", errs)
 	}
 
-	errs, ok = checkPoFilterFormat(repoPo, "po/test.po", commitNoAttr, "")
+	frNew := &FileRevision{File: "po/test.po", Revision: commitNoAttr}
+	defer frNew.Cleanup()
+	errs, ok = checkPoFilterFormat(frNew, "")
 	if ok || len(errs) == 0 {
 		t.Fatalf("expected failure (no filter policy) at new rev, ok=%v errs=%v", ok, errs)
 	}

@@ -18,28 +18,29 @@ import (
 // If no filter is set, this function appends the missing-attribute guidance but does not return
 // early so the caller's "Location comments (#:)" section can still run.
 // It does not run msgcat or compare normalized bytes, and does not read filter.<driver>.clean.
-// When repoAttrRelPath is non-empty, it must be a path relative to the repository root
-// (e.g. "po/zh_CN.po") used for git check-attr (unless filterAttribute is injected), and for
-// user-facing messages; this allows
-// checking content outside the worktree while still applying .gitattributes for the real path.
-// When repoAttrRelPath is empty, the path for attributes is derived from contentPath under the worktree.
-//
-// attrSourceCommit, when non-empty, must be a revision (commit, tag, etc.) whose tree is used to
-// resolve attributes: the command becomes "git check-attr --source=<rev> filter <path>".
-// That matches how attributes apply at that revision and is important for bare repositories
-// created with partial clone (promisor): .gitattributes may not be present locally until Git
-// fetches missing blobs; --source ties attribute lookup to the commit under inspection so Git
-// can materialize .gitattributes from the object store / remote as needed. When empty,
-// attributes are resolved the usual way (working tree / index), which is appropriate for
-// in-worktree checks (e.g. check-po on local files).
+// fr identifies the PO and attribute context: content is read from fr.GetFile(); when fr.File is
+// non-empty and not an absolute path, it is treated as repo-relative for git check-attr (and for
+// display in messages). When fr.File is empty or absolute, relPath for check-attr is derived from
+// the materialized content path under the worktree (skipped when that path is outside the repo).
+// fr.Revision (when non-empty) is passed as git check-attr --source so attributes resolve at that
+// commit (important for bare partial clones).
 //
 // filterAttribute, when non-empty after trimming, is used as the Git filter driver name
 // instead of running "git check-attr filter <path>" (for example in tests without
 // .gitattributes). When empty, the filter is read from git check-attr as usual.
 // Callers that honor --no-check-filter must not invoke this function when that flag is set
 // (see check-po.go).
-func checkPoFilterFormat(contentPath, repoAttrRelPath, attrSourceCommit, filterAttribute string) ([]string, bool) {
+func checkPoFilterFormat(fr *FileRevision, filterAttribute string) ([]string, bool) {
 	var errs []string
+
+	if fr == nil {
+		return []string{"internal error: nil FileRevision for filter check"}, false
+	}
+
+	contentPath, err := fr.GetFile()
+	if err != nil {
+		return []string{fmt.Sprintf("cannot materialize PO for filter check: %s", err)}, false
+	}
 
 	if !Exist(contentPath) {
 		errs = append(errs, fmt.Sprintf("cannot open %s: file does not exist", contentPath))
@@ -51,17 +52,16 @@ func checkPoFilterFormat(contentPath, repoAttrRelPath, attrSourceCommit, filterA
 	}
 
 	workDir := repository.WorkDir()
+	attrSourceCommit := strings.TrimSpace(fr.Revision)
+
+	repoAttrRelPath := fr.File
 	displayPath := contentPath
-	if repoAttrRelPath != "" {
+	if repoAttrRelPath != "" && !filepath.IsAbs(repoAttrRelPath) {
 		displayPath = repoAttrRelPath
 	}
 
 	var relPath string
-	if repoAttrRelPath != "" {
-		if filepath.IsAbs(repoAttrRelPath) {
-			errs = append(errs, fmt.Sprintf("filter attr path must be relative to repository: %s", repoAttrRelPath))
-			return errs, false
-		}
+	if repoAttrRelPath != "" && !filepath.IsAbs(repoAttrRelPath) {
 		clean := filepath.Clean(filepath.FromSlash(filepath.ToSlash(repoAttrRelPath)))
 		joined := filepath.Join(workDir, clean)
 		absJoined, err := filepath.Abs(joined)
@@ -88,7 +88,7 @@ func checkPoFilterFormat(contentPath, repoAttrRelPath, attrSourceCommit, filterA
 		}
 		relPath, err = filepath.Rel(workDir, absPath)
 		if err != nil || strings.HasPrefix(relPath, "..") {
-			// File is outside repo and no logical path given; skip filter check
+			// File is outside repo and no logical repo-relative path; skip filter check
 			return nil, true
 		}
 		relPath = filepath.ToSlash(relPath)

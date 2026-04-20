@@ -293,7 +293,7 @@ func CheckPoFileWithPrompt(locale string, compareWithPot bool, prompt string, fi
 
 	// Policy check: git check-attr filter must be a supported driver name (see checkPoFilterFormat).
 	if !flag.NoCheckFilter() {
-		errs, filterOk := checkPoFilterFormat(poFile, fileRev.File, fileRev.Revision, "")
+		errs, filterOk := checkPoFilterFormat(fileRev, "")
 		filterReportLevel := log.InfoLevel
 
 		ok = filterOk
